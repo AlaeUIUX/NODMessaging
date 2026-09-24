@@ -1,6 +1,42 @@
 export type DeliveryStatus = "pending" | "sent" | "delivered" | "read" | "failed";
 
-export type MessageKind = "text" | "voice";
+export type MessageKind = "text" | "voice" | "card";
+
+export interface PollOption { id: string; label: string; votes: string[] }
+export type Rsvp = "going" | "maybe" | "no";
+
+/** Structured, interactive messages. Every change syncs as a whole-card replace. */
+export type Card =
+  | {
+      type: "poll";
+      question: string;
+      options: PollOption[];
+      multiple: boolean;
+      anonymous: boolean;
+      closesAt: number;
+      closedAt: number | null;
+    }
+  | {
+      type: "checklist";
+      title: string;
+      items: { id: string; label: string; doneBy: string | null }[];
+      /** When false only the owner and `editors` may change it. */
+      everyoneCanEdit: boolean;
+      editors: string[];
+      requests: string[];
+    }
+  | { type: "reminder"; text: string; at: number; audience: "me" | "everyone"; firedAt: number | null }
+  | { type: "location"; place: string; address: string; live: boolean; until: number | null; x: number; y: number }
+  | { type: "event"; title: string; startsAt: number; place: string; rsvps: Record<string, Rsvp> }
+  | {
+      type: "payment";
+      mode: "request" | "sent";
+      amount: number;
+      note: string;
+      /** Request: who is asked to pay. Sent: the recipient. */
+      from: string[];
+      paidBy: string[];
+    };
 
 export interface Attachment {
   id: string;
@@ -38,15 +74,22 @@ export interface Message {
   pinned: boolean;
   deletedAt: number | null;
   attachments: Attachment[];
+  /** Structured messages only. */
+  card?: Card;
   /** Voice notes only. */
   durationMs?: number;
   waveform?: number[];
 }
 
+/** Named avatar colours — resolved to real values in `lib/chat/avatar.ts`. */
+export type AvatarTone = "clay" | "sage" | "ochre" | "denim" | "plum" | "graphite";
+
 export interface User {
   id: string;
+  /** Short name used in mentions and group bylines. */
   name: string;
-  avatar: string;
+  fullName: string;
+  tone: AvatarTone;
 }
 
 export interface Chat {
@@ -54,7 +97,8 @@ export interface Chat {
   name: string;
   kind: "dm" | "group";
   memberIds: string[];
-  avatar: string;
+  /** Groups only; DMs take their colour from the other member. */
+  tone?: AvatarTone;
 }
 
 export interface ChatState {
@@ -75,6 +119,7 @@ export type TransportEvent =
   | { type: "edit"; chatId: string; messageId: string; body: string; editedAt: number }
   | { type: "delete"; chatId: string; messageId: string; deletedAt: number }
   | { type: "pin"; chatId: string; messageId: string; pinned: boolean }
+  | { type: "card"; chatId: string; messageId: string; card: Card }
   | { type: "presence"; clientId: string; userId: string; at: number }
   | { type: "presence-bye"; clientId: string };
 

@@ -1,26 +1,20 @@
 import type { Metadata } from "next";
-import { Fraunces, Inter } from "next/font/google";
+import { Geist } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
+const geist = Geist({
   subsets: ["latin"],
-  variable: "--font-inter",
-});
-
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-fraunces",
+  variable: "--font-geist",
 });
 
 export const metadata: Metadata = {
-  title: "NOD — Interaction Prototype",
-  description:
-    "NOD interaction prototype: chats, Mind, and the motion between taps.",
+  title: "NOD — Messaging, quietly",
+  description: "NOD is a calm, private messenger. Reactions, replies and voice notes with motion that stays out of the way.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${inter.variable} ${fraunces.variable}`}>
+    <html lang="en" className={geist.variable}>
       <body>{children}</body>
     </html>
   );

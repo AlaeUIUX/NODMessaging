@@ -1,4 +1,10 @@
 :root{
+    /* Geist is the only typeface. The older screens still reference the
+       Inter/Fraunces variables, so both resolve to Geist rather than being
+       rewritten one by one. */
+    --font-inter: var(--font-geist);
+    --font-fraunces: var(--font-geist);
+
     --page-bg:#eeece7;
     --page-ink:#1c1917;
     --page-sub:#79716b;

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import ChatApp from "@/components/chat/ChatApp";
 
 export const metadata: Metadata = {
-  title: "NOD Chat",
-  description: "Phase 0 + Phase 1 of the NOD chat build spec — realtime, optimistic send, persisted model.",
+  title: "NOD — Messaging, quietly",
+  description: "A calm, private messenger with reactions, replies and voice notes.",
 };
 
 export default function ChatPage() {

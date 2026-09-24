@@ -15,7 +15,7 @@ import { sendMessage as apiSend } from "./api";
 import { buildSeedState, CHATS, USERS } from "./seed";
 import { localStorageAdapter } from "./storage";
 import { createBroadcastTransport, prunePeers, PRESENCE_INTERVAL_MS, type Peer } from "./transport";
-import type { Attachment, ChatState, DeliveryStatus, Message, TransportEvent } from "./types";
+import type { Attachment, Card, ChatState, DeliveryStatus, Message, TransportEvent } from "./types";
 
 /**
  * One id per browsing context, fixed at module load — two tabs get different
@@ -43,6 +43,7 @@ type Action =
   | { type: "edit"; chatId: string; messageId: string; body: string; editedAt: number }
   | { type: "delete"; chatId: string; messageId: string; deletedAt: number }
   | { type: "pin"; chatId: string; messageId: string; pinned: boolean }
+  | { type: "card"; chatId: string; messageId: string; card: Card }
   | { type: "load-earlier"; chatId: string }
   | { type: "typing"; chatId: string; userId: string; isTyping: boolean }
   | { type: "mark-read"; chatId: string; at: number };
@@ -123,6 +124,9 @@ function reducer(state: State, action: Action): State {
         m.id === action.messageId ? { ...m, pinned: action.pinned } : m,
       );
 
+    case "card":
+      return mapMessages(state, action.chatId, (m) => (m.id === action.messageId ? { ...m, card: action.card } : m));
+
     case "load-earlier": {
       const pool = state.data.archive[action.chatId] ?? [];
       if (!pool.length) return state;
@@ -173,6 +177,10 @@ interface ChatContextValue {
   setMe: (id: string) => void;
   peers: Peer[];
   send: (chatId: string, body: string, opts?: { replyToId?: string | null; attachments?: Attachment[] }) => void;
+  /** Sends a structured message; `summary` is what previews and quotes show. */
+  sendCard: (chatId: string, card: Card, summary: string) => void;
+  /** Replaces a card's state (votes, ticks, RSVPs…) and syncs it. */
+  updateCard: (message: Message, update: (card: Card) => Card) => void;
   retry: (message: Message) => void;
   toggleReaction: (message: Message, emoji: string) => void;
   editMessage: (message: Message, body: string) => void;
@@ -320,6 +328,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             pinned: event.pinned,
           });
           break;
+        case "card":
+          dispatch({ type: "card", chatId: event.chatId, messageId: event.messageId, card: event.card });
+          break;
         case "presence":
           setPeers((prev) => {
             if (event.clientId === CLIENT_ID) return prev;
@@ -444,6 +455,90 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [peers.length, publish, simulate],
   );
 
+  // Card updates can come from timers (simulated members), so they must read
+  // the freshest card rather than the one captured when the timer was set.
+  const latest = useRef(state.data);
+  useEffect(() => { latest.current = state.data; }, [state.data]);
+
+  const updateCard = useCallback<ChatContextValue["updateCard"]>(
+    (message, update) => {
+      const current = latest.current.messages[message.chatId]?.find((m) => m.id === message.id) ?? message;
+      if (!current.card) return;
+      const card = update(current.card);
+      latest.current = {
+        ...latest.current,
+        messages: {
+          ...latest.current.messages,
+          [message.chatId]: (latest.current.messages[message.chatId] ?? []).map((m) => (m.id === message.id ? { ...m, card } : m)),
+        },
+      };
+      dispatch({ type: "card", chatId: message.chatId, messageId: message.id, card });
+      publish({ type: "card", chatId: message.chatId, messageId: message.id, card });
+    },
+    [publish],
+  );
+
+  /** With nobody else online, the other members answer structured messages. */
+  const simulateCard = useCallback(
+    (sent: Message) => {
+      const chat = CHATS.find((c) => c.id === sent.chatId);
+      const others = (chat?.memberIds ?? []).filter((id) => id !== sent.authorId);
+      const card = sent.card;
+      if (!card || !others.length) return;
+      const act = (delay: number, fn: (c: Card) => Card) => setTimeout(() => updateCard(sent, fn), delay);
+      if (card.type === "poll") {
+        others.forEach((uid, i) => act(1400 + i * 1100, (c) => {
+          if (c.type !== "poll" || c.closedAt) return c;
+          const pick = (i + uid.charCodeAt(0)) % c.options.length;
+          return { ...c, options: c.options.map((o, j) => (j === pick && !o.votes.includes(uid) ? { ...o, votes: [...o.votes, uid] } : o)) };
+        }));
+      } else if (card.type === "event") {
+        const answers: ("going" | "maybe" | "no")[] = ["going", "going", "maybe"];
+        others.forEach((uid, i) => act(1600 + i * 1200, (c) => (c.type === "event" ? { ...c, rsvps: { ...c.rsvps, [uid]: answers[i % answers.length] } } : c)));
+      } else if (card.type === "payment" && card.mode === "request") {
+        card.from.slice(0, 1).forEach((uid) => act(3200, (c) => (c.type === "payment" && !c.paidBy.includes(uid) ? { ...c, paidBy: [...c.paidBy, uid] } : c)));
+      } else if (card.type === "checklist" && card.everyoneCanEdit && card.items.length) {
+        act(2400, (c) => (c.type === "checklist" ? { ...c, items: c.items.map((it, j) => (j === 0 && !it.doneBy ? { ...it, doneBy: others[0] } : it)) } : c));
+      }
+    },
+    [updateCard],
+  );
+
+  const sendCard = useCallback<ChatContextValue["sendCard"]>(
+    (chatId, card, summary) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const message: Message = {
+        id,
+        clientId: id,
+        chatId,
+        authorId: meRef.current,
+        kind: "card",
+        body: summary,
+        card,
+        createdAt: Date.now(),
+        status: "pending",
+        reactions: [],
+        replyToId: null,
+        editedAt: null,
+        editHistory: [],
+        pinned: false,
+        deletedAt: null,
+        attachments: [],
+      };
+      dispatch({ type: "append", message });
+      apiSend(message)
+        .then((accepted) => {
+          const out: Message = { ...accepted, card };
+          dispatch({ type: "patch", chatId, clientId: id, patch: { status: "sent" } });
+          publish({ type: "message", message: { ...out, status: "sent" } });
+          setTimeout(() => dispatch({ type: "status", chatId, messageId: id, status: "delivered" }), 700);
+          if (peers.length === 0) simulateCard(out);
+        })
+        .catch(() => dispatch({ type: "patch", chatId, clientId: id, patch: { status: "failed" } }));
+    },
+    [peers.length, publish, simulateCard],
+  );
+
   const toggleReaction = useCallback<ChatContextValue["toggleReaction"]>(
     (message, emoji) => {
       const mine = message.reactions.find((r) => r.emoji === emoji)?.userIds.includes(meRef.current);
@@ -519,10 +614,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ChatContextValue>(
     () => ({
-      state, me, setMe, peers, send, retry, toggleReaction, editMessage,
+      state, me, setMe, peers, send, sendCard, updateCard, retry, toggleReaction, editMessage,
       deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead,
     }),
-    [state, me, setMe, peers, send, retry, toggleReaction, editMessage,
+    [state, me, setMe, peers, send, sendCard, updateCard, retry, toggleReaction, editMessage,
       deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead],
   );
 
@@ -536,7 +631,7 @@ export function useChat() {
 }
 
 export function userById(id: string) {
-  return USERS.find((u) => u.id === id) ?? { id, name: id, avatar: "" };
+  return USERS.find((u) => u.id === id) ?? { id, name: id, fullName: id, tone: "graphite" as const };
 }
 
 /** Consecutive messages from one author inside the window collapse together. */

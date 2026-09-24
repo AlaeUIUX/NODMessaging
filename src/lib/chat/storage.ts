@@ -22,7 +22,7 @@ function backfillMessage(raw: LegacyMessage, chatId: string, index: number): Mes
     clientId: String(raw.clientId ?? id),
     chatId: String(raw.chatId ?? chatId),
     authorId,
-    kind: raw.kind === "voice" || raw.type === "voice" ? "voice" : "text",
+    kind: raw.kind === "card" ? "card" : raw.kind === "voice" || raw.type === "voice" ? "voice" : "text",
     body,
     createdAt: Number(raw.createdAt ?? Date.now() - (1000 - index) * 60_000),
     status: (raw.status as Message["status"]) ?? (authorId === "me" ? "read" : "delivered"),
@@ -43,7 +43,36 @@ function backfillMessage(raw: LegacyMessage, chatId: string, index: number): Mes
     attachments: Array.isArray(raw.attachments) ? (raw.attachments as Message["attachments"]) : [],
     durationMs: typeof raw.durationMs === "number" ? raw.durationMs : undefined,
     waveform: Array.isArray(raw.waveform) ? (raw.waveform as number[]) : undefined,
+    card: raw.card as Message["card"],
   };
+}
+
+/**
+ * Keeps everything the person already has and adds demo messages introduced
+ * by a newer seed (matched by id), so upgrades never wipe a conversation.
+ */
+function mergeSeed(
+  seeded: Record<string, Message[]>,
+  stored: Record<string, Message[]>,
+  archive: Record<string, Message[]>,
+): Record<string, Message[]> {
+  const out: Record<string, Message[]> = { ...seeded };
+  for (const [chatId, list] of Object.entries(stored)) {
+    const known = new Set([...list, ...(archive[chatId] ?? [])].map((m) => m.id));
+    const added = (seeded[chatId] ?? []).filter((m) => !known.has(m.id));
+    out[chatId] = [...list, ...added].sort((a, b) => a.createdAt - b.createdAt);
+  }
+  return out;
+}
+
+/** v5 renamed two people (and their DM ids); saved history follows them. */
+function renameCast<T>(raw: T): T {
+  const json = JSON.stringify(raw)
+    .replace(/"roya"/g, '"reema"')
+    .replace(/"jamshed"/g, '"jamshad"')
+    .replace(/@Roya\b/g, "@Reema")
+    .replace(/@Jamshed\b/g, "@Jamshad");
+  return JSON.parse(json) as T;
 }
 
 /** Pure so it can be exercised without a browser. */
@@ -51,7 +80,8 @@ export function migrate(stored: unknown): ChatState {
   const seed = buildSeedState();
   if (!stored || typeof stored !== "object") return seed;
 
-  const raw = stored as Partial<ChatState> & { version?: number };
+  let raw = stored as Partial<ChatState> & { version?: number };
+  if ((raw.version ?? 0) < 5) raw = renameCast(raw);
   if (raw.version === CURRENT_VERSION && raw.messages) return raw as ChatState;
 
   const messages: Record<string, Message[]> = {};
@@ -68,9 +98,11 @@ export function migrate(stored: unknown): ChatState {
 
   return {
     version: CURRENT_VERSION,
-    chats: raw.chats?.length ? raw.chats : seed.chats,
-    messages: Object.keys(messages).length ? messages : seed.messages,
-    archive: Object.keys(archive).length ? archive : seed.archive,
+    // Chats are static config (v3 dropped photo avatars for colour tones), so
+    // always take the current list and backfill threads for any new chat.
+    chats: seed.chats,
+    messages: mergeSeed(seed.messages, messages, archive),
+    archive: { ...seed.archive, ...archive },
     lastReadAt: raw.lastReadAt ?? {},
   };
 }
