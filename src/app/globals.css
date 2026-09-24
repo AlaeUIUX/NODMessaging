@@ -15,17 +15,47 @@
     --ease-pop:      cubic-bezier(.34,1.56,.64,1);/* pronounced-overshoot playful pops: menus, popups, chips, pins */
     --ease-exit:      cubic-bezier(.4,0,.7,1);    /* quick, no-overshoot dismissals */
     --ease-drag: linear;                          /* gesture-tracked motion — no easing, 1:1 with the pointer */
+    --ease-liquid: cubic-bezier(.16,1.24,.3,1);   /* droplet flick: fast out, elastic settle */
+
+    /* ---------- liquid-glass materials ----------
+       Frosted surfaces are translucent + blurred, and carry a 1px top rim
+       light so they read as a curved surface catching light rather than a
+       flat blurred rectangle. Kept off message bubbles on purpose — see the
+       note by .bubble. */
+    --glass-tint: rgba(255,255,255,.76);
+    --glass-tint-strong: rgba(255,255,255,.86);
+    --glass-blur: blur(24px) saturate(180%);
+    --glass-rim: inset 0 1px 0 rgba(255,255,255,.75);
+    --glass-edge: 1px solid rgba(255,255,255,.55);
   }
-  /* Respect reduced-motion for everything beyond a basic fade. Applied as a
-     blanket rule rather than per-animation opt-outs: simplest to keep correct
-     as new motion gets added, and an instant fade is a fine fallback everywhere. */
+  /* Reduced motion keeps the glass *materials* (blur, tint, rim light — those
+     are static, not motion) and drops the elastic/gooey motion to plain fades.
+     Deliberately not a blanket `animation-duration:0`: the spinner and typing
+     dots carry real meaning, so they keep looping, just without travel. */
   @media (prefers-reduced-motion: reduce){
-    *, *::before, *::after{
-      animation-duration:.001ms !important;
-      animation-iteration-count:1 !important;
-      transition-duration:.001ms !important;
-      scroll-behavior:auto !important;
+    *, *::before, *::after{ transition-duration:.12s !important; scroll-behavior:auto !important; }
+    @keyframes rmFade{ from{ opacity:0; } to{ opacity:1; } }
+
+    /* elastic entrances → simple fades */
+    .msg-row.mine .msg-stack.msg-enter,
+    .msg-row:not(.mine) .msg-stack.msg-enter,
+    .mind-card, .board-card, .list-row, .smart-chip, .reply-preview,
+    .composer-expand-wrap, .mention-pop, .record-overlay, .typing-row-enter,
+    .org-done .od-icon, .select-check{
+      animation:rmFade .16s linear both !important;
     }
+    .typing-row-exit{ animation:rmFade .12s linear reverse both !important; }
+    .heart-burst.go{ animation:rmFade .3s linear both !important; }
+
+    /* gooey merge is motion — flatten it, keep the pill readable */
+    .tabbar-goo{ filter:none !important; }
+    .pill-drop{ display:none !important; }
+    .pill-ind{ scale:1 1 !important; }
+
+    /* decorative loops stop; informative ones keep going without travel */
+    .organize-pill .dot, .rec-dot{ animation:none !important; }
+    .typing-bubble span{ animation-name:typingDotReduced !important; }
+    @keyframes typingDotReduced{ 0%,100%{ opacity:.4; } 50%{ opacity:1; } }
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
@@ -142,20 +172,46 @@
 
   /* ---------- bottom tab bar ---------- */
   .tabbar-wrap{ flex-shrink:0; padding:0 16px 18px; }
+  /* The goo filter lives on its own layer containing only the blobs. Glyphs
+     must never enter a filtered layer: feColorMatrix alpha-thresholding
+     mangles antialiased text and destroys multicolour emoji. */
+  .goo-defs{ position:absolute; width:0; height:0; overflow:hidden; }
+
   .tabbar{
     position:relative;
-    background:#fafaf9; border:1px solid #f5f5f4; border-radius:9999px;
-    box-shadow:0 3px 6px rgba(0,0,0,.05);
+    background:rgba(255,255,255,.62); border:var(--glass-edge); border-radius:9999px;
+    -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur);
+    box-shadow:0 3px 6px rgba(0,0,0,.05), var(--glass-rim);
     display:grid; grid-template-columns:repeat(4,1fr);
     padding:6px; gap:2px;
+  }
+  .tabbar-goo{
+    position:absolute; inset:0; z-index:0; pointer-events:none;
+    filter:url(#nod-goo);
   }
   .tabbar .pill-ind{
     position:absolute; top:6px; bottom:6px; left:6px;
     width:calc(25% - 8.5px);
-    background:#f5f5f4; border-radius:9999px;
-    transition:transform .38s var(--ease-pop);
-    z-index:0;
+    /* Near-opaque so the alpha threshold resolves a crisp blob edge — the goo
+       filter needs high alpha to work at all — but tinted a step darker than
+       the bar, or the merge is invisible white-on-white. */
+    background:rgba(231,228,224,.98); border-radius:9999px;
+    translate:0 0; scale:1 1;
+    /* travel is springy; the squash/stretch snaps back faster than the travel,
+       which is what sells "liquid" rather than "sliding card" */
+    transition:translate .5s var(--ease-liquid), scale .26s var(--ease-liquid);
   }
+  .pill-ind.stretching{ scale:1.14 .84; }
+  /* Trailing droplet: lags behind the pill and shrinks into it, so the goo
+     filter has two shapes to neck between mid-travel. */
+  .pill-drop{
+    position:absolute; top:11px; left:6px;
+    width:calc(25% - 8.5px); height:22px;
+    background:rgba(231,228,224,.98); border-radius:9999px;
+    translate:0 0; scale:0 .6; opacity:0;
+    transition:translate .62s var(--ease-standard), scale .5s var(--ease-standard), opacity .4s linear;
+  }
+  .pill-drop.trailing{ scale:.55 .9; opacity:1; }
   .tab-btn{
     position:relative; z-index:1; border:none; background:transparent; cursor:pointer;
     display:flex; flex-direction:column; align-items:center; gap:4px;
@@ -251,8 +307,20 @@
     color:#181d27; position:relative; word-break:break-word; touch-action:pan-y;
     transition:transform .25s var(--ease-standard), box-shadow .2s var(--ease-standard);
     will-change:transform;
+    /* Rim light only — a 1px specular edge reads as curved glass while
+       leaving every text pixel at full contrast. Deliberately NOT translucent
+       + backdrop-filtered: see the note above .msg-row.mine .bubble. */
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.9);
   }
-  .msg-row.mine .bubble{ background:#00359e; border-color:#00359e; color:#fff; border-radius:14px 4px 14px 14px; }
+  /* Sent bubbles stay fully opaque on purpose. Making them glassy would mean
+     dropping alpha, which lightens #00359e under white text and pushes the
+     contrast ratio toward the 4.5:1 floor — and a backdrop-filter per bubble
+     re-samples the backdrop on every scroll frame, which is exactly the wrong
+     trade on a mid-range phone. The rim light gets the material read for free. */
+  .msg-row.mine .bubble{
+    background:#00359e; border-color:#00359e; color:#fff; border-radius:14px 4px 14px 14px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.26);
+  }
   .bubble.selected-flash{ box-shadow:0 0 0 3px rgba(0,53,158,.25); }
   .bubble .swipe-hint{
     position:absolute; top:50%; transform:translateY(-50%); width:26px; height:26px; border-radius:9999px;
@@ -290,6 +358,20 @@
   .msg-row.mine .voice-wave i.played{ background:#fff; }
   .voice-time{ font-size:11px; color:#57534e; flex-shrink:0; }
   .msg-row.mine .voice-time{ color:rgba(255,255,255,.75); }
+
+  /* the picked emoji, travelling from the menu back into its bubble */
+  .emoji-absorb{
+    position:fixed; z-index:9999; font-size:22px; line-height:1; pointer-events:none;
+    transform:translate(-50%,-50%) scale(1); opacity:1;
+    transition:transform .42s var(--ease-liquid), opacity .42s ease;
+  }
+  .reaction-landed{ animation:reactionLand .42s var(--ease-liquid) both; }
+  @keyframes reactionLand{
+    0%{   transform:scale(.2); opacity:0; }
+    45%{  transform:scale(1.28); opacity:1; }
+    70%{  transform:scale(.94); }
+    100%{ transform:scale(1); opacity:1; }
+  }
 
   .reactions-row{ display:flex; gap:4px; align-items:center; }
   .reaction-chip{ display:flex; align-items:center; gap:3px; background:#fafafa; border:1px solid #e9eaeb; border-radius:9999px; padding:3px 7px; font-size:12px; }
@@ -340,23 +422,32 @@
   .msg-row.mine .msg-stack{ transform-origin:bottom right; }
   .msg-row:not(.mine) .msg-stack{ transform-origin:bottom left; }
 
+  /* Droplet flick: squashed at the origin (wide + short, as if compressed
+     against the composer), stretched thin along the direction of travel,
+     then an elastic settle. Non-uniform scale is what separates this from a
+     card sliding — a rigid object can't change shape mid-flight. */
   .msg-row.mine .msg-stack.msg-enter{
-    animation:bubbleInMine .42s var(--ease-entrance) both;
+    animation:bubbleLaunchMine .52s var(--ease-liquid) both;
   }
-  @keyframes bubbleInMine{
-    0%{ opacity:0; transform:translate3d(3px,22px,0) scale(.9); }
-    52%{ opacity:1; transform:translate3d(0,-4px,0) scale(1.035); animation-timing-function:var(--ease-pop); }
-    75%{ transform:translate3d(0,1.5px,0) scale(.99); }
-    100%{ transform:translate3d(0,0,0) scale(1); }
+  @keyframes bubbleLaunchMine{
+    0%{   opacity:0; transform:translate3d(4px,26px,0) scaleX(1.10) scaleY(.80); }
+    30%{  opacity:1; transform:translate3d(0,5px,0)    scaleX(.93)  scaleY(1.10); }
+    55%{  transform:translate3d(0,-4px,0)  scaleX(1.05) scaleY(.96); }
+    75%{  transform:translate3d(0,1.5px,0) scaleX(.985) scaleY(1.02); }
+    90%{  transform:translate3d(0,-.5px,0) scaleX(1.005) scaleY(.995); }
+    100%{ transform:translate3d(0,0,0)     scaleX(1) scaleY(1); }
   }
 
+  /* Received: same physics, softer amplitude and slower — it arrives from the
+     avatar rather than launching from under the user's thumb. */
   .msg-row:not(.mine) .msg-stack.msg-enter{
-    animation:bubbleInThem .5s cubic-bezier(.25,1,.45,1) both;
+    animation:bubbleLaunchThem .58s var(--ease-liquid) both;
   }
-  @keyframes bubbleInThem{
-    0%{ opacity:0; transform:translate3d(-14px,16px,0) scale(.92); }
-    58%{ opacity:1; transform:translate3d(2px,-2px,0) scale(1.018); }
-    100%{ transform:translate3d(0,0,0) scale(1); }
+  @keyframes bubbleLaunchThem{
+    0%{   opacity:0; transform:translate3d(-16px,14px,0) scaleX(1.06) scaleY(.88); }
+    34%{  opacity:1; transform:translate3d(3px,-1px,0)   scaleX(.97)  scaleY(1.05); }
+    62%{  transform:translate3d(-1px,-2px,0) scaleX(1.02) scaleY(.98); }
+    100%{ transform:translate3d(0,0,0)       scaleX(1) scaleY(1); }
   }
 
   /* smart replies */
@@ -396,19 +487,49 @@
   .send-btn{
     width:44px;height:44px; border-radius:9999px; display:flex; align-items:center; justify-content:center;
     flex-shrink:0; border:none; cursor:pointer; transition:transform .18s var(--ease-pop), background .2s ease;
+    position:relative; overflow:hidden;
   }
-  .send-btn.mic{ background:#fafaf9; box-shadow:0 3px 12px rgba(0,0,0,.05); }
-  .send-btn.arrow{ background:#00359e; }
+  .send-btn.mic{ background:#fafaf9; box-shadow:0 3px 12px rgba(0,0,0,.05), inset 0 1px 0 rgba(255,255,255,.9); }
+  .send-btn.arrow{ background:#00359e; box-shadow:0 3px 12px rgba(0,53,158,.28), inset 0 1px 0 rgba(255,255,255,.3); }
   .send-btn.arrow svg{ stroke:#fff; }
   .send-btn.mic svg{ stroke:#1c1917; }
   .send-btn svg{ width:16px;height:16px; }
   .send-btn:active{ transform:scale(.82); }
+  /* mic ↔ arrow: the button compresses as the icon is swapped, so the change
+     of state reads as the surface reflowing rather than a sprite swap */
+  .send-btn.morphing{ animation:sendMorph .36s var(--ease-liquid); }
+  @keyframes sendMorph{
+    0%{   transform:scaleX(1) scaleY(1); }
+    30%{  transform:scaleX(1.16) scaleY(.82); }
+    62%{  transform:scaleX(.94) scaleY(1.08); }
+    100%{ transform:scaleX(1) scaleY(1); }
+  }
+  .send-btn.morphing svg{ animation:sendIconIn .32s var(--ease-liquid) both; }
+  @keyframes sendIconIn{
+    0%{ opacity:0; transform:scale(.4) rotate(-25deg); }
+    100%{ opacity:1; transform:scale(1) rotate(0deg); }
+  }
+  /* tapping send: squash down, then launch — the recoil of throwing something */
+  .send-btn.launching{ animation:sendLaunch .42s var(--ease-liquid); }
+  @keyframes sendLaunch{
+    0%{   transform:scaleX(1) scaleY(1) translateY(0); }
+    22%{  transform:scaleX(1.22) scaleY(.72) translateY(3px); }
+    52%{  transform:scaleX(.86) scaleY(1.18) translateY(-5px); }
+    78%{  transform:scaleX(1.04) scaleY(.97) translateY(1px); }
+    100%{ transform:scaleX(1) scaleY(1) translateY(0); }
+  }
 
   /* ---------- expanded rich composer ---------- */
   /* sheetPopIn is referenced by three elements below (expanded composer, mention
      popover, record overlay) but was never defined anywhere in the original
      file — those "pop in" sheets were silently not animating at all. */
-  @keyframes sheetPopIn{ from{ opacity:0; transform:translateY(6px) scale(.96); } to{ opacity:1; transform:translateY(0) scale(1); } }
+  /* "Condensing into view": the surface arrives wide-and-flat and settles to
+     its resting shape, rather than scaling up uniformly like a rigid card. */
+  @keyframes sheetPopIn{
+    0%{   opacity:0; transform:translateY(8px) scaleX(1.04) scaleY(.86); }
+    55%{  opacity:1; transform:translateY(-1px) scaleX(.995) scaleY(1.03); }
+    100%{ opacity:1; transform:translateY(0) scaleX(1) scaleY(1); }
+  }
   .composer-expand-wrap{ display:none; flex-direction:column; gap:0; animation:sheetPopIn .22s var(--ease-pop) both; }
   .composer-wrap.expanded .composer-row{ display:none; }
   .composer-wrap.expanded .composer-expand-wrap{ display:flex; }
@@ -470,9 +591,15 @@
   .ccc-send svg{ width:14px;height:14px; stroke:#fdfdfc; }
 
   .mention-pop{
-    position:absolute; bottom:calc(100% + 8px); left:14px; right:14px; background:#fff; border:1px solid #e7e5e4;
-    border-radius:14px; box-shadow:0 12px 30px rgba(0,0,0,.14); overflow:hidden; z-index:20;
-    animation:sheetPopIn .22s var(--ease-pop) both;
+    position:absolute; bottom:calc(100% + 8px); left:14px; right:14px;
+    background:var(--glass-tint-strong); border:var(--glass-edge);
+    -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur);
+    border-radius:14px; box-shadow:0 12px 30px rgba(0,0,0,.14), var(--glass-rim); overflow:hidden; z-index:20;
+    transform-origin:bottom center;
+    animation:sheetPopIn .28s var(--ease-liquid) both;
+  }
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    .mention-pop{ background:#fff; }
   }
   .mention-item{ display:flex; align-items:center; gap:9px; padding:9px 12px; cursor:pointer; }
   .mention-item:active{ background:#f5f5f4; }
@@ -480,9 +607,15 @@
   .mention-tag{ color:#00359e; font-weight:600; }
 
   .record-overlay{
-    position:absolute; inset:8px 8px 14px; background:#fff; border-radius:9999px; box-shadow:0 3px 12px rgba(0,0,0,.08);
+    position:absolute; inset:8px 8px 14px; border-radius:9999px;
+    background:var(--glass-tint-strong); border:var(--glass-edge);
+    -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur);
+    box-shadow:0 3px 12px rgba(0,0,0,.08), var(--glass-rim);
     display:flex; align-items:center; gap:10px; padding:0 16px; z-index:10;
-    animation:sheetPopIn .18s ease both;
+    animation:sheetPopIn .26s var(--ease-liquid) both;
+  }
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    .record-overlay{ background:#fff; }
   }
   .rec-dot{ width:9px;height:9px;border-radius:9999px; background:#e11d48; animation:pulseDot 1s infinite; }
   @keyframes pulseDot{ 0%,100%{opacity:1;} 50%{opacity:.3;} }
@@ -495,14 +628,45 @@
   .backdrop{ position:absolute; inset:0; background:rgba(28,25,23,.22); backdrop-filter:blur(6px); z-index:30; opacity:0; pointer-events:none; transition:opacity .2s ease; }
   .backdrop.show{ opacity:1; pointer-events:auto; }
   .ctx-menu{
-    position:absolute; z-index:31; background:#fff; border-radius:16px; box-shadow:0 20px 40px rgba(0,0,0,.2);
-    overflow:hidden; min-width:190px; transform:scale(.85); opacity:0; pointer-events:none; transform-origin:top center;
-    transition:transform .22s var(--ease-pop), opacity .18s ease;
+    position:absolute; z-index:31; border-radius:16px;
+    background:var(--glass-tint);
+    -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur);
+    border:var(--glass-edge);
+    box-shadow:0 20px 40px rgba(0,0,0,.2), var(--glass-rim);
+    overflow:hidden; min-width:190px; opacity:0; pointer-events:none;
+    /* transform-origin is set from JS to point at the bubble it belongs to,
+       so the menu oozes out of the message rather than out of nowhere */
+    transform-origin:bottom center;
+    transform:scale(.72) translateY(6px);
+    transition:transform .3s var(--ease-liquid), opacity .18s ease;
   }
-  .ctx-menu.show{ transform:scale(1); opacity:1; pointer-events:auto; }
-  .ctx-emoji-row{ display:flex; gap:4px; padding:10px; border-bottom:1px solid #f0efed; }
-  .ctx-emoji-row button{ border:none; background:transparent; font-size:20px; width:30px;height:30px; border-radius:9999px; cursor:pointer; transition:transform .12s ease; }
+  .ctx-menu.show{ transform:scale(1) translateY(0); opacity:1; pointer-events:auto; }
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    .ctx-menu{ background:#fff; }
+  }
+  .ctx-emoji-row{ display:flex; gap:4px; padding:10px; border-bottom:1px solid rgba(240,239,237,.8); }
+  .ctx-emoji-row button{
+    border:none; background:transparent; font-size:20px; width:30px;height:30px; border-radius:9999px; cursor:pointer;
+    transition:transform .16s var(--ease-liquid);
+    /* staggered ooze — each emoji surfaces a beat after the last */
+    animation:emojiSurface .34s var(--ease-liquid) both;
+    animation-delay:calc(var(--i,0) * 28ms);
+  }
+  @keyframes emojiSurface{
+    0%{ opacity:0; transform:scale(.3) translateY(8px); }
+    60%{ opacity:1; transform:scale(1.12) translateY(-2px); }
+    100%{ opacity:1; transform:scale(1) translateY(0); }
+  }
   .ctx-emoji-row button:active{ transform:scale(1.3); }
+  /* "absorbed" — the picked emoji is pulled back into the bubble it belongs to.
+     JS sets --ax/--ay to the bubble-relative delta before adding this class. */
+  .ctx-emoji-row button.absorbing{
+    animation:emojiAbsorb .34s var(--ease-standard) forwards;
+  }
+  @keyframes emojiAbsorb{
+    0%{ transform:scale(1.25); opacity:1; }
+    100%{ transform:translate(var(--ax,0px), var(--ay,0px)) scale(.15); opacity:0; }
+  }
   .ctx-item{ display:flex; align-items:center; gap:10px; padding:11px 14px; font-size:13.5px; color:#1c1917; cursor:pointer; font-family:var(--font-inter), 'Inter', system-ui, sans-serif; font-weight:500; }
   .ctx-item:active{ background:#f5f5f4; }
   .ctx-item svg{ width:15px;height:15px; stroke:#57534e; }
@@ -687,6 +851,20 @@
 
 
 
+  /* Host for the one WebGL moment. Sized in CSS so layout is stable before
+     three.js has finished loading; the canvas is appended into it. */
+  .es-orb{
+    width:132px; height:132px; margin:0 auto 14px;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:9999px;
+  }
+  /* If WebGL or the import fails, fall back to a static glass disc rather than
+     an empty hole in the layout. */
+  .es-orb-fallback{
+    background:radial-gradient(circle at 34% 28%, #ffffff 0%, #e7eefb 38%, #c3d2ee 70%, #9fb2d4 100%);
+    box-shadow:inset 0 2px 6px rgba(255,255,255,.9), 0 10px 24px -10px rgba(31,48,84,.45);
+  }
+
   .empty-state{ text-align:center; padding:50px 32px; }
   .empty-state .es-icon{ width:56px;height:56px; border-radius:9999px; background:#e7e5e4; display:flex; align-items:center; justify-content:center; margin:0 auto 16px; }
   .empty-state .es-icon svg{ width:24px;height:24px; stroke:#79716b; }
@@ -756,11 +934,18 @@
   }
   .mind-popup-backdrop.show{ opacity:1; pointer-events:auto; }
   .mind-popup{
-    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) scale(.85); opacity:0; pointer-events:none;
-    width:266px; background:#fff; border-radius:20px; padding:22px 20px 18px; z-index:81; box-shadow:0 24px 50px rgba(0,0,0,.28);
-    transition:transform .26s var(--ease-pop), opacity .2s ease;
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) scale(.8); opacity:0; pointer-events:none;
+    width:266px; border-radius:20px; padding:22px 20px 18px; z-index:81;
+    background:var(--glass-tint-strong);
+    -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur);
+    border:var(--glass-edge);
+    box-shadow:0 24px 50px rgba(0,0,0,.28), var(--glass-rim);
+    transition:transform .34s var(--ease-liquid), opacity .2s ease;
   }
   .mind-popup.show{ transform:translate(-50%,-50%) scale(1); opacity:1; pointer-events:auto; }
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    .mind-popup{ background:#fff; }
+  }
   .mp-icon{ width:44px;height:44px;border-radius:9999px;background:#e9f7ef;display:flex;align-items:center;justify-content:center;margin:0 auto 12px; }
   .mp-icon svg{ width:19px;height:19px; stroke:#17b26a; }
   .mp-title{ font-family:var(--font-fraunces), 'Fraunces', serif; font-weight:500; font-size:17px; text-align:center; margin:0 0 4px; }
@@ -786,10 +971,16 @@
   .sheet-backdrop{ position:absolute; inset:0; background:rgba(28,25,23,.32); z-index:40; opacity:0; pointer-events:none; transition:opacity .25s ease; }
   .sheet-backdrop.show{ opacity:1; pointer-events:auto; }
   .bottom-sheet{
-    position:absolute; left:0; right:0; bottom:0; background:#fff; border-radius:22px 22px 0 0; z-index:41;
-    transform:translateY(100%); transition:transform .34s var(--ease-standard); max-height:82%; overflow-y:auto;
-    box-shadow:0 -10px 30px rgba(0,0,0,.15); padding-bottom:26px;
+    position:absolute; left:0; right:0; bottom:0; border-radius:22px 22px 0 0; z-index:41;
+    background:var(--glass-tint-strong);
+    -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur);
+    border-top:var(--glass-edge);
+    transform:translateY(100%); transition:transform .44s var(--ease-liquid); max-height:82%; overflow-y:auto;
+    box-shadow:0 -10px 30px rgba(0,0,0,.15), var(--glass-rim); padding-bottom:26px;
     scrollbar-width:none; -ms-overflow-style:none;
+  }
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    .bottom-sheet{ background:#fff; }
   }
   .bottom-sheet::-webkit-scrollbar{ display:none; }
   .bottom-sheet.show{ transform:translateY(0); }
@@ -813,10 +1004,18 @@
   .sheet-action-item svg{ width:16px;height:16px; stroke:currentColor; }
 
   /* multi-select action bar */
+  /* Dark glass: same material logic, tint inverted. White label text sits at
+     ~9:1 against the blurred backdrop, so legibility is unaffected. */
   .select-bar{
-    position:absolute; left:12px; right:12px; bottom:18px; background:#1c1917; border-radius:9999px; z-index:15;
+    position:absolute; left:12px; right:12px; bottom:18px; border-radius:9999px; z-index:15;
+    background:rgba(28,25,23,.82);
+    -webkit-backdrop-filter:blur(20px) saturate(160%); backdrop-filter:blur(20px) saturate(160%);
     display:flex; align-items:center; justify-content:space-between; padding:8px 8px 8px 18px;
-    transform:translateY(140%); transition:transform .32s var(--ease-standard); box-shadow:0 10px 30px rgba(0,0,0,.25);
+    transform:translateY(140%); transition:transform .42s var(--ease-liquid);
+    box-shadow:0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.16);
+  }
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    .select-bar{ background:#1c1917; }
   }
   .select-bar.show{ transform:translateY(0); }
   .select-bar .sb-count{ color:#fff; font-size:13px; font-weight:500; }
@@ -833,7 +1032,8 @@
   /* toast */
   .toast{
     position:absolute; left:50%; bottom:100px; transform:translateX(-50%) translateY(10px); z-index:60;
-    background:#1c1917; color:#fff; font-size:12.5px; font-weight:500; padding:10px 16px; border-radius:9999px;
+    background:rgba(28,25,23,.84); color:#fff; font-size:12.5px; font-weight:500; padding:10px 16px; border-radius:9999px;
+    -webkit-backdrop-filter:blur(16px) saturate(160%); backdrop-filter:blur(16px) saturate(160%);
     opacity:0; transition:opacity .25s ease, transform .25s var(--ease-pop); pointer-events:none;
     display:flex; align-items:center; gap:7px; white-space:nowrap;
   }
@@ -887,8 +1087,10 @@
     /* Only box-shadow on hover, never transform — .bubble's transform is
        driven by the swipe gesture (see .bubble.dragging above) and a CSS
        hover transform would fight it the moment a drag begins. */
-    .bubble:hover{ box-shadow:0 4px 14px rgba(0,0,0,.07); }
-    .msg-row.mine .bubble:hover{ box-shadow:0 4px 14px rgba(0,53,158,.22); }
+    /* keep the rim light while adding the hover lift, or the specular edge
+       would vanish exactly when the surface should look more lit, not less */
+    .bubble:hover{ box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 4px 14px rgba(0,0,0,.07); }
+    .msg-row.mine .bubble:hover{ box-shadow:inset 0 1px 0 rgba(255,255,255,.34), 0 4px 14px rgba(0,53,158,.22); }
 
     .reaction-chip{ transition:transform .15s var(--ease-standard), box-shadow .15s var(--ease-standard), background .15s var(--ease-standard), border-color .15s var(--ease-standard); cursor:pointer; }
     .reaction-chip:hover{ transform:translateY(-1px) scale(1.06); box-shadow:0 3px 8px rgba(0,0,0,.1); background:#fff; border-color:#d6d3d1; }

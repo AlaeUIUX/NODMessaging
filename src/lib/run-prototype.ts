@@ -102,8 +102,32 @@ export function runPrototype(): () => void {
 
   // ---------- tab bar ----------
   const tabs = ['chats','mind','spaces','explore'];
+  let pillIndex = 0;
   function setPill(index){
-    $('#pill-ind').style.transform = `translateX(${index*100}%)`;
+    const pill = $('#pill-ind');
+    if(!pill) return;
+    const from = pillIndex;
+    pillIndex = index;
+    pill.style.translate = `${index*100}% 0`;
+
+    if(from === index) return;
+    // Squash along the direction of travel, snap back faster than the move.
+    pill.classList.add('stretching');
+    clearTimeout(pill._stretchT);
+    pill._stretchT = setTimeout(()=>pill.classList.remove('stretching'), 210);
+
+    // Trailing droplet: parked where the pill just left, then dragged after it
+    // and absorbed. Two shapes overlapping is what gives the goo filter a neck
+    // to form — a single travelling pill has nothing to merge with.
+    const drop = $('#pill-drop');
+    if(!drop) return;
+    drop.style.transition = 'none';
+    drop.style.translate = `${from*100}% 0`;
+    drop.classList.add('trailing');
+    void drop.offsetWidth;                // flush, so the jump isn't animated
+    drop.style.transition = '';
+    drop.style.translate = `${index*100}% 0`;
+    drop.classList.remove('trailing');
   }
   function showTab(name, push){
     state.activeTab = name;
@@ -290,13 +314,32 @@ export function runPrototype(): () => void {
   // ---------- sending ----------
   const input = $('#composer-input');
   const sendBtn = $('#send-btn');
+  let sendBtnState = null;
   function updateSendBtn(){
     const has = input.value.trim().length>0;
+    // Only touch the DOM when the state actually flips. This used to rewrite
+    // innerHTML on every keystroke, which would also restart the morph.
+    if(sendBtnState === has) return;
+    const first = sendBtnState === null;
+    sendBtnState = has;
     sendBtn.classList.toggle('arrow', has);
     sendBtn.classList.toggle('mic', !has);
     sendBtn.innerHTML = has
       ? `<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>`
       : `<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 19v3"/></svg>`;
+    if(first) return;                     // don't pulse on initial paint
+    sendBtn.classList.remove('morphing');
+    void sendBtn.offsetWidth;
+    sendBtn.classList.add('morphing');
+    clearTimeout(sendBtn._morphT);
+    sendBtn._morphT = setTimeout(()=>sendBtn.classList.remove('morphing'), 380);
+  }
+  function launchSendBtn(){
+    sendBtn.classList.remove('launching');
+    void sendBtn.offsetWidth;
+    sendBtn.classList.add('launching');
+    clearTimeout(sendBtn._launchT);
+    sendBtn._launchT = setTimeout(()=>sendBtn.classList.remove('launching'), 440);
   }
   input.addEventListener('input', ()=>{
     updateSendBtn();
@@ -380,9 +423,11 @@ export function runPrototype(): () => void {
     return pool[Math.floor(Math.random()*pool.length)];
   }
   sendBtn.addEventListener('click', ()=>{
-    if(sendBtn.classList.contains('arrow')) doSend(input.value);
+    if(sendBtn.classList.contains('arrow')){ launchSendBtn(); doSend(input.value); }
   });
-  input.addEventListener('keydown', e=>{ if(e.key==='Enter') doSend(input.value); });
+  input.addEventListener('keydown', e=>{
+    if(e.key==='Enter' && input.value.trim()){ launchSendBtn(); doSend(input.value); }
+  });
 
   // ---------- expanded rich composer ----------
   const composerWrap = $('#composer-wrap');
@@ -617,22 +662,54 @@ export function runPrototype(): () => void {
     openReactionStrip(btn);
   });
 
+  /* Picking a reaction shouldn't just make a chip appear — the emoji should
+     read as being pulled back into the bubble it belongs to. Uses the same
+     detached fly-element idiom as flyToMind(), because the menu and the bubble
+     live in different stacking contexts (the menu sits above a blurred
+     backdrop) and can't be merged in a single filtered layer. */
+  function absorbEmojiInto(emoji, fromEl, targetEl){
+    if(!fromEl || !targetEl) return;
+    const br = fromEl.getBoundingClientRect();
+    const tr = targetEl.getBoundingClientRect();
+    const fly = document.createElement('div');
+    fly.className = 'emoji-absorb';
+    fly.textContent = emoji;
+    fly.style.left = (br.left + br.width/2)+'px';
+    fly.style.top  = (br.top + br.height/2)+'px';
+    document.body.appendChild(fly);
+    requestAnimationFrame(()=>{
+      const dx = (tr.left + tr.width/2) - (br.left + br.width/2);
+      const dy = (tr.bottom - 10) - (br.top + br.height/2);
+      fly.style.transform = `translate(-50%,-50%) translate(${dx}px, ${dy}px) scale(.18)`;
+      fly.style.opacity = '0';
+    });
+    setTimeout(()=>fly.remove(), 460);
+  }
+  /* Pops the chip that just landed, so the absorbed emoji visibly becomes it. */
+  function popLandedReaction(msgId){
+    const row = $(`.msg-row[data-id="${msgId}"]`);
+    const chips = row ? row.querySelectorAll('.reaction-chip') : [];
+    const chip = chips[chips.length-1];
+    if(chip) chip.classList.add('reaction-landed');
+  }
+
   function openReactionStrip(anchor){
     const emojis = ['❤️','😂','👍','🔥','😮','🙏'];
     const menu = $('#ctx-menu');
-    menu.innerHTML = `<div class="ctx-emoji-row">${emojis.map(em=>`<button data-em="${em}">${em}</button>`).join('')}</div>`;
+    menu.innerHTML = `<div class="ctx-emoji-row">${emojis.map((em,i)=>`<button data-em="${em}" style="--i:${i}">${em}</button>`).join('')}</div>`;
     positionMenu(menu, anchor);
     showBackdrop(true);
     menu.classList.add('show');
     menu.querySelectorAll('button[data-em]').forEach(b=>{
       b.addEventListener('click', ()=>{
-        const mid = anchor.closest('.msg-row').dataset.id;
+        const row = anchor.closest('.msg-row');
+        const mid = row.dataset.id;
         const msg = currentThread().find(m=>String(m.id)===String(mid));
         msg.reactions = msg.reactions || [];
         msg.reactions.push({emoji:b.dataset.em});
+        absorbEmojiInto(b.dataset.em, b, row.querySelector('.bubble, .msg-file, .msg-voice'));
         closeOverlay();
-        renderChat();
-        toast('Reaction added');
+        setTimeout(()=>{ renderChat(); popLandedReaction(mid); toast('Reaction added'); }, 300);
       });
     });
   }
@@ -641,7 +718,7 @@ export function runPrototype(): () => void {
     const menu = $('#ctx-menu');
     const emojis = ['❤️','😂','👍','🔥'];
     menu.innerHTML = `
-      <div class="ctx-emoji-row">${emojis.map(em=>`<button data-em="${em}">${em}</button>`).join('')}</div>
+      <div class="ctx-emoji-row">${emojis.map((em,i)=>`<button data-em="${em}" style="--i:${i}">${em}</button>`).join('')}</div>
       <div class="ctx-item" data-act="reply"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14l-4-4 4-4M5 10h14"/></svg>Reply</div>
       <div class="ctx-item" data-act="save"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>Save to Mind</div>
       <div class="ctx-item" data-act="copy"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</div>
@@ -654,7 +731,9 @@ export function runPrototype(): () => void {
     menu.querySelectorAll('button[data-em]').forEach(b=>{
       b.addEventListener('click', ()=>{
         msg.reactions = msg.reactions||[]; msg.reactions.push({emoji:b.dataset.em});
-        closeOverlay(); renderChat(); toast('Reaction added');
+        absorbEmojiInto(b.dataset.em, b, bubble);
+        closeOverlay();
+        setTimeout(()=>{ renderChat(); popLandedReaction(msg.id); toast('Reaction added'); }, 300);
       });
     });
     menu.querySelectorAll('.ctx-item').forEach(it=>{
@@ -792,6 +871,11 @@ export function runPrototype(): () => void {
     menu.style.top = Math.max(60, top-70)+'px';
     left = Math.min(left, pr.width-210);
     menu.style.left = Math.max(14,left)+'px';
+    // Scale out from the element the menu belongs to, so it reads as oozing
+    // out of that bubble rather than materialising at an arbitrary point.
+    const ox = (r.left - pr.left + r.width/2) - parseFloat(menu.style.left);
+    const oy = (r.top  - pr.top  + r.height/2) - parseFloat(menu.style.top);
+    menu.style.transformOrigin = `${ox}px ${oy}px`;
   }
   function showBackdrop(on){ $('#ctx-backdrop').classList.toggle('show', on); }
   function closeOverlay(){
@@ -1102,6 +1186,11 @@ export function runPrototype(): () => void {
       body.querySelectorAll('.mind-card').forEach((el,i)=>{ el.style.animationDelay=(i*40)+'ms'; });
     }
   }
+  // Teardown handle for the one 3D moment (see lib/liquid-orb.ts).
+  let orbDispose = null;
+  function teardownOrb(){
+    if(orbDispose){ try{ orbDispose(); }catch{} orbDispose = null; }
+  }
   function showMindEmpty(on, isSearch){
     let ex = $('#mind-empty');
     if(on){
@@ -1111,10 +1200,11 @@ export function runPrototype(): () => void {
         ex.className='empty-state';
         $('#mind-scroll').insertBefore(ex, $('.demo-toggle'));
       }
+      teardownOrb();
       ex.innerHTML = isSearch ? `
         <div class="es-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
         <h3>No matches</h3><p>Try a different search term.</p>` : `
-        <div class="es-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><path d="M10 21h4"/></svg></div>
+        <div class="es-orb" id="mind-orb"></div>
         <h3>Nothing saved yet</h3><p>Long‑press anything in a chat — a message, photo, poll — and save it here to find it again fast.</p>
         <button class="empty-cta" id="empty-cta-save">Save something</button>`;
       if(!isSearch){
@@ -1122,8 +1212,19 @@ export function runPrototype(): () => void {
           const cta = document.getElementById('empty-cta-save');
           if(cta) cta.addEventListener('click', ()=>{ state.mindEmpty=false; applyMindFilter(); toast('Demo item saved'); });
         },0);
+        // Lazy: three.js is only fetched the first time this screen is shown.
+        const host = ex.querySelector('#mind-orb');
+        if(host){
+          import('./liquid-orb')
+            .then(m=>m.mountLiquidOrb(host, 132))
+            .then(d=>{
+              // the empty state may have been torn down while three was loading
+              if(document.body.contains(host)) orbDispose = d; else d();
+            })
+            .catch(()=>{ host.classList.add('es-orb-fallback'); });
+        }
       }
-    } else if(ex){ ex.remove(); }
+    } else if(ex){ teardownOrb(); ex.remove(); }
   }
   function renderHero(){
     const hero = $('#collection-hero');
