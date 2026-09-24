@@ -2942,7 +2942,7 @@
 /* ---- inbox ---- */
 .profileText b { font: var(--t-headline); letter-spacing: -.01em; }
 .profileText span { font: var(--t-footnote); }
-.searchBar input { font: var(--t-subhead); }
+.searchBar input { font: var(--t-subhead); text-overflow: ellipsis; }
 .chip { font: var(--t-subhead); font-weight: var(--w-control); }
 .chipBadge { font: var(--t-footnote); font-weight: var(--w-control); }
 .rowName { font: var(--t-headline); letter-spacing: -.01em; }
