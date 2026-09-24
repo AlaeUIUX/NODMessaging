@@ -212,9 +212,13 @@ export function runPrototype(): () => void {
       thread.unshift(...older);
       loader.remove();
       let ref = body.firstElementChild;
-      older.forEach(m=>{
+      // Animate the .msg-stack, not the row, so avatars stay put while bubbles
+      // launch (see .msg-row.mine .msg-stack.msg-enter in globals.css). Staggered
+      // per index — generic burst support, ready for any future multi-message send.
+      older.forEach((m,i)=>{
         const el = renderMessage(m);
-        el.classList.add('msg-enter');
+        const stack = el.querySelector('.msg-stack');
+        if(stack){ stack.classList.add('msg-enter'); stack.style.animationDelay = (i*45)+'ms'; }
         body.insertBefore(el, ref);
       });
       const newHeight = body.scrollHeight;
@@ -310,7 +314,7 @@ export function runPrototype(): () => void {
     thread.push(msg);
     const body = $('#chat-body');
     const el = renderMessage(msg);
-    el.classList.add('msg-enter');
+    el.querySelector('.msg-stack')?.classList.add('msg-enter');
     body.appendChild(el);
     body.scrollTop = body.scrollHeight;
     input.value='';
@@ -326,7 +330,7 @@ export function runPrototype(): () => void {
       const rmsg = {id:'m'+Date.now()+1, from:'me'==='them'?'me':'them', who: state.activeChat==='group'?'Charles':undefined, av:AV.charles, type:'text', text:reply};
       thread.push(rmsg);
       const el2 = renderMessage(rmsg);
-      el2.classList.add('msg-enter');
+      el2.querySelector('.msg-stack')?.classList.add('msg-enter');
       body.appendChild(el2);
       body.scrollTop = body.scrollHeight;
       msg.status='read';
@@ -345,20 +349,27 @@ export function runPrototype(): () => void {
       if(bub) bub.insertAdjacentHTML('afterend', html);
     }
   }
+  let typingExitTimer=null;
   function showTyping(on){
     const body = $('#chat-body');
     let el = $('#typing-row');
     $('#chat-status').textContent = on ? (state.activeChat==='group'?'Charles is typing…':'typing…') : 'Active now';
     $('#chat-status').classList.toggle('typing', on);
     if(on){
-      if(el) return;
+      clearTimeout(typingExitTimer);
+      if(el){ el.classList.remove('typing-row-exit'); el.classList.add('typing-row-enter'); return; }
       const row = document.createElement('div');
-      row.className='msg-row'; row.id='typing-row';
+      row.className='msg-row typing-row-enter'; row.id='typing-row';
       row.innerHTML = `<img class="msg-avatar" src="${AV.charles}"><div class="msg-stack"><div class="typing-bubble"><span></span><span></span><span></span></div></div>`;
-      row.classList.add('msg-enter');
       body.appendChild(row);
       body.scrollTop = body.scrollHeight;
-    } else if(el){ el.remove(); }
+    } else if(el){
+      // Shrink out instead of an abrupt remove(); see .typing-row-exit in globals.css.
+      el.classList.remove('typing-row-enter');
+      el.classList.add('typing-row-exit');
+      clearTimeout(typingExitTimer);
+      typingExitTimer = setTimeout(()=>{ el.remove(); }, 190);
+    }
   }
   function pickAutoReply(userText){
     const t = userText.toLowerCase();
@@ -547,6 +558,11 @@ export function runPrototype(): () => void {
     const isMine = swipeState.msg.from==='me';
     const clamped = isMine ? Math.min(0, Math.max(dx,-70)) : Math.max(0, Math.min(dx,70));
     if(swipeState.moved){
+      // No CSS transition while the drag is live — see .bubble.dragging in
+      // globals.css. Without this, .bubble's base transition (needed for a
+      // smooth release snap-back) was also easing every pointermove update,
+      // making the bubble visibly lag behind the finger during the swipe.
+      swipeState.bubble.classList.add('dragging');
       swipeState.bubble.style.transform = `translateX(${clamped}px)`;
       const hint = swipeState.bubble.querySelector('.swipe-hint');
       if(hint) hint.style.opacity = Math.min(1, Math.abs(clamped)/50);
@@ -555,6 +571,7 @@ export function runPrototype(): () => void {
   function endSwipe(){
     if(!swipeState) return;
     clearTimeout(swipeState.longTimer);
+    swipeState.bubble.classList.remove('dragging');
     const dx = swipeState.bubble.style.transform.match(/-?\d+/);
     const val = dx ? parseInt(dx[0]) : 0;
     if(swipeState.moved && Math.abs(val) > 46){
@@ -852,7 +869,7 @@ export function runPrototype(): () => void {
       const msg = {id:'v'+Date.now(), from:'me', type:'voice', dur:'0:'+String(recSecs).padStart(2,'0'), status:'sent'};
       thread.push(msg);
       const el = renderMessage(msg);
-      el.classList.add('msg-enter');
+      el.querySelector('.msg-stack')?.classList.add('msg-enter');
       $('#chat-body').appendChild(el);
       $('#chat-body').scrollTop = 999999;
       setTimeout(()=>{ msg.status='delivered'; refreshStatusLine(msg); }, 600);
@@ -910,10 +927,10 @@ export function runPrototype(): () => void {
       inner = `<div class="mc-icon-fill"><div class="mc-pin">${typeIconSvg('location',13)}</div></div>`;
     } else if(c.kind==='poll'){
       mediaStyle += 'background:#fff;';
-      inner = `<div class="mc-bars">${c.poll.map((p,i)=>`<div class="bar-track"><div class="bar-fill ${i>0?'alt':''}" style="width:${p.pct}%"></div></div>`).join('')}</div>`;
+      inner = `<div class="mc-bars">${c.poll.map((p,i)=>`<div class="bar-track"><div class="bar-fill ${i>0?'alt':''}" style="transform:scaleX(${p.pct/100})"></div></div>`).join('')}</div>`;
     } else if(c.kind==='checklist'){
       mediaStyle += 'background:#fff;';
-      inner = `<div class="mc-bars" style="padding:0 16px;">${c.items.slice(0,3).map(()=>`<div class="bar-track" style="height:9px;"><div class="bar-fill alt" style="width:${40+Math.random()*40}%"></div></div>`).join('')}</div>`;
+      inner = `<div class="mc-bars" style="padding:0 16px;">${c.items.slice(0,3).map(()=>`<div class="bar-track" style="height:9px;"><div class="bar-fill alt" style="transform:scaleX(${(40+Math.random()*40)/100})"></div></div>`).join('')}</div>`;
     } else if(c.kind==='note'){
       mediaStyle += 'background:#fff;';
       inner = `<div class="mc-quote">"${(c.quote||'').slice(0,90)}${(c.quote||'').length>90?'…':''}"</div>`;
@@ -1218,6 +1235,9 @@ export function runPrototype(): () => void {
     const dx = e.clientX - cardSwipe.startX;
     if(Math.abs(dx)>6){ cardSwipe.moved=true; clearTimeout(cardSwipe.longTimer); }
     if(cardSwipe.moved && dx<0){
+      // See the matching comment on the message-bubble swipe above — same fix,
+      // same bug (.mind-card's base transition was fighting the live drag).
+      cardSwipe.card.classList.add('dragging');
       cardSwipe.card.style.transform = `translateX(${Math.max(dx,-90)}px)`;
       cardSwipe.card.style.background = dx<-40 ? '#fff5f5' : '';
     }
@@ -1225,6 +1245,7 @@ export function runPrototype(): () => void {
   function endCardSwipe(e){
     if(!cardSwipe) return;
     clearTimeout(cardSwipe.longTimer);
+    cardSwipe.card.classList.remove('dragging');
     const t = cardSwipe.card.style.transform.match(/-?\d+/);
     const val = t?parseInt(t[0]):0;
     if(cardSwipe.moved && val < -60){
@@ -1247,7 +1268,7 @@ export function runPrototype(): () => void {
     cardSwipe=null;
   }
   mindBody.addEventListener('pointerup', endCardSwipe);
-  mindBody.addEventListener('pointerleave', ()=>{ if(cardSwipe && cardSwipe.moved){ cardSwipe.card.style.transform=''; cardSwipe.card.style.background=''; cardSwipe=null; } });
+  mindBody.addEventListener('pointerleave', ()=>{ if(cardSwipe && cardSwipe.moved){ cardSwipe.card.classList.remove('dragging'); cardSwipe.card.style.transform=''; cardSwipe.card.style.background=''; cardSwipe=null; } });
 
   mindBody.addEventListener('click', e=>{
     const pinBtn = e.target.closest('.mc-pin-btn');
@@ -1355,7 +1376,7 @@ export function runPrototype(): () => void {
     let media='';
     if(c.kind==='photo') media = `<div class="sheet-media"><img src="${c.img.replace('w=400','w=700')}"></div>`;
     else if(c.kind==='poll'){
-      media = `<div class="sheet-poll">${c.poll.map((p,i)=>`<div class="poll-opt" data-i="${i}"><div class="po-fill" style="width:${p.pct}%"></div><div class="po-row"><span>${p.label}</span><span class="po-pct">${p.pct}%</span></div></div>`).join('')}</div>`;
+      media = `<div class="sheet-poll">${c.poll.map((p,i)=>`<div class="poll-opt" data-i="${i}"><div class="po-fill" style="transform:scaleX(${p.pct/100})"></div><div class="po-row"><span>${p.label}</span><span class="po-pct">${p.pct}%</span></div></div>`).join('')}</div>`;
     } else if(c.kind==='checklist'){
       media = `<div class="sheet-poll">${c.items.map(it=>`<label class="poll-opt" style="display:flex;align-items:center;gap:10px;cursor:pointer;"><input type="checkbox" style="width:16px;height:16px;accent-color:#00359e;"><span style="position:relative;z-index:1;">${it}</span></label>`).join('')}</div>`;
     } else if(c.kind==='location'){
@@ -1402,7 +1423,7 @@ export function runPrototype(): () => void {
           const total = c.poll.reduce((a,p)=>a+p.pct,0);
           c.poll.forEach(p=> p.pct = Math.round(p.pct/total*100));
           sheet.querySelectorAll('.poll-opt[data-i]').forEach((el,j)=>{
-            el.querySelector('.po-fill').style.width = c.poll[j].pct+'%';
+            el.querySelector('.po-fill').style.transform = `scaleX(${c.poll[j].pct/100})`;
             el.querySelector('.po-pct').textContent = c.poll[j].pct+'%';
           });
           toast('Vote updated');
