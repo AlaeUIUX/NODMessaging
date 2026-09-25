@@ -15,7 +15,7 @@ import { sendMessage as apiSend } from "./api";
 import { buildSeedState, CHATS, USERS } from "./seed";
 import { localStorageAdapter } from "./storage";
 import { createBroadcastTransport, prunePeers, PRESENCE_INTERVAL_MS, type Peer } from "./transport";
-import type { Attachment, Card, ChatState, DeliveryStatus, Message, TransportEvent } from "./types";
+import type { Attachment, Card, Chat, ChatState, DeliveryStatus, Message, TransportEvent } from "./types";
 
 /**
  * One id per browsing context, fixed at module load — two tabs get different
@@ -38,7 +38,8 @@ type Action =
   | { type: "hydrate"; data: ChatState }
   | { type: "append"; message: Message }
   | { type: "patch"; chatId: string; clientId: string; patch: Partial<Message> }
-  | { type: "status"; chatId: string; messageId: string; status: DeliveryStatus }
+  | { type: "status"; chatId: string; messageId: string; status: DeliveryStatus; byUserId?: string; at?: number }
+  | { type: "add-chat"; chat: Chat }
   | { type: "react"; chatId: string; messageId: string; emoji: string; userId: string; op: "add" | "remove" }
   | { type: "edit"; chatId: string; messageId: string; body: string; editedAt: number }
   | { type: "delete"; chatId: string; messageId: string; deletedAt: number }
@@ -82,7 +83,12 @@ function reducer(state: State, action: Action): State {
         if (m.id !== action.messageId) return m;
         // Never walk a status backwards (a late `delivered` must not undo `read`).
         const order: DeliveryStatus[] = ["failed", "pending", "sent", "delivered", "read"];
-        return order.indexOf(action.status) > order.indexOf(m.status) ? { ...m, status: action.status } : m;
+        const next = order.indexOf(action.status) > order.indexOf(m.status) ? { ...m, status: action.status } : m;
+        // Receipts are per person; the message status is the best of them.
+        if (action.status === "read" && action.byUserId && action.byUserId !== m.authorId && !m.readBy?.[action.byUserId]) {
+          return { ...next, readBy: { ...(m.readBy ?? {}), [action.byUserId]: action.at ?? Date.now() } };
+        }
+        return next;
       });
 
     case "react":
@@ -123,6 +129,17 @@ function reducer(state: State, action: Action): State {
       return mapMessages(state, action.chatId, (m) =>
         m.id === action.messageId ? { ...m, pinned: action.pinned } : m,
       );
+
+    case "add-chat":
+      if (state.data.chats.some((c) => c.id === action.chat.id)) return state;
+      return {
+        ...state,
+        data: {
+          ...state.data,
+          chats: [...state.data.chats, action.chat],
+          messages: { ...state.data.messages, [action.chat.id]: state.data.messages[action.chat.id] ?? [] },
+        },
+      };
 
     case "card":
       return mapMessages(state, action.chatId, (m) => (m.id === action.messageId ? { ...m, card: action.card } : m));
@@ -179,6 +196,8 @@ interface ChatContextValue {
   send: (chatId: string, body: string, opts?: { replyToId?: string | null; attachments?: Attachment[] }) => void;
   /** Sends a structured message; `summary` is what previews and quotes show. */
   sendCard: (chatId: string, card: Card, summary: string) => void;
+  /** Creates a group with the current user in it, and returns it. */
+  createGroup: (name: string, memberIds: string[]) => Chat;
   /** Replaces a card's state (votes, ticks, RSVPs…) and syncs it. */
   updateCard: (message: Message, update: (card: Card) => Card) => void;
   retry: (message: Message) => void;
@@ -194,6 +213,20 @@ interface ChatContextValue {
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
+
+/** Lets the page around the prototype react to activity inside it (see StageField). */
+function signal(dir: "out" | "in") {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("nod:activity", { detail: { dir } }));
+}
+
+/** A little hand-drawn smiley, for simulated doodle replies. */
+function smiley(): number[][] {
+  const ring: number[] = [];
+  for (let a = 0; a <= Math.PI * 2 + 0.01; a += Math.PI / 16) ring.push(+(230 + Math.cos(a) * 34).toFixed(1), +(150 + Math.sin(a) * 34).toFixed(1));
+  const smile: number[] = [];
+  for (let a = 0.2 * Math.PI; a <= 0.8 * Math.PI + 0.01; a += Math.PI / 14) smile.push(+(230 + Math.cos(a) * 20).toFixed(1), +(152 + Math.sin(a) * 18).toFixed(1));
+  return [ring, [218, 140, 218.5, 141], [242, 140, 242.5, 141], smile];
+}
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, {
@@ -263,6 +296,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         case "message": {
           if (event.message.authorId === meRef.current) return;
           dispatch({ type: "append", message: { ...event.message, status: "delivered" } });
+          signal("in");
           dispatch({ type: "typing", chatId: event.message.chatId, userId: event.message.authorId, isTyping: false });
           // Acknowledge receipt, then read if this client is looking at the chat.
           t.publish({
@@ -285,7 +319,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
         case "status":
           if (event.byUserId === meRef.current) return;
-          dispatch({ type: "status", chatId: event.chatId, messageId: event.messageId, status: event.status });
+          dispatch({ type: "status", chatId: event.chatId, messageId: event.messageId, status: event.status, byUserId: event.byUserId, at: Date.now() });
+          break;
+        case "chat":
+          dispatch({ type: "add-chat", chat: event.chat });
           break;
         case "typing":
           if (event.userId === meRef.current) return;
@@ -365,9 +402,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
   }, [publish]);
 
+  // Timers (simulated members, card updates) must read the freshest state,
+  // not the snapshot captured when they were scheduled.
+  const latest = useRef(state.data);
+  useEffect(() => { latest.current = state.data; }, [state.data]);
+
   const simulate = useCallback(
     (sent: Message) => {
-      const chat = CHATS.find((c) => c.id === sent.chatId);
+      const chat = latest.current.chats.find((c) => c.id === sent.chatId) ?? CHATS.find((c) => c.id === sent.chatId);
       const counterpart = chat?.memberIds.find((id) => id !== sent.authorId) ?? "charles";
 
       setTimeout(() => dispatch({ type: "status", chatId: sent.chatId, messageId: sent.id, status: "delivered" }), 700);
@@ -395,8 +437,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           attachments: [],
         };
         dispatch({ type: "append", message: reply });
-        dispatch({ type: "status", chatId: sent.chatId, messageId: sent.id, status: "read" });
+        signal("in");
+        dispatch({ type: "status", chatId: sent.chatId, messageId: sent.id, status: "read", byUserId: counterpart, at: Date.now() });
       }, 2600);
+      // In a group, everyone else reads it too, one by one.
+      (chat?.memberIds ?? [])
+        .filter((id) => id !== sent.authorId && id !== counterpart)
+        .forEach((uid, i) => setTimeout(() => {
+          dispatch({ type: "status", chatId: sent.chatId, messageId: sent.id, status: "read", byUserId: uid, at: Date.now() });
+        }, 3400 + i * 1300));
     },
     [clearTypingLater],
   );
@@ -425,6 +474,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       };
 
       dispatch({ type: "append", message: optimistic });
+      signal("out");
 
       apiSend(optimistic)
         .then((accepted) => {
@@ -455,11 +505,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [peers.length, publish, simulate],
   );
 
-  // Card updates can come from timers (simulated members), so they must read
-  // the freshest card rather than the one captured when the timer was set.
-  const latest = useRef(state.data);
-  useEffect(() => { latest.current = state.data; }, [state.data]);
-
   const updateCard = useCallback<ChatContextValue["updateCard"]>(
     (message, update) => {
       const current = latest.current.messages[message.chatId]?.find((m) => m.id === message.id) ?? message;
@@ -481,7 +526,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   /** With nobody else online, the other members answer structured messages. */
   const simulateCard = useCallback(
     (sent: Message) => {
-      const chat = CHATS.find((c) => c.id === sent.chatId);
+      const chat = latest.current.chats.find((c) => c.id === sent.chatId) ?? CHATS.find((c) => c.id === sent.chatId);
       const others = (chat?.memberIds ?? []).filter((id) => id !== sent.authorId);
       const card = sent.card;
       if (!card || !others.length) return;
@@ -497,11 +542,39 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         others.forEach((uid, i) => act(1600 + i * 1200, (c) => (c.type === "event" ? { ...c, rsvps: { ...c.rsvps, [uid]: answers[i % answers.length] } } : c)));
       } else if (card.type === "payment" && card.mode === "request") {
         card.from.slice(0, 1).forEach((uid) => act(3200, (c) => (c.type === "payment" && !c.paidBy.includes(uid) ? { ...c, paidBy: [...c.paidBy, uid] } : c)));
+      } else if (card.type === "sketch") {
+        // Someone adds a little smiley to the corner of the doodle.
+        const by = others[0];
+        act(2600, (c) => (c.type === "sketch"
+          ? { ...c, strokes: [...c.strokes, ...smiley().map((pts, i) => ({ id: `sim-${Date.now()}-${i}`, by, color: "blue", size: 4, pts }))] }
+          : c));
+      } else if (card.type === "wheel") {
+        const by = others[0];
+        act(4200, (c) => (c.type === "wheel" && c.spins.length === 0
+          ? { ...c, spins: [{ by, index: Math.floor(Math.random() * c.options.length), at: Date.now() }] }
+          : c));
       } else if (card.type === "checklist" && card.everyoneCanEdit && card.items.length) {
         act(2400, (c) => (c.type === "checklist" ? { ...c, items: c.items.map((it, j) => (j === 0 && !it.doneBy ? { ...it, doneBy: others[0] } : it)) } : c));
       }
     },
     [updateCard],
+  );
+
+  const createGroup = useCallback<ChatContextValue["createGroup"]>(
+    (name, memberIds) => {
+      const tones = ["plum", "sage", "denim", "clay", "ochre"] as const;
+      const chat: Chat = {
+        id: `group-${Date.now().toString(36)}`,
+        name: name.trim() || "New group",
+        kind: "group",
+        memberIds: [meRef.current, ...memberIds.filter((id) => id !== meRef.current)],
+        tone: tones[Math.floor(Math.random() * tones.length)],
+      };
+      dispatch({ type: "add-chat", chat });
+      publish({ type: "chat", chat });
+      return chat;
+    },
+    [publish],
   );
 
   const sendCard = useCallback<ChatContextValue["sendCard"]>(
@@ -526,6 +599,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         attachments: [],
       };
       dispatch({ type: "append", message });
+      signal("out");
       apiSend(message)
         .then((accepted) => {
           const out: Message = { ...accepted, card };
@@ -543,6 +617,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     (message, emoji) => {
       const mine = message.reactions.find((r) => r.emoji === emoji)?.userIds.includes(meRef.current);
       const op = mine ? "remove" : "add";
+      if (op === "add") signal("out");
       dispatch({ type: "react", chatId: message.chatId, messageId: message.id, emoji, userId: meRef.current, op });
       publish({ type: "reaction", chatId: message.chatId, messageId: message.id, emoji, userId: meRef.current, op });
     },
@@ -614,10 +689,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ChatContextValue>(
     () => ({
-      state, me, setMe, peers, send, sendCard, updateCard, retry, toggleReaction, editMessage,
+      state, me, setMe, peers, send, sendCard, updateCard, createGroup, retry, toggleReaction, editMessage,
       deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead,
     }),
-    [state, me, setMe, peers, send, sendCard, updateCard, retry, toggleReaction, editMessage,
+    [state, me, setMe, peers, send, sendCard, updateCard, createGroup, retry, toggleReaction, editMessage,
       deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead],
   );
 

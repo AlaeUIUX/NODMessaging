@@ -36,15 +36,30 @@ export type Card =
       /** Request: who is asked to pay. Sent: the recipient. */
       from: string[];
       paidBy: string[];
-    };
+    }
+  /* Artifacts: small, playful apps that live in the thread. */
+  | { type: "sketch"; prompt: string; strokes: SketchStroke[] }
+  | { type: "tictactoe"; players: [string, string | null]; board: (string | null)[] }
+  | { type: "wheel"; question: string; options: string[]; spins: { by: string; index: number; at: number }[] };
+
+/** One pen stroke on a shared doodle; points are x,y pairs in a 300×220 space. */
+export interface SketchStroke { id: string; by: string; color: string; size: number; pts: number[] }
 
 export interface Attachment {
   id: string;
   kind: "image" | "file";
   name: string;
   size: number;
-  /** Data URL for images small enough to inline; undefined for large/opaque files. */
+  /** Inline bytes (seeded demo files only). */
   dataUrl?: string;
+  /** A remote file (seeded demo photos). */
+  url?: string;
+  /** Bytes live in IndexedDB under the attachment id (see lib/chat/media). */
+  stored?: "idb";
+  mime?: string;
+  /** Natural image size, so photos reserve their shape before loading. */
+  width?: number;
+  height?: number;
 }
 
 export interface Reaction {
@@ -76,6 +91,8 @@ export interface Message {
   attachments: Attachment[];
   /** Structured messages only. */
   card?: Card;
+  /** Who has read this message, and when (ms). */
+  readBy?: Record<string, number>;
   /** Voice notes only. */
   durationMs?: number;
   waveform?: number[];
@@ -120,6 +137,7 @@ export type TransportEvent =
   | { type: "delete"; chatId: string; messageId: string; deletedAt: number }
   | { type: "pin"; chatId: string; messageId: string; pinned: boolean }
   | { type: "card"; chatId: string; messageId: string; card: Card }
+  | { type: "chat"; chat: Chat }
   | { type: "presence"; clientId: string; userId: string; at: number }
   | { type: "presence-bye"; clientId: string };
 

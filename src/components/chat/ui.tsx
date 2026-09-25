@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import type { Chat, User } from "@/lib/chat/types";
+import type { Chat, Message, User } from "@/lib/chat/types";
 import { IconBell, IconCamera, IconImage, IconLocation } from "./Icons";
 import styles from "./chat.module.css";
 
@@ -18,6 +18,8 @@ export interface ChatUi {
   toast: (text: string) => void;
   /** Resolves true when the permission is (or becomes) granted. */
   ask: (kind: PermissionKind) => Promise<boolean>;
+  /** Opens a photo full screen, or a collection's grid ("all"). */
+  openMedia: (message: Message, index: number | "all") => void;
 }
 
 const Ctx = createContext<ChatUi | null>(null);

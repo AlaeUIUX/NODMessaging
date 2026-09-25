@@ -16,6 +16,8 @@ import { IconBack, IconCheck, IconChevron, IconPhone } from "./Icons";
 import MessageList from "./MessageList";
 import MessageOverlay from "./MessageOverlay";
 import MessageRow, { type BubblePos } from "./MessageRow";
+import { ArtifactGallery, SketchBuilder, WheelBuilder } from "./Artifacts";
+import { MediaGrid, MediaViewer, ReceiptSheet } from "./MediaViewer";
 import ReactionSheet from "./ReactionSheet";
 import StatusBar from "./StatusBar";
 import { ChatUiProvider, getPermission, PermissionAlert, setPermission, type PermissionKind } from "./ui";
@@ -29,7 +31,14 @@ interface MenuState {
   armed: boolean;
 }
 
-export default function ChatView({ chat, leaving, onBack }: { chat: Chat; leaving: boolean; onBack: () => void }) {
+const EDGE = 24;
+
+export default function ChatView({ chat, leaving, onBack }: {
+  chat: Chat;
+  leaving: boolean;
+  /** `immediate` when a swipe-back already animated the screen away. */
+  onBack: (immediate?: boolean) => void;
+}) {
   const {
     state, me, peers, send, sendCard, retry, toggleReaction, editMessage, deleteMessage,
     togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead,
@@ -41,7 +50,8 @@ export default function ChatView({ chat, leaving, onBack }: { chat: Chat; leavin
   const [sheetFor, setSheetFor] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
-  const [toast, setToast] = useState<{ text: string; id: number } | null>(null);
+  const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean } | null>(null);
+  const [viewer, setViewer] = useState<{ message: Message; index: number } | null>(null);
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const [overlaySheet, setOverlaySheet] = useState<ReactNode>(null);
   const [alert, setAlert] = useState<{ kind: PermissionKind; resolve: (ok: boolean) => void } | null>(null);
@@ -92,7 +102,9 @@ export default function ChatView({ chat, leaving, onBack }: { chat: Chat; leavin
   const flash = (text: string) => {
     const id = Date.now();
     setToast({ text, id });
-    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 1800);
+    // Fade out before unmounting, so toasts leave as gently as they arrive.
+    setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), 1800);
+    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 2020);
   };
 
   /** Asks for a permission the way the OS would: once, then remembered. */
@@ -174,11 +186,88 @@ export default function ChatView({ chat, leaving, onBack }: { chat: Chat; leavin
       case "request":
         setOverlaySheet(<PaymentBuilder mode={kind} members={members} onSend={shareCard} onClose={closeSheet} />);
         return;
+      case "sketch":
+        setOverlaySheet(<SketchBuilder onSend={shareCard} onClose={closeSheet} />);
+        return;
+      case "wheel":
+        setOverlaySheet(<WheelBuilder onSend={shareCard} onClose={closeSheet} />);
+        return;
+      case "tictactoe":
+        sendCard(chat.id, { type: "tictactoe", players: [me, null], board: Array(9).fill(null) }, "Tic-tac-toe: who's in?");
+        return;
+      case "gallery":
+        setOverlaySheet(<ArtifactGallery onClose={closeSheet} onPick={(k) => startFlow(k)} />);
+        return;
     }
   };
 
   const pickFiles = (list: FileList | null) => {
     if (list?.length) setIncoming({ files: Array.from(list), id: Date.now() });
+  };
+
+  /** One photo opens full screen; a collection opens its grid first. */
+  const openMedia = (message: Message, index: number | "all") => {
+    if (index === "all") {
+      setOverlaySheet(<MediaGrid message={message} onClose={closeSheet} onPick={(i) => setViewer({ message, index: i })} />);
+    } else {
+      setViewer({ message, index });
+    }
+  };
+
+  // Interactive swipe back: drag from the left edge and the inbox follows.
+  const edge = useRef<{ x: number; dx: number; t: number } | null>(null);
+  const inboxEl = () => screenRef.current?.parentElement?.querySelector<HTMLElement>("[data-inbox-screen]") ?? null;
+  const paint = (dx: number) => {
+    const el = screenRef.current;
+    const width = el?.offsetWidth ?? 1;
+    const p = Math.min(1, Math.max(0, dx / width));
+    if (el) el.style.transform = `translateX(${dx}px)`;
+    const inbox = inboxEl();
+    if (inbox) {
+      inbox.style.transform = `translateX(${-28 * (1 - p)}%)`;
+      inbox.style.filter = `brightness(${0.94 + 0.06 * p})`;
+    }
+  };
+  const settle = (to: "back" | "stay") => {
+    const el = screenRef.current;
+    const inbox = inboxEl();
+    [el, inbox].forEach((x) => { if (x) x.style.transition = "transform 340ms cubic-bezier(.22, 1, .36, 1), filter 340ms cubic-bezier(.22, 1, .36, 1)"; });
+    if (to === "back") {
+      paint(el?.offsetWidth ?? 400);
+      setTimeout(() => {
+        [el, inbox].forEach((x) => { if (x) { x.style.transition = ""; x.style.transform = ""; x.style.filter = ""; } });
+        onBack(true);
+      }, 340);
+    } else {
+      paint(0);
+      setTimeout(() => {
+        [el, inbox].forEach((x) => { if (x) { x.style.transition = ""; x.style.transform = ""; x.style.filter = ""; } });
+      }, 340);
+    }
+  };
+  const onEdgeDown = (e: React.PointerEvent) => {
+    const el = screenRef.current;
+    if (!el || menu || viewer || overlaySheet || alert) return;
+    const x = e.clientX - el.getBoundingClientRect().left;
+    if (x > EDGE) return;
+    // Claim edge drags before a bubble underneath starts its own gesture.
+    e.stopPropagation();
+    edge.current = { x: e.clientX, dx: 0, t: performance.now() };
+    el.setPointerCapture(e.pointerId);
+    el.style.animation = "none";
+  };
+  const onEdgeMove = (e: React.PointerEvent) => {
+    if (!edge.current) return;
+    edge.current.dx = Math.max(0, e.clientX - edge.current.x);
+    paint(edge.current.dx);
+  };
+  const onEdgeUp = () => {
+    const d = edge.current;
+    edge.current = null;
+    if (!d) return;
+    const width = screenRef.current?.offsetWidth ?? 400;
+    const velocity = d.dx / Math.max(1, performance.now() - d.t);
+    settle(d.dx > width * 0.4 || velocity > 0.6 ? "back" : "stay");
   };
 
   const jumpTo = (messageId: string) => {
@@ -213,17 +302,22 @@ export default function ChatView({ chat, leaving, onBack }: { chat: Chat; leavin
   const menuMessage = menu ? messages.find((m) => m.id === menu.message.id) ?? menu.message : null;
 
   return (
-    <ChatUiProvider value={{ chat, members, openSheet: setOverlaySheet, closeSheet, toast: flash, ask }}>
+    <ChatUiProvider value={{ chat, members, openSheet: setOverlaySheet, closeSheet, toast: flash, ask, openMedia }}>
     <div
       ref={screenRef}
       className={`${styles.screen} ${styles.chatScreen} ${leaving ? styles.leaving : ""}`}
+      data-chat-screen
+      onPointerDownCapture={onEdgeDown}
+      onPointerMove={onEdgeMove}
+      onPointerUp={onEdgeUp}
+      onPointerCancel={onEdgeUp}
       style={{ ["--chat-tone" as string]: TONES[identity.tone] }}
     >
       <StatusBar />
       <div className={styles.edgeTop} />
 
       <header className={styles.chatHeader}>
-        <button className={`${styles.circleBtn} ${styles.glass}`} onClick={onBack} aria-label="Back to messages">
+        <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => onBack()} aria-label="Back to messages">
           <IconBack />
         </button>
         <div className={styles.titleCapsule}>
@@ -271,6 +365,8 @@ export default function ChatView({ chat, leaving, onBack }: { chat: Chat; leavin
             onMenu={(m, bubble, armed) => openMenu(m, row.pos, bubble, armed)}
             onToggleReaction={toggleReaction}
             onShowReactions={(m) => setSheetFor(m.id)}
+            onShowReceipts={(m) => setOverlaySheet(<ReceiptSheet message={m} chat={chat} onClose={closeSheet} />)}
+            isGroup={chat.kind === "group"}
             onRetry={retry}
             onJumpTo={jumpTo}
           />
@@ -311,7 +407,7 @@ export default function ChatView({ chat, leaving, onBack }: { chat: Chat; leavin
       <input ref={fileInput} type="file" multiple hidden onChange={(e) => { pickFiles(e.target.files); e.target.value = ""; }} />
 
       {toast && (
-        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong}`} role="status">
+        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${toast.leaving ? styles.toastLeaving : ""}`} role="status">
           <IconCheck />
           {toast.text}
         </div>
@@ -349,6 +445,7 @@ export default function ChatView({ chat, leaving, onBack }: { chat: Chat; leavin
       )}
 
       {overlaySheet}
+      {viewer && <MediaViewer message={viewer.message} start={viewer.index} onClose={() => setViewer(null)} />}
       {alert && <PermissionAlert kind={alert.kind} onResolve={alert.resolve} />}
     </div>
     </ChatUiProvider>

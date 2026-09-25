@@ -8,8 +8,8 @@ const geist = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "NOD — Messaging, quietly",
-  description: "NOD is a calm, private messenger. Reactions, replies and voice notes with motion that stays out of the way.",
+  title: "NOD — Where projects get talked through",
+  description: "NOD is a messenger for people who run projects: Spaces for every team, polls, checklists and payments right in the thread, and Mind to keep what matters.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -5,7 +5,7 @@ import { initials } from "@/lib/chat/avatar";
 import { isGrouped, userById } from "@/lib/chat/store";
 import type { AvatarTone, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
-import { IconLock } from "./Icons";
+import { IconArrowUp, IconLock } from "./Icons";
 import type { BubblePos } from "./MessageRow";
 import styles from "./chat.module.css";
 
@@ -107,8 +107,52 @@ export default function MessageList({
 
   const lastOwnIndex = messages.map((m) => m.authorId).lastIndexOf(meId);
 
+  // Far from the bottom, a button takes you back — and counts what arrived meanwhile.
+  const [away, setAway] = useState(false);
+  const [unseen, setUnseen] = useState(0);
+  const seenCount = useRef(messages.length);
+  useEffect(() => {
+    const added = messages.length - seenCount.current;
+    seenCount.current = messages.length;
+    if (added > 0 && away) setUnseen((n) => n + added);
+  }, [messages.length, away]);
+  // While a jump is scrolling down, don't bring the button back mid-flight.
+  const jumping = useRef(false);
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const far = el.scrollHeight - el.scrollTop - el.clientHeight > 600;
+    if (!far) jumping.current = false;
+    if (far && jumping.current) return;
+    if (far !== away) setAway(far);
+    if (!far && unseen) setUnseen(0);
+  };
+  const jumpToLatest = () => {
+    jumping.current = true;
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    setAway(false);
+    setUnseen(0);
+  };
+
+  // The typing bubble fades out instead of vanishing when someone stops.
+  // Derived during render (React's "adjust state on prop change" pattern).
+  const typingNow = typingUsers[0] ?? null;
+  const [prevTyping, setPrevTyping] = useState(typingNow);
+  const [typingExit, setTypingExit] = useState<string | null>(null);
+  if (typingNow !== prevTyping) {
+    setPrevTyping(typingNow);
+    setTypingExit(typingNow ? null : prevTyping);
+  }
+  useEffect(() => {
+    if (!typingExit) return;
+    const t = setTimeout(() => setTypingExit(null), 220);
+    return () => clearTimeout(t);
+  }, [typingExit]);
+  const typingShown = typingNow ? { user: typingNow, leaving: false } : typingExit ? { user: typingExit, leaving: true } : null;
+
   return (
-    <div className={styles.thread} ref={scrollRef} data-thread>
+    <>
+    <div className={styles.thread} ref={scrollRef} data-thread onScroll={onScroll}>
       <div className={styles.threadFill} />
 
       {hasEarlier ? (
@@ -156,18 +200,20 @@ export default function MessageList({
               avatarSlot: isGroupChat && !isMine,
               showAvatar: isGroupChat && !isMine && (pos === "last" || pos === "single"),
               showByline: isGroupChat && !isMine && (pos === "first" || pos === "single"),
-              showStatus: i === lastOwnIndex,
+              // Receipts only while the conversation is still on your message:
+              // once three or more newer messages arrive, the line goes (a failure always stays).
+              showStatus: i === lastOwnIndex && (message.status === "failed" || messages.length - 1 - i < 3),
               isNew: !seenIds.current.has(message.id),
             })}
           </div>
         );
       })}
 
-      {typingUsers.length > 0 && (
-        <div className={`${styles.row} ${styles.theirs} ${styles.enterTheirs}`}>
+      {typingShown && (
+        <div className={`${styles.row} ${styles.theirs} ${typingShown.leaving ? styles.typingLeaving : styles.enterTheirs}`}>
           {isGroupChat && (
             <div className={styles.avatarSlot}>
-              <Avatar glyph={initials(userById(typingUsers[0]).fullName)} tone={userById(typingUsers[0]).tone} size={28} />
+              <Avatar glyph={initials(userById(typingShown.user).fullName)} tone={userById(typingShown.user).tone} size={28} />
             </div>
           )}
           <div className={styles.stack}>
@@ -178,5 +224,12 @@ export default function MessageList({
 
       <div className={styles.threadSpacer} />
     </div>
+    {away && (
+      <button className={`${styles.jumpLatest} ${styles.glassStrong}`} onClick={jumpToLatest} aria-label="Jump to latest messages">
+        {unseen > 0 && <span className={styles.jumpCount}>{unseen} new</span>}
+        <span className={styles.jumpArrow}><IconArrowUp size={18} /></span>
+      </button>
+    )}
+    </>
   );
 }

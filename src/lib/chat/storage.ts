@@ -100,7 +100,7 @@ export function migrate(stored: unknown): ChatState {
     version: CURRENT_VERSION,
     // Chats are static config (v3 dropped photo avatars for colour tones), so
     // always take the current list and backfill threads for any new chat.
-    chats: seed.chats,
+    chats: [...seed.chats, ...(raw.chats ?? []).filter((c) => !seed.chats.some((s) => s.id === c.id))],
     messages: mergeSeed(seed.messages, messages, archive),
     archive: { ...seed.archive, ...archive },
     lastReadAt: raw.lastReadAt ?? {},

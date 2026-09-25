@@ -22,7 +22,8 @@ const PILL_W = QUICK.length * 42 + 40 + 12;
 const MENU_W = 236;
 const GRID_W = 7 * 42 + 12;
 const CLOSE_MS = 220;
-const FLY_MS = 420;
+const DISMISS_COOLDOWN_MS = 500;
+const FLY_MS = 340;
 
 type Action = { id: string; label: string; icon: React.ReactNode; danger?: boolean; run: () => void };
 
@@ -57,6 +58,17 @@ export default function MessageOverlay({
   const flyerRef = useRef<HTMLSpanElement>(null);
   const firstItemRef = useRef<HTMLButtonElement>(null);
   const done = useRef(false);
+  // Lifting the finger that opened the menu (and the click browsers synthesise
+  // from it) must not dismiss it. Background taps and Escape wait out a short
+  // cooldown; deliberate picks (emoji, actions) are never delayed.
+  const canDismiss = useRef(false);
+  useEffect(() => {
+    const t = setTimeout(() => { canDismiss.current = true; }, DISMISS_COOLDOWN_MS);
+    return () => clearTimeout(t);
+  }, []);
+  const dismiss = () => {
+    if (canDismiss.current) close();
+  };
 
   const mine = new Set(message.reactions.filter((r) => r.userIds.includes(meId)).map((r) => r.emoji));
 
@@ -170,7 +182,7 @@ export default function MessageOverlay({
 
   useEffect(() => {
     if (!armed) firstItemRef.current?.focus({ preventScroll: true });
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") dismiss(); };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -180,7 +192,7 @@ export default function MessageOverlay({
 
   return (
     <div className={`${styles.overlay} ${closing ? styles.closing : ""}`} role="dialog" aria-label="Message actions">
-      <div className={styles.scrim} onClick={() => close()} />
+      <div className={styles.scrim} onClick={dismiss} />
 
       <div
         className={`${styles.focus} ${side}`}

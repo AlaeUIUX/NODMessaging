@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { renderBody, stripFormatting } from "@/lib/chat/markdown";
 import { userById } from "@/lib/chat/store";
 import type { Message } from "@/lib/chat/types";
 import { initials } from "@/lib/chat/avatar";
 import Avatar from "./Avatar";
 import CardView from "./CardView";
+import { FileRow, MediaBlock } from "./Media";
+import { useChatUi } from "./ui";
 import { Emoji, emojiCount, emojify } from "@/lib/chat/emoji";
-import { IconDownload, IconFile, IconPause, IconPlay, IconReply } from "./Icons";
+import { IconChevron, IconPause, IconPlay, IconReply } from "./Icons";
 import styles from "./chat.module.css";
 
 export type BubblePos = "single" | "first" | "middle" | "last";
@@ -91,46 +93,44 @@ function VoiceNote({ message, interactive }: { message: Message; interactive: bo
 }
 
 /** The bubble itself, shared by the thread and the long-press focus overlay. */
-function fileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
 /** Long-form posts (they open with a heading) render as a document, not a bubble. */
 export const isDoc = (m: Message) => m.kind === "text" && !m.deletedAt && /^# /.test(m.body);
 
+const hasPhotos = (m: Message) => !m.deletedAt && m.attachments.some((a) => a.kind === "image");
+
 export function BubbleBody({ message, interactive = true }: { message: Message; interactive?: boolean }) {
+  const ui = useChatUi();
   if (message.deletedAt) return <>Message deleted</>;
   if (message.kind === "card" && message.card) return <CardView message={message} interactive={interactive} />;
+  const files = message.attachments.filter((a) => a.kind !== "image");
+  const text = message.kind === "voice" ? (
+    <VoiceNote message={message} interactive={interactive} />
+  ) : message.body ? (
+    <>
+      {renderBody(message.body, { article: isDoc(message) })}
+      {message.editedAt && <span className={styles.edited}>Edited</span>}
+    </>
+  ) : null;
+
+  if (hasPhotos(message)) {
+    return (
+      <>
+        <MediaBlock message={message} onOpen={interactive ? (i) => ui.openMedia(message, i) : undefined} />
+        {(text || files.length > 0) && (
+          <div className={styles.caption}>
+            {text}
+            {files.map((a) => <FileRow key={a.id} a={a} />)}
+          </div>
+        )}
+      </>
+    );
+  }
   return (
     <>
-      {message.kind === "voice" ? (
-        <VoiceNote message={message} interactive={interactive} />
-      ) : (
-        <>
-          {renderBody(message.body, { article: isDoc(message) })}
-          {message.editedAt && <span className={styles.edited}>Edited</span>}
-        </>
-      )}
-      {message.attachments.length > 0 && (
+      {text}
+      {files.length > 0 && (
         <div className={styles.attachments}>
-          {message.attachments.map((a) =>
-            a.kind === "image" && a.dataUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={a.id} className={styles.attachImg} src={a.dataUrl} alt={a.name} />
-            ) : (
-              <div key={a.id} className={styles.fileRow}>
-                <span className={styles.fileIcon}><IconFile size={24} /></span>
-                <span className={styles.fileMeta}><b>{a.name}</b><small>{fileSize(a.size)}</small></span>
-                {a.dataUrl ? (
-                  <a className={styles.fileDownload} href={a.dataUrl} download={a.name} onClick={(e) => e.stopPropagation()}><IconDownload size={14} />Download</a>
-                ) : (
-                  <span className={styles.fileDownload} aria-disabled="true" title="Files over 1.5 MB aren't stored in this demo">Too large</span>
-                )}
-              </div>
-            ),
-          )}
+          {files.map((a) => <FileRow key={a.id} a={a} />)}
         </div>
       )}
     </>
@@ -143,6 +143,8 @@ export function bubbleClass(message: Message) {
     message.kind === "card" && !message.deletedAt ? styles.cardBubble : "",
     isDoc(message) ? styles.docBubble : "",
     message.deletedAt ? styles.deleted : "",
+    hasPhotos(message) ? styles.mediaBubble : "",
+    !message.deletedAt && !message.body && message.kind === "text" && !hasPhotos(message) && message.attachments.length ? styles.fileBubble : "",
     message.kind === "text" && !message.deletedAt && !message.attachments.length && isEmojiOnly(message.body) ? styles.emojiOnly : "",
   ].filter(Boolean).join(" ");
 }
@@ -156,6 +158,7 @@ interface Props {
   avatarSlot: boolean;
   showByline: boolean;
   showStatus: boolean;
+  isGroup: boolean;
   isNew: boolean;
   highlighted: boolean;
   focused: boolean;
@@ -164,6 +167,7 @@ interface Props {
   onMenu: (message: Message, bubble: HTMLElement, armed: boolean) => void;
   onToggleReaction: (message: Message, emoji: string) => void;
   onShowReactions: (message: Message) => void;
+  onShowReceipts: (message: Message) => void;
   onRetry: (message: Message) => void;
   onJumpTo: (messageId: string) => void;
 }
@@ -171,11 +175,13 @@ interface Props {
 type Mode = "idle" | "pending" | "swipe" | "menu";
 
 export default function MessageRow({
-  message, quoted, isMine, pos, showAvatar, avatarSlot, showByline, showStatus, isNew, highlighted, focused,
-  meId, onReply, onMenu, onToggleReaction, onShowReactions, onRetry, onJumpTo,
+  message, quoted, isMine, pos, showAvatar, avatarSlot, showByline, showStatus, isGroup, isNew, highlighted, focused,
+  meId, onReply, onMenu, onToggleReaction, onShowReactions, onShowReceipts, onRetry, onJumpTo,
 }: Props) {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const hintRef = useRef<HTMLSpanElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const suppressClick = useRef(false);
   const g = useRef({ mode: "idle" as Mode, x: 0, y: 0, armed: false, timer: 0 as unknown as ReturnType<typeof setTimeout> });
   const lastTap = useRef(0);
   const [burst, setBurst] = useState(0);
@@ -187,7 +193,7 @@ export default function MessageRow({
     const el = bubbleRef.current;
     if (el) el.style.transform = x ? `translateX(${x}px)` : "";
     const p = Math.min(1, Math.abs(x) / SWIPE_TRIGGER);
-    hintRef.current?.style.setProperty("--p", String(p));
+    rowRef.current?.style.setProperty("--p", String(p));
     const armed = Math.abs(x) >= SWIPE_TRIGGER;
     if (armed !== g.current.armed) {
       g.current.armed = armed;
@@ -206,6 +212,7 @@ export default function MessageRow({
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
+    suppressClick.current = false;
     if (deleted || e.button > 0) return;
     // Controls inside cards (vote, tick, download…) get plain taps, not gestures.
     const t = e.target as HTMLElement;
@@ -218,6 +225,7 @@ export default function MessageRow({
       timer: setTimeout(() => {
         if (g.current.mode !== "pending") return;
         g.current.mode = "menu";
+        suppressClick.current = true;
         setPressing(false);
         haptic(12);
         if (bubbleRef.current) onMenu(message, bubbleRef.current, true);
@@ -237,6 +245,7 @@ export default function MessageRow({
         clearTimeout(s.timer);
         setPressing(false);
         s.mode = "swipe";
+        suppressClick.current = true;
         bubbleRef.current?.setPointerCapture(e.pointerId);
         bubbleRef.current?.classList.add(styles.dragging);
       } else return;
@@ -268,6 +277,59 @@ export default function MessageRow({
 
   useEffect(() => () => clearTimeout(g.current.timer), []);
 
+  // Your own sends grow out of the composer, the way iMessage's do.
+  const fromComposer = isNew && isMine && message.status === "pending";
+  useLayoutEffect(() => {
+    if (!fromComposer) return;
+    const el = bubbleRef.current;
+    const field = el?.closest("[data-chat-screen]")?.querySelector<HTMLElement>("[data-composer-field]");
+    if (!el || !field) return;
+    const to = el.getBoundingClientRect();
+    const from = field.getBoundingClientRect();
+    const dx = from.left + 16 - to.left;
+    const dy = from.bottom - to.bottom;
+    const anim = el.animate(
+      [
+        { transform: `translate(${dx}px, ${dy}px) scale(.94)`, opacity: .4, transformOrigin: "left bottom" },
+        { transform: "none", opacity: 1, transformOrigin: "left bottom" },
+      ],
+      { duration: 340, easing: "cubic-bezier(.22, 1, .36, 1)" },
+    );
+    // Cancelled on cleanup so a re-run measures the resting position, not a mid-flight one.
+    return () => anim.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A deleted message fades its old content out before the placeholder fades in.
+  const [vanishing, setVanishing] = useState<Message | null>(null);
+  const prevMessage = useRef(message);
+  useEffect(() => {
+    const was = prevMessage.current;
+    prevMessage.current = message;
+    if (!was.deletedAt && message.deletedAt) {
+      setVanishing(was);
+      const t = setTimeout(() => setVanishing(null), 220);
+      return () => clearTimeout(t);
+    }
+  }, [message]);
+
+  // Removed reactions shrink away instead of popping out of existence.
+  const [leavingReactions, setLeavingReactions] = useState<Message["reactions"]>([]);
+  const prevReactions = useRef(message.reactions);
+  useEffect(() => {
+    const gone = prevReactions.current.filter((r) => !message.reactions.some((x) => x.emoji === r.emoji));
+    prevReactions.current = message.reactions;
+    if (!gone.length) return;
+    setLeavingReactions((cur) => [...cur, ...gone]);
+    const t = setTimeout(() => setLeavingReactions((cur) => cur.filter((r) => !gone.includes(r))), 220);
+    return () => clearTimeout(t);
+  }, [message.reactions]);
+
+  const time = new Date(message.createdAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const readers = message.readBy ? Object.keys(message.readBy) : [];
+  const tail = (pos === "last" || pos === "single") && !message.deletedAt && message.kind !== "card"
+    && !isDoc(message) && !hasPhotos(message) && !isEmojiOnly(message.body);
+
   const statusLabel =
     message.status === "pending" ? "Sending…"
     : message.status === "sent" ? "Sent"
@@ -279,11 +341,12 @@ export default function MessageRow({
     isMine ? styles.mine : styles.theirs,
     pos === "middle" || pos === "last" ? styles.grouped : "",
     message.reactions.length ? styles.hasReactions : "",
-    isNew ? (isMine ? styles.enterMine : styles.enterTheirs) : "",
+    fromComposer ? styles.enterFromComposer : isNew ? (isMine ? styles.enterMine : styles.enterTheirs) : "",
+    tail ? styles.withTail : "",
   ].filter(Boolean).join(" ");
 
   return (
-    <div className={rowClass} data-pos={pos} data-message-id={message.id}>
+    <div ref={rowRef} className={rowClass} data-pos={pos} data-message-id={message.id}>
       {avatarSlot && (
         <div className={styles.avatarSlot}>
           {showAvatar && <Avatar glyph={initials(author.fullName)} tone={author.tone} size={28} />}
@@ -309,13 +372,19 @@ export default function MessageRow({
               <IconReply size={12} />
               {isMine ? "You" : author.name} replied to {quoted.authorId === meId ? "you" : userById(quoted.authorId).name}
             </span>
-            <span className={styles.ghost}>
+            <span className={styles.quote}>
               {quoted.deletedAt ? "Message deleted" : quoted.kind === "voice" ? "Voice message" : emojify(stripFormatting(quoted.body)) || "Attachment"}
             </span>
           </div>
         )}
 
         <div className={styles.bubbleWrap}>
+          {/* Sits under the bubble's resting spot: the further you drag, the more it shows. */}
+          <span className={styles.swipeInfo} aria-hidden="true">
+            <b>{time}</b>
+            {isMine && message.status !== "failed" && <span>{statusLabel}</span>}
+            {message.editedAt && <span>Edited</span>}
+          </span>
           <div
             ref={bubbleRef}
             tabIndex={deleted ? -1 : 0}
@@ -327,11 +396,19 @@ export default function MessageRow({
               message.status === "pending" ? styles.pending : "",
               highlighted ? styles.flash : "",
               focused ? styles.hiddenForOverlay : "",
+              vanishing ? styles.vanishing : "",
             ].filter(Boolean).join(" ")}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={reset}
+            onClickCapture={(e) => {
+              if (suppressClick.current) {
+                e.stopPropagation();
+                e.preventDefault();
+                suppressClick.current = false;
+              }
+            }}
             onPointerLeave={() => { if (g.current.mode === "pending") reset(); }}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -347,14 +424,20 @@ export default function MessageRow({
               }
             }}
           >
-            <BubbleBody message={message} />
+            <BubbleBody message={vanishing ?? message} />
             {burst > 0 && <span key={burst} className={styles.heartBurst}><Emoji char="❤️" /></span>}
+            {tail && <span className={styles.tail} aria-hidden="true" />}
           </div>
 
           <span ref={hintRef} className={styles.replyHint}><IconReply /></span>
 
-          {message.reactions.length > 0 && !deleted && (
+          {(message.reactions.length > 0 || leavingReactions.length > 0) && !deleted && (
             <div className={styles.reactions}>
+              {leavingReactions.map((r) => (
+                <span key={`out-${r.emoji}`} className={`${styles.reaction} ${styles.reactionOut}`} aria-hidden="true">
+                  <Emoji char={r.emoji} />
+                </span>
+              ))}
               {message.reactions.map((r) => (
                 <button
                   key={`${r.emoji}-${r.userIds.length}`}
@@ -376,7 +459,14 @@ export default function MessageRow({
               Not delivered · <button onClick={() => onRetry(message)}>Retry</button>
             </div>
           ) : (
-            <div className={styles.statusLine} key={message.status}>{statusLabel}</div>
+            isGroup && message.status === "read" ? (
+              <button className={`${styles.statusLine} ${styles.statusButton}`} key="read" onClick={() => onShowReceipts(message)}>
+                {readers.length ? `Read by ${readers.length}` : "Read"}
+                <IconChevron size={12} />
+              </button>
+            ) : (
+              <div className={styles.statusLine} key={message.status}>{statusLabel}</div>
+            )
           )
         )}
       </div>

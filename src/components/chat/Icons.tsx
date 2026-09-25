@@ -6,7 +6,7 @@ import {
   LeftToRightListBulletIcon, LeftToRightListNumberIcon, Link01Icon, Location01Icon, LockIcon, Mic02Icon,
   MoneyReceive01Icon, MoneySend01Icon, Moon02Icon, Notification01Icon, NotificationOff01Icon, PauseIcon,
   PencilEdit01Icon, PencilEdit02Icon, PinIcon, PlayIcon, PlusSignIcon, QuoteDownIcon, Search01Icon, SmileIcon,
-  SourceCodeIcon, Sun03Icon, TextBoldIcon, TextItalicIcon, TextStrikethroughIcon, TextUnderlineIcon, Tick02Icon,
+  Share08Icon, SourceCodeIcon, PaintBrush01Icon, GameController03Icon, PieChartIcon, SparklesIcon, Undo02Icon, FavouriteIcon, Sun03Icon, TextBoldIcon, TextItalicIcon, TextStrikethroughIcon, TextUnderlineIcon, Tick02Icon, UserGroupIcon,
 } from "@hugeicons/core-free-icons";
 
 /**
@@ -71,3 +71,11 @@ export const IconPlay = make(PlayIcon);
 export const IconPause = make(PauseIcon);
 export const IconDownload = make(Download01Icon);
 export const IconAlert = make(Alert02Icon);
+export const IconShare = make(Share08Icon);
+export const IconUserGroup = make(UserGroupIcon);
+export const IconBrush = make(PaintBrush01Icon);
+export const IconGame = make(GameController03Icon);
+export const IconWheel = make(PieChartIcon);
+export const IconSparkles = make(SparklesIcon);
+export const IconUndo = make(Undo02Icon);
+export const IconHeart = make(FavouriteIcon);

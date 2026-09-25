@@ -5,6 +5,7 @@ import { initials } from "@/lib/chat/avatar";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Card, Message, Rsvp } from "@/lib/chat/types";
 import Avatar from "./Avatar";
+import { SketchCard, TicTacToeCard, WheelCard } from "./Artifacts";
 import { ConfirmPay } from "./CardBuilders";
 import { IconBell, IconCheck, IconChecklist, IconLock, IconMoneyReceive, IconPlus, IconPoll } from "./Icons";
 import MiniMap from "./MiniMap";
@@ -43,6 +44,9 @@ export default function CardView({ message, interactive }: Props) {
     case "location": return <LocationCard message={message} card={card} interactive={interactive} />;
     case "event": return <EventCard message={message} card={card} interactive={interactive} />;
     case "payment": return <PaymentCard message={message} card={card} interactive={interactive} />;
+    case "sketch": return <SketchCard message={message} card={card} interactive={interactive} />;
+    case "tictactoe": return <TicTacToeCard message={message} card={card} interactive={interactive} />;
+    case "wheel": return <WheelCard message={message} card={card} interactive={interactive} />;
   }
 }
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { initials } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { htmlToMarkdown, markdownToHtml } from "@/lib/chat/richText";
+import { toAttachment, useMediaUrl } from "@/lib/chat/media";
 import { localStorageAdapter } from "@/lib/chat/storage";
 import { userById } from "@/lib/chat/store";
 import type { Attachment, Message, User } from "@/lib/chat/types";
@@ -16,7 +17,6 @@ import {
 import styles from "./chat.module.css";
 
 const TYPING_IDLE_MS = 3000;
-const INLINE_IMAGE_LIMIT = 1.5 * 1024 * 1024;
 
 type FormatKind = "bold" | "italic" | "underline" | "strike" | "heading" | "link" | "bullet" | "number" | "quote" | "code";
 type Tool = { kind: FormatKind; label: string; glyph: React.ReactNode; sep?: boolean };
@@ -66,22 +66,17 @@ interface Props {
   incoming: { files: File[]; id: number } | null;
 }
 
-async function toAttachment(file: File): Promise<Attachment> {
-  const base: Attachment = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    kind: file.type.startsWith("image/") ? "image" : "file",
-    name: file.name || "pasted-image.png",
-    size: file.size,
-  };
-  // Small files keep their bytes so the recipient can actually download them.
-  if (file.size > INLINE_IMAGE_LIMIT) return base;
-  const dataUrl = await new Promise<string>((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => resolve("");
-    reader.readAsDataURL(file);
-  });
-  return dataUrl ? { ...base, dataUrl } : base;
+/** Composer tray chip; photos preview from local storage once saved. */
+function AttachChip({ a, onRemove }: { a: Attachment; onRemove: () => void }) {
+  const url = useMediaUrl(a);
+  return (
+    <span className={styles.attachChip}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {a.kind === "image" && url && <img src={url} alt="" />}
+      {a.name.length > 16 ? `${a.name.slice(0, 16)}…` : a.name}
+      <button onClick={onRemove} aria-label="Remove">×</button>
+    </span>
+  );
 }
 
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -336,17 +331,27 @@ export default function Composer({
     afterEdit();
   };
 
+  // Up to 10 files per message; anything over the size cap is skipped with a note.
   const addFiles = async (files: FileList | File[]) => {
-    const list = Array.from(files).slice(0, 4);
+    const list = Array.from(files).slice(0, 10);
     const next = await Promise.all(list.map(toAttachment));
-    setAttachments((prev) => [...prev, ...next]);
+    const kept = next.filter((a): a is Attachment => !!a);
+    if (kept.length < next.length) onHint("Files over 100 MB can't be sent");
+    setAttachments((prev) => [...prev, ...kept].slice(0, 10));
   };
+
+  // The parent re-creates onHint every render; a ref keeps this effect keyed on files only.
+  const hintRef = useRef(onHint);
+  useEffect(() => { hintRef.current = onHint; }, [onHint]);
 
   useEffect(() => {
     if (!incoming) return;
     let live = true;
-    void Promise.all(incoming.files.slice(0, 4).map(toAttachment)).then((next) => {
-      if (live) setAttachments((prev) => [...prev, ...next]);
+    void Promise.all(incoming.files.slice(0, 10).map(toAttachment)).then((next) => {
+      if (!live) return;
+      const kept = next.filter((a): a is Attachment => !!a);
+      if (kept.length < next.length) hintRef.current("Files over 100 MB can't be sent");
+      setAttachments((prev) => [...prev, ...kept].slice(0, 10));
     });
     return () => { live = false; };
   }, [incoming]);
@@ -445,6 +450,7 @@ export default function Composer({
 
         <div
           className={`${styles.field} ${styles.glassStrong} ${expanded ? styles.fieldOpen : ""} ${dropping ? styles.dropping : ""}`}
+          data-composer-field
           onMouseDown={(e) => {
             // Taps on the card's chrome keep the caret (and selection) in the editor.
             const t = e.target as HTMLElement;
@@ -507,12 +513,7 @@ export default function Composer({
           {attachments.length > 0 && (
             <div className={styles.attachTray}>
               {attachments.map((a) => (
-                <span key={a.id} className={styles.attachChip}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  {a.dataUrl && <img src={a.dataUrl} alt="" />}
-                  {a.name.length > 16 ? `${a.name.slice(0, 16)}…` : a.name}
-                  <button onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))} aria-label="Remove">×</button>
-                </span>
+                <AttachChip key={a.id} a={a} onRemove={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))} />
               ))}
             </div>
           )}

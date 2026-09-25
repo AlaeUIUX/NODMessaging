@@ -7,6 +7,7 @@ import Avatar from "./Avatar";
 import {
   IconAttachment, IconBell, IconCalendar, IconCamera, IconCheck, IconChecklist, IconClose, IconImage, IconLocation,
   IconMoneyReceive, IconMoneySend, IconPlus, IconPoll, IconSmile,
+  IconBrush, IconGame, IconSparkles, IconWheel,
 } from "./Icons";
 import MiniMap from "./MiniMap";
 import { Segmented, Sheet, Toggle, uid } from "./ui";
@@ -15,7 +16,8 @@ import styles from "./chat.module.css";
 export type AddKind =
   | "photos" | "camera" | "file"
   | "checklist" | "poll" | "reminder" | "location" | "event"
-  | "pay" | "request";
+  | "pay" | "request"
+  | "sketch" | "tictactoe" | "wheel" | "gallery";
 
 type Send = (card: Card, summary: string) => void;
 
@@ -50,6 +52,16 @@ const GROUPS: { title: string; tone: AvatarTone; items: { kind: AddKind; label: 
     items: [
       { kind: "pay", label: "Pay", icon: <IconMoneySend size={24} /> },
       { kind: "request", label: "Request", icon: <IconMoneyReceive size={24} /> },
+    ],
+  },
+  {
+    title: "Artifacts",
+    tone: "plum",
+    items: [
+      { kind: "sketch", label: "Doodle", icon: <IconBrush size={24} /> },
+      { kind: "tictactoe", label: "Tic-tac-toe", icon: <IconGame size={24} /> },
+      { kind: "wheel", label: "Wheel", icon: <IconWheel size={24} /> },
+      { kind: "gallery", label: "More", icon: <IconSparkles size={24} /> },
     ],
   },
 ];

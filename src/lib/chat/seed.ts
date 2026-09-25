@@ -136,6 +136,24 @@ export function buildSeedState(now = Date.now()): ChatState {
     }),
   );
 
+  // A shared moodboard: several photos in one message, shown as a collection.
+  const photo = (id: string, q: string, width: number, height: number) => ({
+    id, kind: "image" as const, name: `${id}.jpg`, size: 240_000, width, height,
+    url: `https://images.unsplash.com/${q}?w=900&q=70&fm=jpg`,
+  });
+  general.push(msg({
+    id: "g-11", chatId: "general", authorId: "reema", body: "", createdAt: now - 40 * 60 * 1000,
+    attachments: [
+      photo("photo-1618221195710-dd6b41faaea6", "photo-1618221195710-dd6b41faaea6", 900, 1125),
+      photo("photo-1600210492486-724fe5c67fb0", "photo-1600210492486-724fe5c67fb0", 900, 600),
+      photo("photo-1586023492125-27b2c045efd7", "photo-1586023492125-27b2c045efd7", 900, 600),
+      photo("photo-1616486338812-3dadae4b4ace", "photo-1616486338812-3dadae4b4ace", 900, 1200),
+    ],
+  }));
+  general.push(msg({
+    id: "g-12", chatId: "general", authorId: "reema", body: "Moodboard for the Spaces launch ✨", createdAt: now - 40 * 60 * 1000 + 20_000,
+  }));
+
   const reema: Message[] = [
     msg({ id: "r-1", chatId: "reema", authorId: "reema", body: "Moodboard for the new inbox is up. Leaning warm neutrals with one sharp accent.", createdAt: now - 30 * HOUR }),
     msg({ id: "r-2", chatId: "reema", authorId: "me", body: "Yes. Less chrome, more content.", createdAt: now - 29 * HOUR, status: "read" }),
@@ -161,4 +179,4 @@ export function buildSeedState(now = Date.now()): ChatState {
   };
 }
 
-export const CURRENT_VERSION = 5;
+export const CURRENT_VERSION = 6;

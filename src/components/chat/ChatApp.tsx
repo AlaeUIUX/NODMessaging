@@ -7,14 +7,14 @@ import { USERS } from "@/lib/chat/seed";
 import { ChatProvider, useChat, userById } from "@/lib/chat/store";
 import type { Chat } from "@/lib/chat/types";
 import ChatView from "./ChatView";
-import { IconArrowRight, IconBolt, IconLock, IconMoon, IconReply, IconSun } from "./Icons";
+import { IconArrowRight, IconChecklist, IconMoneyReceive, IconMoon, IconPin, IconSun, IconUserGroup } from "./Icons";
 import Inbox from "./Inbox";
-import { Emoji } from "@/lib/chat/emoji";
 import Logo from "./Logo";
+import StageField from "./StageField";
 import { getPermission } from "./ui";
 import styles from "./chat.module.css";
 
-const LEAVE_MS = 260;
+const LEAVE_MS = 220;
 const THEME_KEY = "nod.theme";
 const STAGE_KEY = "nod.stage";
 
@@ -158,7 +158,13 @@ function Device() {
     setOpenChat(chat);
   };
 
-  const back = () => {
+  const back = (immediate?: boolean) => {
+    if (immediate) {
+      // A swipe-back already slid the screen away; just unmount it.
+      setOpenChat(null);
+      setLeaving(false);
+      return;
+    }
     setLeaving(true);
     leaveTimer.current = setTimeout(() => {
       setOpenChat(null);
@@ -167,7 +173,7 @@ function Device() {
   };
 
   return (
-    <div className={styles.device}>
+    <div className={styles.device} data-device>
       <i className={`${styles.key} ${styles.keyAction}`} />
       <i className={`${styles.key} ${styles.keyVolUp}`} />
       <i className={`${styles.key} ${styles.keyVolDown}`} />
@@ -263,10 +269,10 @@ export default function ChatApp() {
         </header>
 
         <section className={styles.hero}>
-          <p className={styles.pill}><span>New</span>Spaces, formatting and reactions</p>
-          <h1 className={styles.heroTitle}>Say more.<br /><em>With less.</em></h1>
+          <p className={styles.pill}><span>Soon</span>Mind: keep anything from any chat</p>
+          <h1 className={styles.heroTitle}>Talk it through.<br /><em>Keep what matters.</em></h1>
           <p className={styles.heroLede}>
-            A calm, private messenger for the people you actually talk to. Every tap, hold and swipe below is live.
+            Run your projects from the conversation. A Space for every team, polls, checklists and payments in the thread, and Mind to keep what you need.
           </p>
           <div className={styles.heroCtas}>
             <a className={styles.cta} href="#demo">Try the live demo <IconArrowRight size={16} /></a>
@@ -275,21 +281,22 @@ export default function ChatApp() {
         </section>
 
         <section id="demo" className={`${styles.stage} ${stageIsDark ? styles.stageDark : ""}`}>
-          <div className={`${styles.floatCard} ${styles.fcLeftTop} ${styles.glass}`}>
-            <span className={styles.fcIcon}><IconLock size={16} /></span>
-            <div><b>End-to-end encrypted</b><span>Only the people in a chat can read it.</span></div>
+          <StageField dark={stageIsDark} />
+          <div data-float className={`${styles.floatCard} ${styles.fcLeftTop} ${styles.glass}`}>
+            <span className={styles.fcIcon}><IconPin size={16} /></span>
+            <div><b>Save it to Mind</b><span>Keep decisions, files and links from any chat. Coming soon.</span></div>
           </div>
-          <div className={`${styles.floatCard} ${styles.fcLeftBottom} ${styles.glass}`}>
-            <span className={styles.fcEmoji}><Emoji char="❤️" /><Emoji char="👍" /><Emoji char="😂" /></span>
-            <div><b>Hold any message</b><span>React, reply, copy, pin.</span></div>
+          <div data-float className={`${styles.floatCard} ${styles.fcLeftBottom} ${styles.glass}`}>
+            <span className={styles.fcIcon}><IconChecklist size={16} /></span>
+            <div><b>Decide in the thread</b><span>Polls, checklists with owners, reminders.</span></div>
           </div>
-          <div className={`${styles.floatCard} ${styles.fcRightTop} ${styles.glass}`}>
-            <span className={styles.fcIcon}><IconBolt size={16} /></span>
-            <div><b>Real-time, honestly</b><span>Sending, sent, delivered, read.</span></div>
+          <div data-float className={`${styles.floatCard} ${styles.fcRightTop} ${styles.glass}`}>
+            <span className={styles.fcIcon}><IconUserGroup size={16} /></span>
+            <div><b>A Space for every project</b><span>One group per team, client or launch.</span></div>
           </div>
-          <div className={`${styles.floatCard} ${styles.fcRightBottom} ${styles.glass}`}>
-            <span className={styles.fcIcon}><IconReply size={16} /></span>
-            <div><b>Swipe to reply</b><span>Tap Aa in a chat to format.</span></div>
+          <div data-float className={`${styles.floatCard} ${styles.fcRightBottom} ${styles.glass}`}>
+            <span className={styles.fcIcon}><IconMoneyReceive size={16} /></span>
+            <div><b>Collect from everyone</b><span>Payments, files, places and events, sent straight into the chat.</span></div>
           </div>
 
           <Device />

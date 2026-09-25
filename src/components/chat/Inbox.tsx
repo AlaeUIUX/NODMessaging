@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { chatIdentity, initials, TONES } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
-import { IconBellOff, IconClose, IconPin } from "./Icons";
+import { IconBellOff, IconPin } from "./Icons";
 import Logo from "./Logo";
 import { emojify } from "@/lib/chat/emoji";
+import NewChat from "./NewChat";
 import StatusBar from "./StatusBar";
 import styles from "./chat.module.css";
 
@@ -17,12 +18,11 @@ type Tab = "chats" | "mind" | "spaces" | "explore";
 
 const REVEAL = 124;
 
-type PrimaryTab = Exclude<Tab, "explore">;
-
-const TABS: { id: PrimaryTab; label: string; icon: string; w: number; h: number }[] = [
+const TABS: { id: Tab; label: string; icon: string; w: number; h: number }[] = [
   { id: "chats", label: "Chats", icon: "/nod/chats.svg", w: 18, h: 18 },
   { id: "mind", label: "Mind", icon: "/nod/mind.svg", w: 16, h: 16 },
   { id: "spaces", label: "Spaces", icon: "/nod/spaces.svg", w: 30, h: 16 },
+  { id: "explore", label: "Explore", icon: "/nod/explore.svg", w: 16, h: 16 },
 ];
 
 /** Figma icons render through a mask so they follow the theme's ink colour. */
@@ -74,7 +74,7 @@ function SwipeRow({
     setSettling(true);
     setOffset(x);
     apply(x);
-    setTimeout(() => setSettling(false), 360);
+    setTimeout(() => setSettling(false), 340);
   };
 
   return (
@@ -126,47 +126,26 @@ function SwipeRow({
   );
 }
 
-/**
- * iOS 26-style dock: a glass capsule of primary tabs plus a detached search
- * orb. Searching collapses the capsule to a single button and grows the orb
- * into a search pill.
- */
-function NavDock({
-  tab, last, searching, query, onTab, onOpenSearch, onCloseSearch, onQuery,
-}: {
-  tab: Tab;
-  last: PrimaryTab;
-  searching: boolean;
-  query: string;
-  onTab: (t: PrimaryTab) => void;
-  onOpenSearch: () => void;
-  onCloseSearch: () => void;
-  onQuery: (q: string) => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
+/** A single glass capsule of the four primary tabs, with a liquid lens. */
+function NavDock({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
   const [stretch, setStretch] = useState(false);
   const index = Math.max(0, TABS.findIndex((t) => t.id === tab));
-  const current = TABS.find((t) => t.id === last) ?? TABS[0];
 
-  useEffect(() => {
-    if (searching) inputRef.current?.focus();
-  }, [searching]);
-
-  const choose = (t: PrimaryTab) => {
+  const choose = (t: Tab) => {
     if (t === tab) return;
     // The lens squashes while it travels, then settles — a liquid, not a slide.
     setStretch(true);
-    setTimeout(() => setStretch(false), 260);
+    setTimeout(() => setStretch(false), 220);
     onTab(t);
   };
 
   return (
     <div className={styles.navDock}>
-      <nav className={`${styles.navCapsule} ${styles.liquid} ${searching ? styles.navCollapsed : ""}`} aria-label="Primary">
-        <div className={styles.navTabs} aria-hidden={searching}>
+      <nav className={`${styles.navCapsule} ${styles.liquid}`} aria-label="Primary">
+        <div className={styles.navTabs}>
           <span
             className={`${styles.navLens} ${stretch ? styles.navLensMoving : ""}`}
-            style={{ ["--x" as string]: `${index * 100}%` }}
+            style={{ ["--x" as string]: `${index * 100}%`, width: `calc(100% / ${TABS.length})` }}
             aria-hidden="true"
           />
           {TABS.map((t) => (
@@ -175,41 +154,13 @@ function NavDock({
               className={`${styles.navItem} ${tab === t.id ? styles.navOn : ""}`}
               onClick={() => choose(t.id)}
               aria-current={tab === t.id ? "page" : undefined}
-              tabIndex={searching ? -1 : 0}
             >
               <span className={styles.tabIcon}><MaskIcon src={t.icon} w={t.w} h={t.h} /></span>
               {t.label}
             </button>
           ))}
         </div>
-        <button
-          className={styles.navCurrent}
-          onClick={onCloseSearch}
-          aria-label={`Back to ${current.label}`}
-          tabIndex={searching ? 0 : -1}
-        >
-          <MaskIcon src={current.icon} w={current.w} h={current.h} />
-        </button>
       </nav>
-
-      <div className={`${styles.navOrb} ${styles.liquid} ${searching ? styles.navOrbOpen : ""}`}>
-        <button className={styles.orbIcon} onClick={onOpenSearch} aria-label="Explore and search" tabIndex={searching ? -1 : 0}>
-          <MaskIcon src="/nod/explore.svg" w={18} h={18} />
-        </button>
-        <input
-          ref={inputRef}
-          className={styles.orbInput}
-          value={query}
-          onChange={(e) => onQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Escape") onCloseSearch(); }}
-          placeholder="People, spaces, messages"
-          aria-label="Search people, spaces and messages"
-          tabIndex={searching ? 0 : -1}
-        />
-        <button className={styles.orbClose} onClick={onCloseSearch} aria-label="Close search" tabIndex={searching ? 0 : -1}>
-          <IconClose size={14} />
-        </button>
-      </div>
     </div>
   );
 }
@@ -219,9 +170,7 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [tab, setTab] = useState<Tab>("chats");
-  const [lastTab, setLastTab] = useState<PrimaryTab>("chats");
-  const [exploreQuery, setExploreQuery] = useState("");
-  const searching = tab === "explore";
+  const [newChat, setNewChat] = useState(false);
   const [pinned, setPinned] = useState<Set<string>>(() => new Set(["dm"]));
   const [muted, setMuted] = useState<Set<string>>(() => new Set());
   const searchRef = useRef<HTMLInputElement>(null);
@@ -243,16 +192,15 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
   const ready = state.hydrated;
   const unreadChats = ready ? rows.filter((r) => r.unread > 0).length : 0;
   const spaceMention = ready && rows.some((r) => r.chat.kind === "group" && r.mentioned);
-  const effective: Filter = tab === "spaces" ? "spaces" : searching ? "all" : filter;
+  const effective: Filter = tab === "spaces" ? "spaces" : filter;
 
   const visible = (ready ? rows : [])
     .filter(({ chat, last, unread }) => {
       if (effective === "unread" && unread === 0) return false;
       if (effective === "dms" && chat.kind !== "dm") return false;
       if (effective === "spaces" && chat.kind !== "group") return false;
-      const text = searching ? exploreQuery : query;
-      if (!text.trim()) return true;
-      const q = text.toLowerCase();
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
       return chatIdentity(chat, me, userById).label.toLowerCase().includes(q) || preview(last, me).toLowerCase().includes(q);
     })
     .sort((a, b) => {
@@ -284,7 +232,7 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
   );
 
   return (
-    <div className={`${styles.screen} ${styles.inboxScreen} ${pushed ? styles.pushed : ""}`}>
+    <div className={`${styles.screen} ${styles.inboxScreen} ${pushed ? styles.pushed : ""}`} data-inbox-screen>
       <StatusBar />
 
       <header className={styles.profile}>
@@ -302,7 +250,7 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
               </span>
             </div>
           </div>
-          <button className={styles.plusBtn} aria-label="New message" onClick={() => { setTab("chats"); setLastTab("chats"); searchRef.current?.focus(); }}>
+          <button className={styles.plusBtn} aria-label="New message" onClick={() => setNewChat(true)}>
             <span className={styles.maskIcon} style={{ width: 16, height: 16, ["--src" as string]: "url(/nod/plus.svg)" }} aria-hidden="true" />
           </button>
         </div>
@@ -319,11 +267,9 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
 
       <div className={styles.inboxBody}>
         {tab === "mind" ? placeholder("Mind", "Your notes, saved messages and ideas will live here.")
+        : tab === "explore" ? placeholder("Explore", "Discover public spaces and people on NOD.")
         : (
           <div className={styles.inboxScroll}>
-            {searching && (
-              <p className={styles.exploreLabel}>{exploreQuery.trim() ? "Results" : "Recent"}</p>
-            )}
             {tab === "chats" && (
               <div className={styles.chips} role="tablist">
                 {chips.map((c) => (
@@ -396,7 +342,7 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
               ))}
               {ready && visible.length === 0 && (
                 <p className={styles.emptyInbox}>
-                  {(searching ? exploreQuery : query) ? `Nothing matches “${searching ? exploreQuery : query}”` : effective === "unread" ? "You're all caught up." : "No conversations yet."}
+                  {query ? `Nothing matches “${query}”` : effective === "unread" ? "You're all caught up." : "No conversations yet."}
                 </p>
               )}
             </div>
@@ -405,16 +351,8 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
       </div>
 
       <div className={styles.edgeBottom} />
-      <NavDock
-        tab={tab}
-        last={lastTab}
-        searching={searching}
-        query={exploreQuery}
-        onTab={(t) => { setTab(t); setLastTab(t); }}
-        onOpenSearch={() => setTab("explore")}
-        onCloseSearch={() => { setTab(lastTab); setExploreQuery(""); }}
-        onQuery={setExploreQuery}
-      />
+      <NavDock tab={tab} onTab={setTab} />
+      {newChat && <NewChat onClose={() => setNewChat(false)} onOpen={onOpen} />}
     </div>
   );
 }
