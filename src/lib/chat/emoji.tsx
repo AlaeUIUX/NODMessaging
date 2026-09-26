@@ -15,7 +15,8 @@ const CDN = "https://cdn.jsdelivr.net/npm/emoji-datasource-apple@16.0.0/img/appl
  * ZWJ sequences. Plain symbols like → or © stay text.
  */
 const PART = String.raw`(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}️)\p{Emoji_Modifier}?`;
-const EMOJI = new RegExp(`${PART}(?:\\u200D(?:${PART}|\\p{Extended_Pictographic}))*|\\p{Regional_Indicator}{2}`, "gu");
+// Flags come first: each half of a flag is an emoji character on its own.
+const EMOJI = new RegExp(`\\p{Regional_Indicator}{2}|${PART}(?:\\u200D(?:${PART}|\\p{Extended_Pictographic}))*`, "gu");
 
 function codepoints(char: string) {
   return Array.from(char).map((c) => c.codePointAt(0)!.toString(16)).join("-");

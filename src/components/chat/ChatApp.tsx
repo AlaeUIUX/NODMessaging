@@ -36,6 +36,15 @@ function writePref(key: string, value: string) {
   try { localStorage.setItem(key, value); } catch { /* private mode */ }
 }
 
+/** Each demo person organises their Mind differently (see lib/chat/mind seeds). */
+const MIND_PERSONAS: Record<string, string> = {
+  me: "Alae keeps German and French collections: flashcards, a streak, word of the day.",
+  charles: "Charles runs one Freelance collection: clients as sub-pages, boards, invoices.",
+  reema: "Reema has a Home collection: just pictures, a cover wall and recent saves.",
+  jamshad: "Jamshad starts empty. A step-by-step guide builds his pitch collection live.",
+  salman: "Salman starts empty, with templates to begin from.",
+}
+
 function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => void }) {
   const { me, setMe, peers } = useChat();
   const [failing, setFailing] = useState(getForceFailure());
@@ -61,6 +70,9 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
               </button>
             ))}
           </div>
+          <p className={styles.devPersona}>
+            <b>Mind:</b> {MIND_PERSONAS[me] ?? "A fresh, empty Mind"}
+          </p>
         </div>
         <div>
           <span className={styles.devLabel}>Stage colour</span>
@@ -90,7 +102,7 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
           onClick={() => {
             // Fresh seed for demos: conversations, drafts, identity and permission answers.
             try {
-              Object.keys(localStorage).filter((k) => k.startsWith("nod.chat") || k.startsWith("nod.perm")).forEach((k) => localStorage.removeItem(k));
+              Object.keys(localStorage).filter((k) => k.startsWith("nod.chat") || k.startsWith("nod.perm") || k.startsWith("nod.mind")).forEach((k) => localStorage.removeItem(k));
               sessionStorage.removeItem("nod.chat.me");
             } catch { /* private mode */ }
             location.reload();

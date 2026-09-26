@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Message } from "@/lib/chat/types";
-import { IconCopy, IconEdit, IconPin, IconPlus, IconReply, IconTrash } from "./Icons";
+import { IconBookmark, IconCopy, IconEdit, IconPin, IconPlus, IconReply, IconTrash } from "./Icons";
 import { BubbleBody, bubbleClass, haptic, type BubblePos } from "./MessageRow";
 import { Emoji } from "@/lib/chat/emoji";
 import styles from "./chat.module.css";
@@ -40,6 +40,7 @@ interface Props {
   onCopy: () => void;
   onEdit: () => void;
   onPin: () => void;
+  onSave: () => void;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -48,7 +49,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 
 export default function MessageOverlay({
   message, isMine, pos, rect, bounds, armed, meId,
-  onReact, onReply, onCopy, onEdit, onPin, onDelete, onClose,
+  onReact, onReply, onCopy, onEdit, onPin, onSave, onDelete, onClose,
 }: Props) {
   const [closing, setClosing] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -77,6 +78,7 @@ export default function MessageOverlay({
     ...(message.kind === "text" && message.body ? [{ id: "copy", label: "Copy", icon: <IconCopy />, run: onCopy }] : []),
     ...(isMine && message.kind === "text" ? [{ id: "edit", label: "Edit", icon: <IconEdit />, run: onEdit }] : []),
     { id: "pin", label: message.pinned ? "Unpin" : "Pin", icon: <IconPin />, run: onPin },
+    { id: "save", label: "Save to Mind", icon: <IconBookmark />, run: onSave },
     ...(isMine ? ["sep" as const, { id: "delete", label: "Delete", icon: <IconTrash />, danger: true, run: onDelete }] : []),
   ];
   const itemCount = actions.filter((a) => a !== "sep").length;

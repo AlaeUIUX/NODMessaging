@@ -55,7 +55,7 @@ export const INKS: Record<string, string> = {
 };
 
 /** Smooth a polyline through the midpoints of its segments. */
-function pathOf(pts: number[]) {
+export function pathOf(pts: number[]) {
   if (pts.length < 4) return `M${pts[0]} ${pts[1]} l.01 0`;
   let d = `M${pts[0]} ${pts[1]}`;
   for (let i = 2; i < pts.length - 2; i += 2) {

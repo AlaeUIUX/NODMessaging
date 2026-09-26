@@ -17,6 +17,9 @@ import MessageList from "./MessageList";
 import MessageOverlay from "./MessageOverlay";
 import MessageRow, { type BubblePos } from "./MessageRow";
 import { ArtifactGallery, SketchBuilder, WheelBuilder } from "./Artifacts";
+import { emojify } from "@/lib/chat/emoji";
+import { saveToMind } from "@/lib/chat/mind";
+import { MoveSheet } from "./Mind";
 import { MediaGrid, MediaViewer, ReceiptSheet } from "./MediaViewer";
 import ReactionSheet from "./ReactionSheet";
 import StatusBar from "./StatusBar";
@@ -50,7 +53,7 @@ export default function ChatView({ chat, leaving, onBack }: {
   const [sheetFor, setSheetFor] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
-  const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean } | null>(null);
+  const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean; actions?: { label: string; run: () => void }[] } | null>(null);
   const [viewer, setViewer] = useState<{ message: Message; index: number } | null>(null);
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const [overlaySheet, setOverlaySheet] = useState<ReactNode>(null);
@@ -99,12 +102,18 @@ export default function ChatView({ chat, leaving, onBack }: {
     return () => ro.disconnect();
   }, []);
 
-  const flash = (text: string) => {
+  const flash = (text: string, actions?: { label: string; run: () => void }[]) => {
     const id = Date.now();
-    setToast({ text, id });
+    setToast({ text, id, actions });
     // Fade out before unmounting, so toasts leave as gently as they arrive.
-    setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), 1800);
-    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 2020);
+    // A toast with actions waits longer, so there's time to tap them.
+    const stay = actions ? 4200 : 1800;
+    setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), stay);
+    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), stay + 220);
+  };
+  const dismissToast = () => {
+    setToast((t) => (t ? { ...t, leaving: true } : t));
+    setTimeout(() => setToast(null), 220);
   };
 
   /** Asks for a permission the way the OS would: once, then remembered. */
@@ -407,9 +416,12 @@ export default function ChatView({ chat, leaving, onBack }: {
       <input ref={fileInput} type="file" multiple hidden onChange={(e) => { pickFiles(e.target.files); e.target.value = ""; }} />
 
       {toast && (
-        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${toast.leaving ? styles.toastLeaving : ""}`} role="status">
+        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${toast.actions ? styles.toastActions : ""} ${toast.leaving ? styles.toastLeaving : ""}`} role="status">
           <IconCheck />
-          {toast.text}
+          <span className={styles.toastText}>{emojify(toast.text)}</span>
+          {toast.actions?.map((a) => (
+            <button key={a.label} className={styles.toastBtn} onClick={() => { dismissToast(); a.run(); }}>{a.label}</button>
+          ))}
         </div>
       )}
 
@@ -428,6 +440,32 @@ export default function ChatView({ chat, leaving, onBack }: {
           onEdit={() => { setEditing(menuMessage); setReplyTo(null); }}
           onDelete={() => { deleteMessage(menuMessage); flash("Message deleted"); }}
           onPin={() => { togglePin(menuMessage); flash(menuMessage.pinned ? "Unpinned" : "Pinned"); }}
+          onSave={() => {
+            const m = menuMessage;
+            const c = m.card;
+            const title = c ? (c.type === "checklist" || c.type === "event" ? c.title : c.type === "poll" || c.type === "wheel" ? c.question
+              : c.type === "sketch" ? c.prompt : c.type === "reminder" ? c.text : c.type === "location" ? c.place : c.type === "payment" ? c.note : "Tic-tac-toe")
+              : stripFormatting(m.body).split(/\n/)[0].slice(0, 80) || m.attachments[0]?.name || "Saved message";
+            const photos = m.attachments.some((x) => x.kind === "image");
+            const result = saveToMind(me, {
+              chatId: chat.id, messageId: m.id, title, chatName: chat.name,
+              text: [m.body, c && "question" in c ? c.question : "", c && "title" in c ? c.title : "", ...(c?.type === "checklist" ? c.items.map((i) => i.label) : [])].filter(Boolean).join(" "),
+              kind: c ? "card" : photos ? "photos" : m.attachments.length ? "file" : "text",
+              cardType: c?.type,
+            });
+            if (result.status === "no-collection") {
+              flash("Make a collection in Mind first");
+              return;
+            }
+            const where = result.collection ? `${result.collection.emoji} ${result.collection.name}` : "Mind";
+            const editLocation = () => setOverlaySheet(
+              <MoveSheet me={me} id={result.blockId!} title="Save to" onClose={closeSheet} onMoved={(t) => flash(t)} />,
+            );
+            flash(result.status === "saved" ? `Saved to ${where}` : `Already in ${where}`, [
+              { label: "Edit location", run: editLocation },
+              { label: "Done", run: () => {} },
+            ]);
+          }}
           onCopy={() => {
             void navigator.clipboard?.writeText(stripFormatting(menuMessage.body));
             flash("Copied");

@@ -9,6 +9,7 @@ import Avatar from "./Avatar";
 import { IconBellOff, IconPin } from "./Icons";
 import Logo from "./Logo";
 import { emojify } from "@/lib/chat/emoji";
+import MindTab from "./Mind";
 import NewChat from "./NewChat";
 import StatusBar from "./StatusBar";
 import styles from "./chat.module.css";
@@ -235,6 +236,8 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
     <div className={`${styles.screen} ${styles.inboxScreen} ${pushed ? styles.pushed : ""}`} data-inbox-screen>
       <StatusBar />
 
+      {tab === "mind" ? <MindTab onOpenChat={onOpen} /> : (
+      <>
       <header className={styles.profile}>
         <div className={styles.profileRow}>
           <div className={styles.profileId}>
@@ -266,8 +269,7 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
       </header>
 
       <div className={styles.inboxBody}>
-        {tab === "mind" ? placeholder("Mind", "Your notes, saved messages and ideas will live here.")
-        : tab === "explore" ? placeholder("Explore", "Discover public spaces and people on NOD.")
+        {tab === "explore" ? placeholder("Explore", "Discover public spaces and people on NOD.")
         : (
           <div className={styles.inboxScroll}>
             {tab === "chats" && (
@@ -349,6 +351,9 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
           </div>
         )}
       </div>
+
+      </>
+      )}
 
       <div className={styles.edgeBottom} />
       <NavDock tab={tab} onTab={setTab} />
