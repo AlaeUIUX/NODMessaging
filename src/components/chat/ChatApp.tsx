@@ -38,12 +38,12 @@ function writePref(key: string, value: string) {
 
 /** Each demo person organises their Mind differently (see lib/chat/mind seeds). */
 const MIND_PERSONAS: Record<string, string> = {
-  me: "Alae keeps German and French collections: flashcards, a streak, word of the day.",
-  charles: "Charles runs one Freelance collection: clients as sub-pages, boards, invoices.",
-  reema: "Reema has a Home collection: just pictures, a cover wall and recent saves.",
-  jamshad: "Jamshad starts empty. A step-by-step guide builds his pitch collection live.",
-  salman: "Salman starts empty, with templates to begin from.",
-}
+  me: "Alae keeps three collections: German, Work and Trip ideas.",
+  charles: "Charles keeps a collection per client, plus Money.",
+  reema: "Reema keeps one collection of home ideas, mostly pictures.",
+  jamshad: "Jamshad starts with a blank Mind, for trying everything from scratch.",
+  salman: "Salman starts with a blank Mind.",
+};
 
 function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => void }) {
   const { me, setMe, peers } = useChat();

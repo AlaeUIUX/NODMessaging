@@ -5,6 +5,19 @@
    ========================================================================== */
 
 .theme {
+  /* Elevation: four levels, each a tight contact shadow plus a soft ambient
+     one. Negative spread keeps the blur under the element. The reach below
+     an element is y + blur + spread (spread is negative): e1 3px, e2 10px,
+     e3 28px, e4 60px. Containers that clip (scrollers, fold bodies) reserve
+     at least the matching --e*-room. */
+  --e1: 0 1px 2px rgba(28, 25, 23, .06), 0 1px 3px -1px rgba(28, 25, 23, .10);
+  --e2: 0 1px 2px rgba(28, 25, 23, .05), 0 4px 10px -4px rgba(28, 25, 23, .14);
+  --e3: 0 2px 4px -2px rgba(28, 25, 23, .08), 0 12px 24px -8px rgba(28, 25, 23, .18);
+  --e4: 0 4px 8px -4px rgba(28, 25, 23, .10), 0 24px 48px -12px rgba(28, 25, 23, .28);
+  --e1-room: 4px;
+  --e2-room: 12px;
+  --e3-room: 28px;
+
   /* type scale */
   --fs-title: 30px;  --lh-title: 36px;
   --fs-name: 17px;   --lh-name: 22px;
@@ -49,7 +62,7 @@
   --glass-strong: rgba(250, 250, 249, .82);
   --glass-rim: inset 0 1px 0 rgba(255, 255, 255, .95), inset 0 -1px 0 rgba(28, 25, 23, .03);
   --glass-edge: rgba(28, 25, 23, .07);
-  --glass-shadow: 0 10px 30px -8px rgba(28, 25, 23, .14), 0 1px 3px rgba(28, 25, 23, .05);
+  --glass-shadow: var(--e3);
   --glass-blur: blur(22px) saturate(190%);
   --scrim: rgba(245, 245, 244, .45);
 
@@ -60,10 +73,9 @@
     inset 0 -1px 1px rgba(28, 25, 23, .05),
     inset 0 0 0 .5px rgba(255, 255, 255, .6),
     0 0 0 .5px rgba(28, 25, 23, .08),
-    0 14px 34px -12px rgba(28, 25, 23, .28),
-    0 2px 6px rgba(28, 25, 23, .06);
+    var(--e3);
   --lens-bg: rgba(255, 255, 255, .92);
-  --lens-shadow: 0 1px 2px rgba(28, 25, 23, .08), 0 4px 12px -2px rgba(28, 25, 23, .1), inset 0 0 0 .5px rgba(28, 25, 23, .04);
+  --lens-shadow: var(--e1), inset 0 0 0 .5px rgba(28, 25, 23, .04);
 
   font-family: var(--font-geist), system-ui, sans-serif;
   color: var(--ink);
@@ -71,6 +83,11 @@
 }
 
 .theme[data-theme="dark"] {
+  --e1: 0 1px 2px rgba(0, 0, 0, .30), 0 1px 3px -1px rgba(0, 0, 0, .40);
+  --e2: 0 1px 2px rgba(0, 0, 0, .30), 0 4px 10px -4px rgba(0, 0, 0, .50);
+  --e3: 0 2px 4px -2px rgba(0, 0, 0, .35), 0 12px 24px -8px rgba(0, 0, 0, .55);
+  --e4: 0 4px 8px -4px rgba(0, 0, 0, .40), 0 24px 48px -12px rgba(0, 0, 0, .65);
+
   --page: #0C0A09;
   --bg: #0F0E0D;
   --bg-sunk: #0C0A09;
@@ -91,7 +108,7 @@
   --glass-strong: rgba(46, 46, 50, .78);
   --glass-rim: inset 0 1px 0 rgba(255, 255, 255, .12), inset 0 -1px 0 rgba(0, 0, 0, .2);
   --glass-edge: rgba(255, 255, 255, .08);
-  --glass-shadow: 0 12px 34px -8px rgba(0, 0, 0, .6), 0 1px 3px rgba(0, 0, 0, .4);
+  --glass-shadow: var(--e3);
   --scrim: rgba(8, 8, 10, .45);
   --liquid-bg: linear-gradient(180deg, rgba(58, 58, 64, .62), rgba(34, 34, 38, .5));
   --liquid-sheen: rgba(255, 255, 255, .1);
@@ -99,10 +116,9 @@
     inset 0 1px 0 rgba(255, 255, 255, .16),
     inset 0 -1px 1px rgba(0, 0, 0, .3),
     0 0 0 .5px rgba(255, 255, 255, .1),
-    0 16px 40px -12px rgba(0, 0, 0, .7),
-    0 2px 6px rgba(0, 0, 0, .35);
+    var(--e3);
   --lens-bg: rgba(255, 255, 255, .13);
-  --lens-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 2px 8px rgba(0, 0, 0, .25);
+  --lens-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), var(--e1);
   color-scheme: dark;
 }
 
@@ -180,7 +196,7 @@
   border-radius: var(--r-pill);
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, .14), 0 3px 8px rgba(0, 0, 0, .08);
+  box-shadow: var(--e1);
   transition: transform var(--t-slow) var(--ease-spring);
 }
 .themeSwitch[aria-checked="true"] .themeKnob { transform: translateX(24px); }
@@ -222,7 +238,7 @@
   margin: 0 0 28px;
   border-radius: var(--r-pill);
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--line), 0 3px 12px rgba(0, 0, 0, .04);
+  box-shadow: 0 0 0 1px var(--line), var(--e1);
   font-size: 13px;
   color: var(--ink-2);
   animation: heroIn 700ms var(--ease-out) both;
@@ -564,7 +580,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 3px 12px rgba(0, 0, 0, .05);
+  box-shadow: var(--e1);
   transition: transform var(--t-fast) var(--ease-out);
 }
 .plusBtn:active { transform: scale(.9); }
@@ -581,7 +597,7 @@
   cursor: text;
   transition: box-shadow var(--t-mid) var(--ease-out);
 }
-.searchBar:focus-within { box-shadow: inset 0 0 0 1px var(--line-2), 0 3px 12px rgba(0, 0, 0, .05); }
+.searchBar:focus-within { box-shadow: inset 0 0 0 1px var(--line-2), var(--e1); }
 .searchBar input {
   flex: 1;
   min-width: 0;
@@ -617,8 +633,8 @@
   display: flex;
   gap: 6px;
   margin: 0 -16px;
-  /* Room above and below so nothing is clipped by the horizontal scroller. */
-  padding: 4px 16px 8px;
+  /* Room above and below so a selected chip's shadow isn't clipped by the scroller. */
+  padding: var(--e1-room) 16px calc(var(--e1-room) + 4px);
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 24px), transparent);
@@ -652,7 +668,7 @@
 .chip.chipOn {
   background: var(--ink);
   color: var(--bg);
-  box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--ink) 60%, transparent);
+  box-shadow: var(--e1);
 }
 .chipBadge {
   min-width: 22px;
@@ -1245,7 +1261,7 @@
   border: none;
   border-radius: var(--r-pill);
   background: var(--bg);
-  box-shadow: 0 0 0 2px var(--bg), 0 2px 8px rgba(17, 17, 17, .12), 0 0 0 2.5px var(--line);
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 2.5px var(--line), var(--e1);
   font: inherit;
   font-size: 14px;
   cursor: pointer;
@@ -1254,7 +1270,7 @@
 }
 .reaction:active { transform: scale(.9); }
 .reaction b { font-size: var(--fs-meta); font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
-.reaction.reactionMine { box-shadow: 0 0 0 2px var(--bg), 0 2px 8px rgba(17, 17, 17, .12), 0 0 0 3.5px color-mix(in srgb, var(--accent) 70%, transparent); }
+.reaction.reactionMine { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px color-mix(in srgb, var(--accent) 70%, transparent), var(--e1); }
 .reaction.reactionMine b { color: var(--accent); }
 @keyframes reactionIn {
   0% { transform: scale(.3); opacity: 0; }
@@ -1676,7 +1692,7 @@
 }
 .focus.focusMine { justify-content: flex-end; transform-origin: right center; }
 .focus.focusTheirs { transform-origin: left center; }
-.focus .bubble { box-shadow: 0 18px 40px -12px rgba(17, 17, 17, .28); max-height: var(--max-h, none); overflow: hidden; }
+.focus .bubble { box-shadow: var(--e4); max-height: var(--max-h, none); overflow: hidden; }
 @keyframes focusIn {
   from { transform: translateY(var(--from-y, 0)) scale(1); }
   to { transform: translateY(0) scale(1.03); }
@@ -1948,10 +1964,10 @@
 .theme {
   --bubble-glass: rgba(255, 255, 255, .62);
   --bubble-rim: inset 0 1px 0 rgba(255, 255, 255, .95), inset 0 0 0 .5px rgba(255, 255, 255, .6), 0 0 0 .5px rgba(28, 25, 23, .05);
-  --bubble-lift: 0 1px 2px rgba(28, 25, 23, .05), 0 8px 20px -10px rgba(28, 25, 23, .2);
+  --bubble-lift: var(--e2);
   --bubble-smoke: linear-gradient(180deg, rgba(48, 44, 41, .94), rgba(28, 25, 23, .92));
   --bubble-smoke-rim: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 0 0 .5px rgba(255, 255, 255, .06);
-  --bubble-smoke-lift: 0 10px 24px -12px rgba(28, 25, 23, .55), 0 1px 2px rgba(28, 25, 23, .2);
+  --bubble-smoke-lift: var(--e2);
   --bubble-sheen: rgba(255, 255, 255, .5);
   --bubble-shine: rgba(255, 255, 255, .55);
 }
@@ -1959,10 +1975,10 @@
 .theme[data-theme="dark"] {
   --bubble-glass: rgba(60, 60, 66, .46);
   --bubble-rim: inset 0 1px 0 rgba(255, 255, 255, .1), inset 0 0 0 .5px rgba(255, 255, 255, .06);
-  --bubble-lift: 0 10px 24px -12px rgba(0, 0, 0, .6);
+  --bubble-lift: var(--e2);
   --bubble-smoke: linear-gradient(180deg, rgba(250, 250, 249, .96), rgba(231, 229, 228, .92));
   --bubble-smoke-rim: inset 0 1px 0 rgba(255, 255, 255, .9);
-  --bubble-smoke-lift: 0 10px 24px -12px rgba(0, 0, 0, .6);
+  --bubble-smoke-lift: var(--e2);
   --bubble-sheen: rgba(255, 255, 255, .08);
   --bubble-shine: rgba(255, 255, 255, .18);
 }
@@ -2293,7 +2309,7 @@
   flex-shrink: 0;
   border-radius: var(--r-md);
   background: var(--surface);
-  box-shadow: 0 0 0 .5px var(--line), 0 4px 12px -6px rgba(0, 0, 0, .2);
+  box-shadow: 0 0 0 .5px var(--line), var(--e1);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2428,7 +2444,7 @@
   justify-content: center;
   font-size: 22px;
   color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), inset 0 -8px 16px rgba(0, 0, 0, .12), 0 6px 14px -8px rgba(0, 0, 0, .45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), inset 0 -8px 16px rgba(0, 0, 0, .12), var(--e2);
   transition: transform var(--t-mid) var(--ease-spring);
 }
 .addTile:active .addIcon { transform: scale(.88); }
@@ -2529,7 +2545,7 @@
   height: 26px;
   border-radius: var(--r-pill);
   background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, .18), 0 3px 8px rgba(0, 0, 0, .08);
+  box-shadow: var(--e1);
   transition: transform var(--t-slow) var(--ease-spring);
 }
 .toggle[aria-checked="true"] { background: var(--accent); }
@@ -2551,7 +2567,7 @@
   width: calc((100% - 6px) / var(--n));
   border-radius: var(--r-xs);
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 4px 10px -4px rgba(0, 0, 0, .12);
+  box-shadow: var(--e1);
   transition: transform var(--t-slow) var(--ease-spring);
 }
 .segmented button {
@@ -3052,7 +3068,7 @@
 .theme:not([data-theme="dark"]) {
   --bubble-glass: #F1F0EE;
   --bubble-rim: inset 0 0 0 .5px rgba(28, 25, 23, .04);
-  --bubble-lift: 0 1px 1px rgba(28, 25, 23, .03);
+  --bubble-lift: var(--e1);
   /* The corner sheen is painted over the text; on a plain white chat it only
      washes the first line out, so light mode goes without it. */
   --bubble-sheen: transparent;
@@ -3061,12 +3077,12 @@
 .bubble.docBubble, .mine .bubble.docBubble { --bubble-sheen: transparent; }
 .card {
   background: var(--card-bg);
-  box-shadow: 0 0 0 1px var(--line), 0 6px 20px -12px rgba(28, 25, 23, .18);
+  box-shadow: 0 0 0 1px var(--line), var(--e2);
 }
 .theme[data-theme="dark"] .card { box-shadow: var(--bubble-rim), var(--bubble-lift); }
 .bubble.docBubble, .mine .bubble.docBubble {
   background: var(--card-bg);
-  box-shadow: 0 0 0 1px var(--line), 0 6px 20px -12px rgba(28, 25, 23, .18);
+  box-shadow: 0 0 0 1px var(--line), var(--e2);
 }
 
 /* ---- composer tools: draggable with a mouse, swipeable on touch ---- */
@@ -3285,7 +3301,7 @@
   border-radius: var(--r-lg);
   overflow: hidden;
   background: var(--fill);
-  box-shadow: 0 0 0 2px var(--chat-bg), 0 8px 20px -10px rgba(28, 25, 23, .35);
+  box-shadow: 0 0 0 2px var(--chat-bg), var(--e2);
   transition: transform var(--t-mid) var(--ease-out);
 }
 .stackBack2 { transform: rotate(7deg) translate(10px, 2px); }
@@ -3554,7 +3570,7 @@
 /* Files from other people read as attachments — a white card, like polls and posts. */
 .theirs .bubble.fileBubble {
   background: var(--card-bg);
-  box-shadow: 0 0 0 1px var(--line), 0 6px 20px -12px rgba(28, 25, 23, .18);
+  box-shadow: 0 0 0 1px var(--line), var(--e2);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   color: var(--ink);
@@ -3718,7 +3734,7 @@
   border-radius: var(--r-pill);
   background: var(--card-bg);
   color: var(--ink);
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, .6), 0 6px 16px rgba(28, 25, 23, .22);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, .6), var(--e2);
   font: var(--t-subhead);
   font-weight: var(--w-emph);
   cursor: pointer;
@@ -3816,7 +3832,7 @@ div.actionRow:hover { background: transparent; }
    ========================================================================== */
 
 .theme {
-  --mb-shadow: 0 0 0 1px var(--line), 0 6px 18px -12px rgba(28, 25, 23, .22);
+  --mb-shadow: 0 0 0 1px var(--line), var(--e2);
   --ok: #1F8A56;
   --ok-soft: color-mix(in srgb, #30A46C 14%, transparent);
   --warn: #8A6212;
@@ -3825,7 +3841,7 @@ div.actionRow:hover { background: transparent; }
   --bad-soft: color-mix(in srgb, #E5484D 14%, transparent);
 }
 .theme[data-theme="dark"] {
-  --mb-shadow: var(--bubble-rim), var(--bubble-lift);
+  --mb-shadow: var(--bubble-rim), var(--e2);
   --ok: #4CC38A;
   --warn: #E2B35A;
   --bad: #FF7A72;
@@ -3864,7 +3880,7 @@ div.actionRow:hover { background: transparent; }
   transition: transform var(--t-fast), opacity var(--t-fast);
 }
 .mindPrimary { background: var(--ink); color: var(--bg); }
-.mindSecondary { background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); }
+
 .mindPrimary:active, .mindSecondary:active { transform: scale(.95); }
 .mindPrimary:disabled { opacity: .4; cursor: default; }
 
@@ -3927,8 +3943,7 @@ div.actionRow:hover { background: transparent; }
 .mindStarter { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 12px 6px; text-align: center; }
 .mindStarter h2 { margin: 8px 0 0; font: var(--t-title2); font-weight: var(--w-emph); letter-spacing: -.02em; }
 .mindStarter p { margin: 0; max-width: 290px; font: var(--t-subhead); color: var(--ink-3); }
-.mindIntro h3 { margin: 0; font: var(--t-title3); font-weight: var(--w-emph); letter-spacing: -.015em; }
-.mindIntro p { margin: 2px 0 0; font: var(--t-subhead); color: var(--ink-3); }
+
 .mindInboxItem { display: flex; align-items: center; gap: 8px; }
 .mindInboxItem .mindTileBtn { flex: 1; }
 .mindSort { height: 32px; padding: 0 14px; border: none; border-radius: var(--r-pill); background: var(--ink); color: var(--bg); font: var(--t-footnote); font-weight: var(--w-emph); flex-shrink: 0; cursor: pointer; }
@@ -3936,7 +3951,7 @@ div.actionRow:hover { background: transparent; }
 
 /* the page screen */
 .chatScreen.mindPageScreen { z-index: 40; background: var(--bg); }
-.mindPageBadge { width: 40px; height: 40px; border-radius: var(--r-md); display: flex; align-items: center; justify-content: center; font-size: 22px; background: color-mix(in srgb, var(--tone) 20%, var(--bg)); box-shadow: 0 4px 12px -6px rgba(28, 25, 23, .25); }
+.mindPageBadge { width: 40px; height: 40px; border-radius: var(--r-md); display: flex; align-items: center; justify-content: center; font-size: 22px; background: color-mix(in srgb, var(--tone) 20%, var(--bg)); box-shadow: var(--e1); }
 .mindPageScroll {
   flex: 1;
   min-height: 0;
@@ -3966,7 +3981,7 @@ div.actionRow:hover { background: transparent; }
   cursor: pointer;
   transition: background var(--t-mid) var(--ease-out), color var(--t-mid), box-shadow var(--t-mid);
 }
-.mindViews button.mindViewOn { background: var(--card-bg); color: var(--ink); box-shadow: 0 1px 3px rgba(28, 25, 23, .12); }
+.mindViews button.mindViewOn { background: var(--card-bg); color: var(--ink); box-shadow: var(--e1); }
 .mindSection { display: grid; gap: 6px; }
 .mindSectionHead { display: flex; align-items: center; gap: 4px; border-radius: var(--r-sm); transition: background var(--t-mid), box-shadow var(--t-mid); }
 .mindSectionToggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 6px 2px; border: none; background: none; color: var(--ink); font: var(--t-headline); text-align: left; cursor: pointer; }
@@ -4051,7 +4066,7 @@ div.actionRow:hover { background: transparent; }
   z-index: 60;
   pointer-events: none;
   border-radius: var(--r-md);
-  box-shadow: 0 22px 44px -14px rgba(28, 25, 23, .4);
+  box-shadow: var(--e4);
   will-change: transform;
   animation: ghostIn var(--t-mid) var(--ease-spring);
 }
@@ -4090,7 +4105,7 @@ div.actionRow:hover { background: transparent; }
 .mb_row .mbThumb { width: 78px; }
 .mb_tile .mbThumb, .mb_detail .mbThumb { width: 100%; }
 .mbThumb em { position: absolute; right: 6px; bottom: 6px; padding: 1px 6px; border-radius: 6px; background: rgba(0, 0, 0, .55); color: #fff; font: var(--t-caption2); font-style: normal; font-variant-numeric: tabular-nums; }
-.mbPlay { width: 34px; height: 34px; border-radius: var(--r-pill); background: rgba(255, 255, 255, .92); color: #1C1917; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0, 0, 0, .2); }
+.mbPlay { width: 34px; height: 34px; border-radius: var(--r-pill); background: rgba(255, 255, 255, .92); color: #1C1917; display: flex; align-items: center; justify-content: center; box-shadow: var(--e2); }
 .mb_row .mbPlay { width: 24px; height: 24px; }
 
 /* book */
@@ -4109,7 +4124,7 @@ div.actionRow:hover { background: transparent; }
     linear-gradient(90deg, rgba(0, 0, 0, .22) 0 5px, rgba(255, 255, 255, .12) 5px 6px, transparent 6px),
     linear-gradient(165deg, color-mix(in srgb, var(--c) 78%, #fff), var(--c));
   color: #fff;
-  box-shadow: 0 8px 16px -10px rgba(0, 0, 0, .5);
+  box-shadow: var(--e2);
 }
 .mbCover b { font: 600 13px/16px var(--font-geist), system-ui, sans-serif; letter-spacing: -.01em; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
 .mbCover small { font: var(--t-caption2); opacity: .82; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -4271,55 +4286,17 @@ button.mindPickOn { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ink) !impor
 .mindPickImages { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .mindPickImages button { aspect-ratio: 1; padding: 0; border: none; border-radius: var(--r-sm); overflow: hidden; cursor: pointer; }
 .mindPickImages img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.mindReviewCount { margin: 0; text-align: center; font: var(--t-footnote); color: var(--ink-3); font-variant-numeric: tabular-nums; }
-.mindReviewCard { display: grid; min-height: 210px; padding: 0; border: none; background: none; perspective: 1000px; cursor: pointer; font: inherit; color: var(--ink); }
+
 .mindReviewCard .mbFace { min-height: 210px; }
 .mindReviewCard .mbFace b { font: var(--t-title2); font-weight: var(--w-emph); letter-spacing: -.02em; }
-.mindReviewActions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.mindReviewDone { display: grid; justify-items: center; gap: 6px; padding: 24px 0 8px; text-align: center; }
-.mindReviewDone span { font-size: 44px; line-height: 1; }
-.mindReviewDone h3 { margin: 6px 0 0; font: var(--t-title3); font-weight: var(--w-emph); }
-.mindReviewDone p { margin: 0; font: var(--t-subhead); color: var(--ink-3); }
 
 .mindPrimary svg { vertical-align: -2px; margin-right: 2px; }
 .mindInboxItem { align-items: flex-start; }
 .mindInboxItem .mindSort { margin-top: 12px; }
-
 /* ==========================================================================
    Mind v2 — collections, widget homes, the + sheets, quick add
    ========================================================================== */
 
-/* header: the collection switcher */
-.mindSwitch { padding: 0; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.mindSwitch b { display: inline-flex; align-items: center; gap: 4px; }
-.mindSwitch b svg { color: var(--ink-3); transition: transform var(--t-mid) var(--ease-out); }
-.mindSwitch:active b svg { transform: translateY(2px); }
-
-/* widget home */
-.mindWidgetGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
-.mindWidgetSlot { position: relative; min-width: 0; display: flex; }
-.mindWidgetSlot.mindWide { grid-column: span 2; }
-.mindEditing .mindWidgetSlot { animation: wiggle .28s ease-in-out infinite alternate; }
-.mindEditing .mindWidgetSlot:nth-child(2n) { animation-delay: -.14s; }
-@keyframes wiggle { from { transform: rotate(-.6deg); } to { transform: rotate(.6deg); } }
-@media (prefers-reduced-motion: reduce) { .mindEditing .mindWidgetSlot { animation: none; } }
-.mindWidgetEdit { position: absolute; top: -8px; right: -4px; z-index: 2; display: flex; gap: 4px; }
-.mindWidgetEdit button {
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: var(--r-pill);
-  background: var(--ink);
-  color: var(--bg);
-  font: var(--t-subhead);
-  font-weight: var(--w-emph);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 4px 10px -4px rgba(28, 25, 23, .4);
-}
-.mindWidgetEdit button:disabled { opacity: .3; cursor: default; }
 .mindPageSide em.mindCount {
   min-width: 20px;
   height: 20px;
@@ -4333,76 +4310,20 @@ button.mindPickOn { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ink) !impor
   font: var(--t-caption1);
   font-weight: var(--w-emph);
 }
-
 /* a widget */
-.widget {
-  position: relative;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  width: 100%;
-  min-width: 0;
-  min-height: 116px;
-  padding: 12px 14px;
-  border: none;
-  border-radius: var(--r-lg);
-  background: var(--card-bg);
-  box-shadow: var(--mb-shadow);
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  overflow: hidden;
-}
-button.widget { cursor: pointer; }
-.wLabel { font: var(--t-caption1); font-weight: var(--w-emph); letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
-.wBig { display: flex; align-items: center; gap: 4px; margin-top: 4px; font: 600 28px/34px var(--font-geist), system-ui, sans-serif; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
-.wMid { display: block; font: var(--t-title3); font-weight: var(--w-emph); font-variant-numeric: tabular-nums; }
-.wSub { display: block; font: var(--t-footnote); color: var(--ink-3); }
-.wHint { margin: 6px 0 0; font: var(--t-footnote); color: var(--ink-3); text-wrap: pretty; }
+
 .widget > .mindPrimary { margin-top: auto; height: 30px; }
-.wStreak { background: linear-gradient(160deg, color-mix(in srgb, #F5A524 16%, var(--card-bg)), var(--card-bg) 75%); }
+
 .mbWeek { display: flex; gap: 4px; margin-top: 8px; }
 .mbWeek i { width: 10px; height: 10px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 10%, transparent); }
 .mbWeek i.mbWeekOn { background: #F5A524; }
-.wWarn .wBig { color: var(--bad); }
-.wWord { perspective: 800px; }
+
 .wWord .mbCardInner { margin-top: 8px; }
 .wWord .mbFace { min-height: 70px; box-shadow: none; background: color-mix(in srgb, var(--ink) 4%, transparent); }
 .wWord .mbBack { background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.wRingRow { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
-.wRing { width: 56px; height: 56px; flex-shrink: 0; transform: rotate(-90deg); }
-.wRing circle { fill: none; stroke-width: 4; }
-.wRing circle:first-child { stroke: color-mix(in srgb, var(--ink) 8%, transparent); }
-.wRing circle:last-child { stroke-linecap: round; transition: stroke-dasharray var(--t-slow) var(--ease-out); }
-.wList { display: grid; width: 100%; margin-top: 4px; }
-.wList button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 7px 0;
-  border: none;
-  background: none;
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.wList button + button { box-shadow: inset 0 1px 0 var(--line); }
-.wList b { flex: 1; min-width: 0; font: var(--t-subhead); font-weight: var(--w-control); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wList em { flex-shrink: 0; font-style: normal; font: var(--t-caption1); color: var(--ink-3); }
-.wThumb { width: 24px; height: 24px; flex-shrink: 0; border-radius: 6px; object-fit: cover; }
-.wPins { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.wPins button { display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 12px; border: none; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); font: var(--t-footnote); font-weight: var(--w-control); cursor: pointer; }
-.widget.wCovers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; }
-.wCovers > button { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 0; border: none; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+
 .wCovers .mb { background: none; box-shadow: none; }
 .wCovers .mbk_image img { height: 96px; min-height: 0; border-radius: var(--r-md); }
-.wCovers figcaption { display: none; }
-.wCovers > button > b { padding: 0 2px; font: var(--t-footnote); font-weight: var(--w-emph); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wCovers > .wHint { grid-column: span 2; padding: 4px 6px; }
 
 /* page tree */
 .mindTreeRow { position: relative; display: flex; align-items: center; gap: 6px; padding-left: calc(var(--depth, 0) * 18px); }
@@ -4491,38 +4412,17 @@ button.widget { cursor: pointer; }
 .mindStructure small { font: var(--t-caption1); color: var(--ink-3); }
 .addIcon.mindKindIcon { background: color-mix(in srgb, var(--ink) 6%, transparent); font-size: 24px; }
 .addIcon.mindKindFirst { box-shadow: 0 0 0 2px var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.mindCarousel { display: flex; gap: 10px; margin: 0 -20px; padding: 2px 20px 10px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 20px; scrollbar-width: none; }
-.mindCarousel::-webkit-scrollbar { display: none; }
-.mindCarouselItem { flex: 0 0 196px; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: var(--r-lg); background: color-mix(in srgb, var(--ink) 4%, transparent); scroll-snap-align: start; }
-.mindCarouselPreview { display: flex; height: 150px; pointer-events: none; }
-.mindCarouselPreview .widget { min-height: 0; height: 150px; }
-.mindCarouselText b { display: block; font: var(--t-subhead); font-weight: var(--w-emph); }
-.mindCarouselText small { display: block; font: var(--t-footnote); color: var(--ink-3); }
-.mindCarouselItem > button { margin-top: auto; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+
 .mindField { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink); font: var(--t-subhead); }
 .mindField input[type="date"] { border: none; background: transparent; color: var(--ink); font: var(--t-subhead); }
 .mindPalettes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .mindPalettes button { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: none; border-radius: var(--r-md); background: color-mix(in srgb, var(--ink) 4%, transparent); text-align: left; cursor: pointer; }
 .mindPalettes .mbSwatches { height: 40px; }
 .mindPalettes small { font: var(--t-footnote); color: var(--ink-2); }
-.mindTagStatic { display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 12px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink-2); font: var(--t-subhead); }
 
 /* Jamshad's guide */
-.mindGuide { display: grid; gap: 10px; padding: 16px; border-radius: var(--r-lg); background: color-mix(in srgb, var(--accent) 6%, var(--card-bg)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
+
 .mindGuide .mbBar i { background: var(--accent); }
-.mindGuideHead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.mindGuideHead b { font: var(--t-headline); }
-.mindGuideHead span { font: var(--t-footnote); color: var(--ink-3); font-variant-numeric: tabular-nums; }
-.mindSteps { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
-.mindSteps li { display: flex; align-items: flex-start; gap: 10px; color: var(--ink-2); }
-.mindSteps li > span:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.mindSteps b { font: var(--t-subhead); font-weight: var(--w-control); }
-.mindSteps small { font: var(--t-footnote); color: var(--ink-2); text-wrap: pretty; }
-.mindStepMark { width: 20px; height: 20px; flex-shrink: 0; margin-top: 1px; border-radius: var(--r-pill); box-shadow: inset 0 0 0 1.5px var(--line-2); color: #fff; display: flex; align-items: center; justify-content: center; transition: background var(--t-mid); }
-.mindStepDone .mindStepMark { background: #30A46C; box-shadow: none; }
-.mindStepDone b { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; }
-.mindStepNext .mindStepMark { box-shadow: inset 0 0 0 2px var(--accent); }
-.mindStepNext b { color: var(--ink); font-weight: var(--w-emph); }
 
 /* new item kinds */
 .mbk_date { flex-direction: row !important; align-items: center; }
@@ -4569,8 +4469,7 @@ textarea.plainInput { height: auto; min-height: 96px; padding: 13px 16px; line-h
 .mindStack > .mindSectionBar:not(:first-child) { margin-top: 8px; }
 .mindStack > .mindGuide + .mindSectionBar { margin-top: 8px; }
 .mindWidgetGrid, .mindRows { gap: 8px; }
-.widget { gap: 4px; padding: 14px; }
-.widget .wLabel + * { margin-top: 2px; }
+
 .mindPageScroll { gap: 12px; }
 .mindPageScroll > .mindSection + .mindSection { margin-top: 8px; }
 .mindSection { gap: 8px; }
@@ -4578,13 +4477,12 @@ textarea.plainInput { height: auto; min-height: 96px; padding: 13px 16px; line-h
 .mindListView { gap: 8px; }
 .mindShelf, .mindBoardView { gap: 12px; }
 .mindColumn { gap: 8px; padding: 12px; }
-.mindCarouselItem { gap: 10px; padding: 12px; }
+
 .bsheetBody > .sheetLabel { margin-bottom: -4px; }
 .bsheetBody > .sheetLabel:first-child { margin-top: 4px; }
 .mindStructure { gap: 8px; }
 .mindStructure button { padding: 14px 12px; gap: 4px; }
-.mindGuide { gap: 12px; }
-.mindSteps { gap: 12px; }
+
 .mindStarter { gap: 8px; padding: 20px 12px 8px; }
 .mindStarter .mindPrimary { margin-top: 8px; }
 
@@ -4594,14 +4492,14 @@ textarea.plainInput { height: auto; min-height: 96px; padding: 13px 16px; line-h
 .mindFolded > div { margin-block: 0; padding-block: 0; }
 .mindShelf, .mindBoardView { margin: -6px -16px -12px; padding: 6px 16px 18px; }
 .mindSubpages { margin: -6px -16px -10px; padding: 6px 16px 14px; }
-.mindCarousel { margin: -6px -20px -8px; padding: 6px 20px 16px; }
+
 .mindTreeKids { padding-top: 8px !important; }
 .mindGuide, .widget, .mindPageRow { isolation: isolate; }
 
 /* ---- actions: section bars carry the controls, weighted by importance ---- */
 .mindSectionBar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
 .mindSectionBar .sheetLabel { margin: 0; }
-.mindBarActions { display: inline-flex; align-items: center; gap: 6px; }
+
 .mindIconBtn {
   width: 32px;
   height: 32px;
@@ -4618,24 +4516,79 @@ textarea.plainInput { height: auto; min-height: 96px; padding: 13px 16px; line-h
 }
 .mindIconBtn:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); color: var(--ink); }
 .mindIconBtn:active { transform: scale(.9); }
-.mindPill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 32px;
-  padding: 0 12px 0 10px;
-  border: none;
-  border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--ink) 6%, transparent);
-  color: var(--ink);
-  font: var(--t-footnote);
-  font-weight: var(--w-control);
-  cursor: pointer;
-  transition: background var(--t-fast), transform var(--t-fast);
-}
-.mindPill:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); }
-.mindPill:active { transform: scale(.95); }
-.mindPill[data-strong] { padding: 0 14px; background: var(--ink); color: var(--bg); font-weight: var(--w-emph); }
+
 .plainInput.mindTitleInput { height: 52px; font: var(--t-headline); letter-spacing: -.01em; }
 .plainInput.mindTitleInput::placeholder { font-weight: 400; }
 a.secondaryWide, a.primaryWide { display: flex; align-items: center; justify-content: center; text-decoration: none !important; }
+
+/* Elevation room for clipping containers that hold level-2 surfaces. */
+.mindFoldBody > div { margin: calc(var(--e2-room) * -.5) -16px calc(var(--e2-room) * -1 - 4px); padding: calc(var(--e2-room) * .5) 16px calc(var(--e2-room) + 4px); }
+.mindShelf, .mindBoardView { margin: calc(var(--e2-room) * -.5) -16px calc(var(--e2-room) * -1); padding: calc(var(--e2-room) * .5) 16px calc(var(--e2-room) + 6px); }
+.mindSubpages, .mindCarousel { padding-bottom: calc(var(--e2-room) + 2px); margin-bottom: calc(var(--e2-room) * -1 + 2px); }
+.memberPick { padding: var(--e1-room) 2px calc(var(--e2-room)); }
+
+/* ==========================================================================
+   Mind — collections as folders
+   ========================================================================== */
+
+.folderGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px 10px; padding-top: 8px; }
+.folderCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: none;
+  border-radius: 4px var(--r-lg) var(--r-lg) var(--r-lg);
+  background: color-mix(in srgb, var(--tone) 11%, var(--card-bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 16%, transparent), var(--e2);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+/* the folder's tab */
+.folderCard::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  width: 44%;
+  height: 9px;
+  border-radius: var(--r-xs) var(--r-xs) 0 0;
+  background: color-mix(in srgb, var(--tone) 22%, var(--card-bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 16%, transparent);
+  clip-path: inset(-2px -2px 0 -2px);
+}
+.folderCard:active { transform: scale(.97); }
+.folderTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.folderIcon { width: 40px; height: 40px; border-radius: var(--r-sm); background: var(--card-bg); box-shadow: var(--e1); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.folderBadge { padding: 2px 8px; border-radius: var(--r-pill); background: var(--accent); color: #fff; font-style: normal; font: var(--t-caption1); font-weight: var(--w-emph); white-space: nowrap; }
+.folderText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.folderText b { font: var(--t-headline); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.folderText small { font: var(--t-footnote); color: var(--ink-3); }
+.folderPeek { display: flex; gap: 4px; min-height: 28px; }
+.folderPeek img, .folderPeek > span { width: 28px; height: 28px; border-radius: var(--r-xs); object-fit: cover; }
+.folderPeek > span { display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--card-bg) 70%, transparent); font-size: 14px; }
+.folderNew {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 140px;
+  border: 1.5px dashed var(--line-2);
+  border-radius: var(--r-lg);
+  background: transparent;
+  color: var(--ink-3);
+  font: var(--t-footnote);
+  font-weight: var(--w-control);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.folderNew:hover { background: var(--fill); color: var(--ink-2); }
+.chatScreen.mindFolderScreen { z-index: 35; }
+.mindStructure.mindStructureTwo { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mindHint { margin: 0; font: var(--t-footnote); color: var(--ink-3); text-wrap: pretty; }
