@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { initials } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { htmlToMarkdown, markdownToHtml } from "@/lib/chat/richText";
-import { toAttachment, useMediaUrl } from "@/lib/chat/media";
+import { releaseMedia, toAttachment, useMediaUrl } from "@/lib/chat/media";
 import { localStorageAdapter } from "@/lib/chat/storage";
 import { userById } from "@/lib/chat/store";
 import type { Attachment, Message, User } from "@/lib/chat/types";
@@ -175,32 +175,59 @@ export default function Composer({
     sel?.addRange(range);
   };
 
-  // Keyed on chat + edit target by the parent: seed the editor once on mount.
+  /** Writes a pending draft now instead of after the debounce. */
+  const flushDraft = (el = editorRef.current) => {
+    if (!draftTimer.current || !el) return;
+    clearTimeout(draftTimer.current);
+    draftTimer.current = null;
+    localStorageAdapter.saveDraft(chatId, meId, htmlToMarkdown(el));
+  };
+
+  // The composer stays mounted across edit mode (so the attachment tray
+  // survives); the editor swaps between the draft and the message being edited.
+  const editId = editing?.id ?? null;
   useEffect(() => {
     const el = editorRef.current;
     if (!el) return;
-    el.innerHTML = markdownToHtml(editing ? editing.body : localStorageAdapter.loadDraft(chatId));
+    // Save the draft before the edited message's text replaces it.
+    flushDraft();
+    el.innerHTML = markdownToHtml(editing ? editing.body : localStorageAdapter.loadDraft(chatId, meId));
     setHasText(!!el.textContent?.trim());
     if (editing) placeCaretAtEnd();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [editId]);
 
   useEffect(() => {
     if (replyTo) placeCaretAtEnd();
   }, [replyTo]);
 
+  // The parent passes a fresh onTyping each render; keyed on it, the cleanup
+  // below would announce "stopped typing" on every re-render mid-sentence.
+  const onTypingRef = useRef(onTyping);
+  useEffect(() => { onTypingRef.current = onTyping; }, [onTyping]);
+
   const stopTyping = useCallback(() => {
+    if (idleTimer.current) clearTimeout(idleTimer.current);
     if (!typingRef.current) return;
     typingRef.current = false;
-    onTyping(false);
-  }, [onTyping]);
+    onTypingRef.current(false);
+  }, []);
 
-  useEffect(() => () => stopTyping(), [stopTyping]);
+  // Leaving the chat: stop typing, and keep whatever was typed in the last 250ms.
+  // The editor is captured now: by the time this cleanup runs, React has already cleared the ref.
+  useEffect(() => {
+    const el = editorRef.current;
+    return () => {
+      stopTyping();
+      flushDraft(el);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const signalTyping = () => {
     if (!typingRef.current) {
       typingRef.current = true;
-      onTyping(true);
+      onTypingRef.current(true);
     }
     if (idleTimer.current) clearTimeout(idleTimer.current);
     idleTimer.current = setTimeout(stopTyping, TYPING_IDLE_MS);
@@ -240,11 +267,14 @@ export default function Composer({
     if (!el) return;
     // A cleared editor keeps a stray <br>; drop it so the placeholder returns.
     if (!el.textContent?.trim() && !el.querySelector("li, blockquote, code, img")) el.innerHTML = "";
-    setHasText(!!el.textContent?.replace(/​/g, "").trim());
+    setHasText(!!el.textContent?.replace(/\u200B/g, "").trim());
     syncCaret();
     if (!editing) {
       if (draftTimer.current) clearTimeout(draftTimer.current);
-      draftTimer.current = setTimeout(() => localStorageAdapter.saveDraft(chatId, htmlToMarkdown(el)), 250);
+      draftTimer.current = setTimeout(() => {
+        draftTimer.current = null;
+        localStorageAdapter.saveDraft(chatId, meId, htmlToMarkdown(el));
+      }, 250);
     }
   };
 
@@ -254,15 +284,15 @@ export default function Composer({
     if (!sel || !sel.rangeCount) return;
     const code = closestIn(el, sel.anchorNode, "code");
     if (code) {
-      code.replaceWith(document.createTextNode((code.textContent ?? "").replace(/​/g, "")));
+      code.replaceWith(document.createTextNode((code.textContent ?? "").replace(/\u200B/g, "")));
       return;
     }
     if (!sel.isCollapsed) {
-      exec("insertHTML", `<code>${escapeHtml(sel.toString())}</code>​`);
+      exec("insertHTML", `<code>${escapeHtml(sel.toString())}</code>\u200B`);
       return;
     }
-    exec("insertHTML", "<code>​</code>​");
-    const fresh = Array.from(el.querySelectorAll("code")).find((c) => c.textContent === "​");
+    exec("insertHTML", "<code>\u200B</code>\u200B");
+    const fresh = Array.from(el.querySelectorAll("code")).find((c) => c.textContent === "\u200B");
     if (fresh?.firstChild) {
       const r = document.createRange();
       r.setStart(fresh.firstChild, 1);
@@ -356,6 +386,15 @@ export default function Composer({
     return () => { live = false; };
   }, [incoming]);
 
+  // Files still in the tray when the chat closes are never sent: free them.
+  const trayRef = useRef(attachments);
+  useEffect(() => { trayRef.current = attachments; }, [attachments]);
+  useEffect(() => () => releaseMedia(trayRef.current.map((a) => a.id)), []);
+  const removeAttachment = (id: string) => {
+    releaseMedia([id]);
+    setAttachments((prev) => prev.filter((x) => x.id !== id));
+  };
+
   const clear = () => {
     const el = editorRef.current;
     if (el) el.innerHTML = "";
@@ -377,12 +416,17 @@ export default function Composer({
     onSend(body, attachments);
     clear();
     setAttachments([]);
-    localStorageAdapter.saveDraft(chatId, "");
+    trayRef.current = [];
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = null;
+    localStorageAdapter.saveDraft(chatId, meId, "");
     stopTyping();
     el.focus();
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Enter that confirms an IME candidate (Japanese, Chinese, Korean) is not a send.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (showMentions) {
       if (e.key === "ArrowDown") { e.preventDefault(); setMentionIndex((i) => (i + 1) % mentionCandidates.length); return; }
       if (e.key === "ArrowUp") { e.preventDefault(); setMentionIndex((i) => (i - 1 + mentionCandidates.length) % mentionCandidates.length); return; }
@@ -394,7 +438,10 @@ export default function Composer({
       const kind = e.shiftKey && e.key.toLowerCase() === "x" ? "strike" : shortcut[e.key.toLowerCase()];
       if (kind) { e.preventDefault(); format(kind); return; }
     }
-    if (e.key === "Enter" && e.shiftKey) {
+    // Touch keyboards have no Shift+Enter: there Return is a new line and the
+    // send button sends, the way phone messengers work.
+    const touchKeyboard = window.matchMedia?.("(pointer: coarse)").matches && !e.metaKey && !e.ctrlKey;
+    if (e.key === "Enter" && (e.shiftKey || touchKeyboard)) {
       // A new paragraph continues lists and quotes; an empty item ends them.
       e.preventDefault();
       exec("insertParagraph");
@@ -413,7 +460,7 @@ export default function Composer({
     }
   };
 
-  const hasContent = hasText || attachments.length > 0;
+  const hasContent = hasText || (attachments.length > 0 && !editing);
   const canSend = hasContent || !!editing;
   const expanded = focused || hasContent || formatting || !!replyTo || !!editing || linkUrl !== null;
 
@@ -510,10 +557,11 @@ export default function Composer({
             </div>
           )}
 
-          {attachments.length > 0 && (
+          {/* An edit changes text only; the tray waits for the next send. */}
+          {attachments.length > 0 && !editing && (
             <div className={styles.attachTray}>
               {attachments.map((a) => (
-                <AttachChip key={a.id} a={a} onRemove={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))} />
+                <AttachChip key={a.id} a={a} onRemove={() => removeAttachment(a.id)} />
               ))}
             </div>
           )}

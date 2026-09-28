@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { initials, TONES } from "@/lib/chat/avatar";
-import { Emoji, emojify } from "@/lib/chat/emoji";
+import { Emoji, emojify, firstEmoji } from "@/lib/chat/emoji";
 import { toAttachment } from "@/lib/chat/media";
 import {
   blankPage, childrenOf, collectionItems, detach, learnChat, locate, makeCollection, newId, nowMs, pageItems, patchBlock,
@@ -15,7 +15,7 @@ import Avatar from "./Avatar";
 import { BlockView, KIND_LABEL } from "./MindBlocks";
 import {
   IconArrowUp, IconBack, IconBoard, IconCheck, IconChevron, IconChevronDown, IconClose, IconGrid, IconListView,
-  IconMore, IconPlus, IconShelf,
+  IconFolder, IconMore, IconOpen, IconPlus, IconShelf, IconSmile, IconTrash,
 } from "./Icons";
 import Logo from "./Logo";
 import { Segmented, Sheet, Toggle } from "./ui";
@@ -64,13 +64,15 @@ const KIND_EMOJI = Object.fromEntries(KINDS.map((k) => [k.kind, k.emoji])) as Re
 
 
 
+type ToastAction = { label: string; run: () => void };
+
 interface Ctx {
   mind: Mind;
   /** The collection that's open, if any. */
   col: Collection | null;
   update: (fn: (m: Mind) => Mind) => void;
   me: string;
-  flash: (t: string) => void;
+  flash: (t: string, actions?: ToastAction[]) => void;
   openFolder: (id: string) => void;
   openPage: (id: string) => void;
   openSheet: (n: React.ReactNode) => void;
@@ -86,7 +88,7 @@ export default function MindTab({ onOpenChat }: { onOpenChat: (chat: Chat) => vo
   const [folder, setFolder] = useState<{ id: string; leaving: boolean } | null>(null);
   const [page, setPage] = useState<{ id: string; leaving: boolean } | null>(null);
   const [sheet, setSheet] = useState<React.ReactNode>(null);
-  const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean } | null>(null);
+  const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean; actions?: ToastAction[] } | null>(null);
 
   // Switching person (Developer → Signed in as) starts from their Mind.
   const [seenMe, setSeenMe] = useState(me);
@@ -103,11 +105,13 @@ export default function MindTab({ onOpenChat }: { onOpenChat: (chat: Chat) => vo
 
   const ctx: Ctx = {
     mind, col, update, me,
-    flash: (text) => {
+    flash: (text, actions) => {
       const id = nowMs();
-      setToast({ text, id });
-      setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), 1800);
-      setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 2020);
+      setToast({ text, id, actions });
+      // A toast with actions (Undo) waits longer, so there's time to tap them.
+      const stay = actions ? 4200 : 1800;
+      setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), stay);
+      setTimeout(() => setToast((t) => (t?.id === id ? null : t)), stay + 220);
     },
     openFolder: (id) => {
       update((m) => ({ ...m, current: id }));
@@ -124,7 +128,12 @@ export default function MindTab({ onOpenChat }: { onOpenChat: (chat: Chat) => vo
   };
   const leave = (set: typeof setFolder) => {
     set((x) => (x ? { ...x, leaving: true } : x));
-    setTimeout(() => set(null), 220);
+    // Only clear what's still leaving: something opened meanwhile stays open.
+    setTimeout(() => set((x) => (x?.leaving ? null : x)), 220);
+  };
+  const dismissToast = () => {
+    setToast((t) => (t ? { ...t, leaving: true } : t));
+    setTimeout(() => setToast((t) => (t?.leaving ? null : t)), 220);
   };
 
   const itemCount = Object.keys(mind.blocks).length;
@@ -171,7 +180,12 @@ export default function MindTab({ onOpenChat }: { onOpenChat: (chat: Chat) => vo
       )}
       {sheet}
       {toast && (
-        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${styles.mindToast} ${toast.leaving ? styles.toastLeaving : ""}`} role="status">{emojify(toast.text)}</div>
+        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${styles.mindToast} ${toast.actions ? styles.toastActions : ""} ${toast.leaving ? styles.toastLeaving : ""}`} role="status">
+          <span className={styles.toastText}>{emojify(toast.text)}</span>
+          {toast.actions?.map((a) => (
+            <button key={a.label} className={styles.toastBtn} onClick={() => { dismissToast(); a.run(); }}>{a.label}</button>
+          ))}
+        </div>
       )}
     </>
   );
@@ -334,9 +348,11 @@ function VaultView({ ctx, col }: { ctx: Ctx; col: Collection }) {
         <div className={styles.mindRows}>
           {items.map((b) => (
             <div key={b.id} className={styles.mindInboxItem}>
-              <button className={styles.mindTileBtn} onClick={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
-                <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
-              </button>
+              <SwipeItem actions={itemActions(ctx, b)}>
+                <Tile onOpen={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
+                  <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
+                </Tile>
+              </SwipeItem>
               <button className={styles.mindSort} onClick={() => ctx.openSheet(<MoveSheet me={ctx.me} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} title="Sort into" />)}>Sort</button>
             </div>
           ))}
@@ -371,15 +387,34 @@ function SearchResults({ ctx, q }: { ctx: Ctx; q: string }) {
           {blocks.map((b) => {
             const at = locate(ctx.mind, b.id);
             return (
-              <button key={b.id} className={styles.mindTileBtn} onClick={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
+              <Tile key={b.id} onOpen={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
                 <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
                 <span className={styles.mindWhere}>{emojify(at ? `${at.collection.emoji} ${at.collection.name} › ${at.page ? at.page.title : "Vault"}` : "")}</span>
-              </button>
+              </Tile>
             );
           })}
         </div>
       )}
       {nothing && <p className={styles.emptyInbox}>Nothing in your Mind matches “{q}”.</p>}
+    </div>
+  );
+}
+
+/** A tappable item. Not a <button>: items hold their own controls (a checkbox, a download link). */
+function Tile({ onOpen, children }: { onOpen: () => void; children: React.ReactNode }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={styles.mindTileBtn}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+        e.preventDefault();
+        onOpen();
+      }}
+    >
+      {children}
     </div>
   );
 }
@@ -434,7 +469,7 @@ function NewFolderSheet({ ctx }: { ctx: Ctx }) {
     <Sheet title="New collection" onClose={ctx.closeSheet} action={{ label: "Create", disabled: !name.trim(), onClick: create }}>
       <input
         className={`${styles.plainInput} ${styles.mindTitleInput}`}
-        autoFocus
+        data-autofocus
         placeholder="e.g. Trip to Lisbon"
         value={name}
         onChange={(e) => setName(e.target.value)}
@@ -442,9 +477,7 @@ function NewFolderSheet({ ctx }: { ctx: Ctx }) {
         aria-label="Collection name"
       />
       <p className={styles.sheetLabel}>Icon</p>
-      <div className={styles.mindEmojiGrid}>
-        {FOLDER_EMOJIS.map((e) => <button key={e} className={emoji === e ? styles.mindPickOn : undefined} onClick={() => setEmoji(e)}><Emoji char={e} /></button>)}
-      </div>
+      <EmojiPicker value={emoji} options={FOLDER_EMOJIS} onPick={setEmoji} />
       <p className={styles.sheetLabel}>Colour</p>
       <div className={styles.mindSwatches}>
         {Object.values(TONES).map((c) => <button key={c} style={{ background: c }} className={tone === c ? styles.mindPickOn : undefined} onClick={() => setTone(c)} aria-label={`Colour ${c}`} />)}
@@ -464,9 +497,7 @@ function FolderSheet({ ctx, colId, onDeleted }: { ctx: Ctx; colId: string; onDel
         <>
           <input className={`${styles.plainInput} ${styles.mindTitleInput}`} value={col.name} onChange={(e) => set({ name: e.target.value })} aria-label="Collection name" />
           <p className={styles.sheetLabel}>Icon</p>
-          <div className={styles.mindEmojiGrid}>
-            {FOLDER_EMOJIS.map((e) => <button key={e} className={col.emoji === e ? styles.mindPickOn : undefined} onClick={() => set({ emoji: e })}><Emoji char={e} /></button>)}
-          </div>
+          <EmojiPicker value={col.emoji} options={FOLDER_EMOJIS} onPick={(e) => set({ emoji: e })} />
           <p className={styles.sheetLabel}>Colour</p>
           <div className={styles.mindSwatches}>
             {Object.values(TONES).map((c) => <button key={c} style={{ background: c }} className={col.tone === c ? styles.mindPickOn : undefined} onClick={() => set({ tone: c })} aria-label={`Colour ${c}`} />)}
@@ -474,15 +505,29 @@ function FolderSheet({ ctx, colId, onDeleted }: { ctx: Ctx; colId: string; onDel
           <button
             className={styles.mindDanger}
             onClick={() => close(() => {
+              // Keep what's deleted, so Undo can put it all back where it was.
+              let back: ((m: Mind) => Mind) | null = null;
               update((m) => {
-                const ids = collectionItems(m, col).map((b) => b.id);
+                const at = m.collections.findIndex((c) => c.id === colId);
+                const gone = m.collections[at];
+                if (!gone) return m;
+                const ids = collectionItems(m, gone).map((b) => b.id);
+                const kept = Object.fromEntries(ids.map((id) => [id, m.blocks[id]]));
+                const wasCurrent = m.current === colId;
+                back = (n) => (n.collections.some((c) => c.id === colId) ? n : {
+                  ...n,
+                  blocks: { ...n.blocks, ...kept },
+                  collections: [...n.collections.slice(0, at), gone, ...n.collections.slice(at)],
+                  current: wasCurrent ? colId : n.current,
+                });
                 const blocks = { ...m.blocks };
                 ids.forEach((id) => delete blocks[id]);
                 const collections = m.collections.filter((c) => c.id !== colId);
                 return { ...m, blocks, collections, current: collections[0]?.id ?? null };
               });
               onDeleted();
-              ctx.flash(`${col.name} deleted`);
+              const undo = back as ((m: Mind) => Mind) | null;
+              ctx.flash(`${col.name} deleted`, undo ? [{ label: "Undo", run: () => { update(undo); ctx.openFolder(colId); } }] : undefined);
             })}
           >
             Delete {col.name}
@@ -493,6 +538,182 @@ function FolderSheet({ ctx, colId, onDeleted }: { ctx: Ctx; colId: string; onDel
   );
 }
 
+
+/* ===========================================================================
+   Shared pieces: the icon picker, and swipe-to-reveal actions on items
+   =========================================================================== */
+
+/**
+ * A grid of suggested icons, plus one tile that takes any emoji: tapping it
+ * focuses a hidden field, so a phone brings up its keyboard (and its emoji
+ * keyboard). On a computer it just waits for an emoji to be typed.
+ */
+function EmojiPicker({ value, options, onPick }: { value: string; options: string[]; onPick: (e: string) => void }) {
+  const custom = !options.includes(value) ? value : null;
+  return (
+    <div className={styles.mindEmojiGrid}>
+      {options.map((e) => <button key={e} className={value === e ? styles.mindPickOn : undefined} onClick={() => onPick(e)} aria-label={`Icon ${e}`}><Emoji char={e} /></button>)}
+      <label className={`${styles.mindEmojiCustom} ${custom ? styles.mindPickOn : ""}`} title="Any emoji">
+        {custom ? <Emoji char={custom} /> : <IconSmile size={20} />}
+        <input
+          value=""
+          onChange={(e) => {
+            const picked = firstEmoji(e.target.value);
+            if (picked) onPick(picked);
+          }}
+          aria-label="Type any emoji"
+          autoComplete="off"
+          enterKeyHint="done"
+        />
+      </label>
+    </div>
+  );
+}
+
+type SwipeAction = { id: string; label: string; icon: React.ReactNode; tone: "ink" | "accent" | "danger"; run: () => void };
+
+/** What a swipe on an item offers: open its source, move it, or remove it. */
+function itemActions(ctx: Ctx, b: Block): SwipeAction[] {
+  const list: SwipeAction[] = [];
+  if (b.ref) list.push({ id: "open", label: "Chat", icon: <IconOpen size={18} />, tone: "ink", run: () => ctx.openChat(b.ref!.chatId) });
+  else if (b.url) list.push({ id: "open", label: "Open", icon: <IconOpen size={18} />, tone: "ink", run: () => window.open(b.url, "_blank", "noopener") });
+  list.push({ id: "move", label: "Move", icon: <IconFolder size={18} />, tone: "accent", run: () => ctx.openSheet(<MoveSheet me={ctx.me} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} />) });
+  list.push({ id: "remove", label: "Remove", icon: <IconTrash size={18} />, tone: "danger", run: () => removeItem(ctx.update, ctx.flash, b.id) });
+  return list;
+}
+
+/** Remove an item, with an Undo that puts it back exactly where it was. */
+function removeItem(update: Ctx["update"], flash: Ctx["flash"], id: string) {
+  let back: ((m: Mind) => Mind) | null = null;
+  update((m) => {
+    const b = m.blocks[id];
+    const at = locate(m, id);
+    if (b) back = (n) => {
+      if (n.blocks[id]) return n;
+      const next = { ...n, blocks: { ...n.blocks, [id]: b } };
+      const c = at && n.collections.find((x) => x.id === at.collection.id);
+      if (!at) return next;
+      if (!c) return n;
+      if (at.section && at.page) {
+        const s = c.pages.find((p) => p.id === at.page!.id)?.sections.find((x) => x.id === at.section!.id);
+        // Its page or section went meanwhile: the Vault keeps it instead.
+        if (!s) return place(next, id, { collectionId: c.id });
+        const beforeId = at.section.blockIds.slice(at.section.blockIds.indexOf(id) + 1).find((x) => s.blockIds.includes(x)) ?? null;
+        return place(next, id, { collectionId: c.id, pageId: at.page.id, sectionId: s.id, beforeId });
+      }
+      const i = at.collection.vault.indexOf(id);
+      return patchCollection(next, c.id, (x) => ({ ...x, vault: [...x.vault.slice(0, i), id, ...x.vault.slice(i)] }));
+    };
+    return removeBlock(m, id);
+  });
+  const undo = back as ((m: Mind) => Mind) | null;
+  flash("Removed from Mind", undo ? [{ label: "Undo", run: () => update(undo) }] : undefined);
+}
+
+const SWIPE_EVENT = "nod:mind-swipe";
+
+/**
+ * Drag an item to the left, like a chat row, to reveal what you can do with
+ * it. One item is open at a time; tapping anywhere else closes it. Holding
+ * still (without sliding) still picks the item up to drag it elsewhere.
+ */
+function SwipeItem({ actions, children }: { actions: SwipeAction[]; children: React.ReactNode }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ x: number; y: number; base: number; active: boolean } | null>(null);
+  const swiped = useRef(false);
+  const [open, setOpen] = useState(false);
+  const [settling, setSettling] = useState(false);
+  const width = actions.length * 60 + 8;
+
+  const apply = (x: number) => {
+    if (bodyRef.current) bodyRef.current.style.transform = x ? `translateX(${x}px)` : "";
+    wrapRef.current?.style.setProperty("--reveal", String(Math.min(1, -x / width)));
+  };
+  const settle = (x: number) => {
+    setSettling(true);
+    apply(x);
+    setOpen(x !== 0);
+    if (x !== 0) window.dispatchEvent(new CustomEvent(SWIPE_EVENT, { detail: wrapRef.current }));
+    setTimeout(() => setSettling(false), 340);
+  };
+
+  // Close when another item opens, or on a tap anywhere else.
+  useEffect(() => {
+    if (!open) return;
+    const other = (e: Event) => { if ((e as CustomEvent).detail !== wrapRef.current) settle(0); };
+    const outside = (e: PointerEvent) => { if (!wrapRef.current?.contains(e.target as Node)) settle(0); };
+    window.addEventListener(SWIPE_EVENT, other);
+    document.addEventListener("pointerdown", outside, true);
+    return () => {
+      window.removeEventListener(SWIPE_EVENT, other);
+      document.removeEventListener("pointerdown", outside, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  return (
+    <div className={styles.mindSwipe} ref={wrapRef}>
+      <div className={styles.mindSwipeActions} aria-hidden={!open}>
+        {actions.map((a) => (
+          <button
+            key={a.id}
+            className={`${styles.mindSwipeBtn} ${styles[`mindSwipe_${a.tone}`]}`}
+            tabIndex={open ? 0 : -1}
+            onClick={(e) => { e.stopPropagation(); settle(0); a.run(); }}
+          >
+            <span>{a.icon}</span>
+            <small>{a.label}</small>
+          </button>
+        ))}
+      </div>
+      <div
+        ref={bodyRef}
+        className={`${styles.mindSwipeBody} ${settling ? styles.mindSwipeSettling : ""}`}
+        onPointerDown={(e) => {
+          swiped.current = false;
+          drag.current = { x: e.clientX, y: e.clientY, base: open ? -width : 0, active: false };
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d) return;
+          const dx = e.clientX - d.x;
+          const dy = e.clientY - d.y;
+          if (!d.active) {
+            if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { drag.current = null; return; }
+            if (Math.abs(dx) < 8) return;
+            d.active = true;
+            swiped.current = true;
+            try { bodyRef.current?.setPointerCapture(e.pointerId); } catch { /* pointer gone */ }
+          }
+          // Rubber-band past the actions so it never feels like a wall.
+          let x = Math.min(0, d.base + dx);
+          if (x < -width) x = -width - (-width - x) * .25;
+          apply(x);
+        }}
+        onPointerUp={(e) => {
+          const d = drag.current;
+          drag.current = null;
+          if (!d?.active) return;
+          const x = Math.min(0, d.base + (e.clientX - d.x));
+          settle(x < -width / 2.5 ? -width : 0);
+        }}
+        onPointerCancel={() => { if (drag.current?.active) settle(open ? -width : 0); drag.current = null; }}
+        onClickCapture={(e) => {
+          // A swipe (or a tap on an open item) shouldn't also open the item.
+          if (swiped.current || open) {
+            e.stopPropagation();
+            e.preventDefault();
+            if (!swiped.current) settle(0);
+            swiped.current = false;
+          }
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
 
 /* ===========================================================================
    A page — sections, views, sub-pages, quick add, drag and drop
@@ -525,6 +746,17 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
   const [target, setTarget] = useState<Target>(null);
   const targetRef = useRef<Target>(null);
   const suppressClick = useRef(false);
+
+  // Items allow vertical panning (pan-y), and React's touch listeners are
+  // passive, so once a hold picks an item up a native listener stops the
+  // page scrolling under the finger (which would also cancel the drag).
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const hold = (e: TouchEvent) => { if (drag.current?.active && e.cancelable) e.preventDefault(); };
+    el.addEventListener("touchmove", hold, { passive: false });
+    return () => el.removeEventListener("touchmove", hold);
+  }, []);
 
   const all = pageItems(ctx.mind, page);
   const pageTags = tagsOf(all);
@@ -623,6 +855,18 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
       else if (e.clientY > s.bottom - 70) scrollRef.current!.scrollTop += 10;
     }
   };
+  /** The browser took the pointer (a scroll, a system gesture): put the item down where it was. */
+  const onRootCancel = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d) return;
+    clearTimeout(d.timer);
+    if (!d.active) return;
+    suppressClick.current = false;
+    targetRef.current = null;
+    setTarget(null);
+    setDragging(null);
+  };
   const onRootUp = () => {
     const d = drag.current;
     drag.current = null;
@@ -658,14 +902,26 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
           dragging?.id === b.id ? styles.mindDragSource : "",
           target?.before === b.id ? (axis === "x" ? styles.mindDropLeft : styles.mindDropAbove) : "",
         ].filter(Boolean).join(" ")}
+        role="button"
+        tabIndex={0}
         onPointerDown={(e) => onBlockDown(e, b.id)}
         onClick={() => {
           if (suppressClick.current) { suppressClick.current = false; return; }
           ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />);
         }}
+        onKeyDown={(e) => {
+          // Only the item itself; its own controls (a checkbox, a link) keep their keys.
+          if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+          e.preventDefault();
+          ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />);
+        }}
         onContextMenu={(e) => e.preventDefault()}
       >
-        <BlockView block={b} shape={shape} onToggle={() => toggleItem(ctx.update, b)} />
+        {axis === "y" && preferred === "row" ? (
+          <SwipeItem actions={itemActions(ctx, b)}>
+            <BlockView block={b} shape={shape} onToggle={() => toggleItem(ctx.update, b)} />
+          </SwipeItem>
+        ) : <BlockView block={b} shape={shape} onToggle={() => toggleItem(ctx.update, b)} />}
       </div>
     );
   };
@@ -719,7 +975,7 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
       className={`${styles.screen} ${styles.chatScreen} ${styles.mindPageScreen} ${leaving ? styles.leaving : ""}`}
       onPointerMove={onRootMove}
       onPointerUp={onRootUp}
-      onPointerCancel={onRootUp}
+      onPointerCancel={onRootCancel}
       style={{ ["--tone" as string]: page.tone }}
     >
       <div className={styles.edgeTop} />
@@ -947,7 +1203,7 @@ function AddItemSheet({ ctx, to, kind: initial }: { ctx: Ctx; to: { collectionId
           <button key={k.kind} className={`${styles.choice} ${kind === k.kind ? styles.choiceOn : ""}`} onClick={() => setKind(k.kind)}>{k.label}</button>
         ))}
       </div>
-      <input className={`${styles.plainInput} ${styles.mindTitleInput}`} autoFocus placeholder={f1} value={a} onChange={(e) => setA(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && ready) void create(); }} />
+      <input className={`${styles.plainInput} ${styles.mindTitleInput}`} data-autofocus placeholder={f1} value={a} onChange={(e) => setA(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && ready) void create(); }} />
       {f2 && (kind === "note"
         ? <textarea className={`${styles.plainInput} ${styles.mindNote}`} placeholder={f2} value={b} onChange={(e) => setB(e.target.value)} rows={3} />
         : <input className={styles.plainInput} placeholder={f2} value={b} onChange={(e) => setB(e.target.value)} inputMode={kind === "progress" ? "numeric" : undefined} />)}
@@ -1012,7 +1268,7 @@ function NewPageSheet({ ctx, col, parentId, sub = false }: { ctx: Ctx; col: Coll
   };
   return (
     <Sheet title={parent ? "New sub-page" : "New page"} onClose={ctx.closeSheet} action={{ label: "Create", disabled: !title.trim(), onClick: create }}>
-      <input className={`${styles.plainInput} ${styles.mindTitleInput}`} autoFocus placeholder={parent ? "e.g. Separable verbs" : "e.g. Vocab"} value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && title.trim()) create(); }} />
+      <input className={`${styles.plainInput} ${styles.mindTitleInput}`} data-autofocus placeholder={parent ? "e.g. Separable verbs" : "e.g. Vocab"} value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && title.trim()) create(); }} />
       {(sub || parentId) && (
         <>
           <p className={styles.sheetLabel}>Inside</p>
@@ -1031,9 +1287,7 @@ function NewPageSheet({ ctx, col, parentId, sub = false }: { ctx: Ctx; col: Coll
       </div>
       <p className={styles.sheetNote}>This sets the quick-add field and the first view ({VIEW_META[viewFor(kind).view].label}). Any page can hold anything.</p>
       <p className={styles.sheetLabel}>Icon</p>
-      <div className={styles.mindEmojiGrid}>
-        {PAGE_EMOJIS.map((e) => <button key={e} className={emoji === e ? styles.mindPickOn : undefined} onClick={() => setEmoji(e)}><Emoji char={e} /></button>)}
-      </div>
+      <EmojiPicker value={emoji} options={PAGE_EMOJIS} onPick={setEmoji} />
     </Sheet>
   );
 }
@@ -1044,15 +1298,30 @@ function NewPageSheet({ ctx, col, parentId, sub = false }: { ctx: Ctx; col: Coll
 
 function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
   const { mind, update } = useMind(ctx.me);
+  const [adding, setAdding] = useState(false);
   const [newTag, setNewTag] = useState("");
+  // Escape discards the tag: the blur that follows mustn't add it anyway.
+  const discard = useRef(false);
   const b = mind?.blocks[id];
   if (!mind || !b) return null;
   const at = locate(mind, id);
   const tags = at ? tagsOf(collectionItems(mind, at.collection)) : [];
   const set = (patch: Partial<Block>) => update((m) => patchBlock(m, id, patch));
+  const addTag = () => {
+    if (discard.current) return;
+    const t = newTag.trim().replace(/^#/, "");
+    if (t) set({ tags: [...new Set([...b.tags, t])] });
+    setNewTag("");
+    setAdding(false);
+  };
+
+  // Opening the source is a quiet header action, not a big button.
+  const action = b.ref
+    ? { label: "Open chat", onClick: () => ctx.openChat(b.ref!.chatId) }
+    : b.url ? { label: "Open", href: b.url, onClick: () => {} } : undefined;
 
   return (
-    <Sheet title={KIND_LABEL[b.kind]} onClose={ctx.closeSheet}>
+    <Sheet title={KIND_LABEL[b.kind]} onClose={ctx.closeSheet} action={action}>
       {(close) => (
         <>
           <div className={styles.mindDetail}><BlockView block={b} shape="detail" onToggle={() => toggleItem(update, b)} /></div>
@@ -1067,8 +1336,6 @@ function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
               <button onClick={() => set({ value: Math.min(b.total ?? 1, (b.value ?? 0) + 1) })} aria-label="Forward one">+</button>
             </div>
           )}
-          {b.ref && <button className={styles.secondaryWide} onClick={() => close(() => ctx.openChat(b.ref!.chatId))}>Open in chat</button>}
-          {b.url && <a className={styles.secondaryWide} href={b.url} target="_blank" rel="noopener noreferrer">Open {b.source}</a>}
 
           <p className={styles.sheetLabel}>Your note</p>
           <textarea className={`${styles.plainInput} ${styles.mindNote}`} placeholder="Why did you keep this?" value={b.note ?? ""} onChange={(e) => set({ note: e.target.value })} rows={2} />
@@ -1078,23 +1345,63 @@ function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
             {[...new Set([...b.tags, ...tags])].slice(0, 12).map((t) => (
               <button key={t} className={`${styles.choice} ${b.tags.includes(t) ? styles.choiceOn : ""}`} onClick={() => set({ tags: b.tags.includes(t) ? b.tags.filter((x) => x !== t) : [...b.tags, t] })}>#{t}</button>
             ))}
-            <input
-              className={styles.mindTagInput}
-              placeholder="+ New tag"
-              value={newTag}
-              onChange={(e) => setNewTag(e.target.value.replace(/\s+/g, "-").toLowerCase())}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && newTag.trim()) { set({ tags: [...new Set([...b.tags, newTag.trim().replace(/^#/, "")])] }); setNewTag(""); }
-              }}
-            />
+            {adding ? (
+              <input
+                className={styles.mindTagInput}
+                ref={(el) => el?.focus({ preventScroll: true })}
+                placeholder="tag"
+                value={newTag}
+                size={Math.max(4, newTag.length + 1)}
+                onChange={(e) => setNewTag(e.target.value.replace(/\s+/g, "-").toLowerCase())}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") addTag();
+                  if (e.key === "Escape") {
+                    // Cancel the tag only, not the sheet: the sheet listens for Escape on window.
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.nativeEvent.stopImmediatePropagation();
+                    discard.current = true;
+                    setNewTag("");
+                    setAdding(false);
+                  }
+                }}
+                onBlur={addTag}
+                aria-label="New tag"
+              />
+            ) : (
+              <button className={`${styles.choice} ${styles.mindAddTag}`} onClick={() => { discard.current = false; setAdding(true); }}><IconPlus size={14} /> Tag</button>
+            )}
           </div>
 
-          <p className={styles.sheetLabel}>Lives in</p>
-          <button className={styles.mindLocation} onClick={() => close(() => ctx.openSheet(<MoveSheet me={ctx.me} id={id} onClose={ctx.closeSheet} onMoved={ctx.flash} />))}>
-            <span>{emojify(at ? `${at.collection.emoji} ${at.collection.name} › ${at.page ? `${at.page.title}${at.section?.title ? ` › ${at.section.title}` : ""}` : "Vault"}` : "Nowhere")}</span>
-            <em>Move</em>
-          </button>
-          <button className={styles.mindDanger} onClick={() => close(() => { update((m) => removeBlock(m, id)); ctx.flash("Removed from Mind"); })}>Remove from Mind</button>
+          <div className={styles.mindSectionBar}>
+            <p className={styles.sheetLabel}>Lives in</p>
+            <button className={styles.mindPill} onClick={() => close(() => ctx.openSheet(<MoveSheet me={ctx.me} id={id} onClose={ctx.closeSheet} onMoved={ctx.flash} />))}>
+              <IconFolder size={14} /> Move
+            </button>
+          </div>
+          {at ? (
+            <nav className={styles.mindCrumbs} aria-label="Location">
+              <ol>
+                <li>
+                  <button onClick={() => close(() => ctx.openFolder(at.collection.id))}><Emoji char={at.collection.emoji} /> {at.collection.name}</button>
+                </li>
+                <li className={styles.mindCrumbSep} aria-hidden="true"><IconChevron size={12} /></li>
+                {at.page ? (
+                  <>
+                    {at.section?.title ? (
+                      <>
+                        <li><button onClick={() => close(() => { ctx.openFolder(at.collection.id); ctx.openPage(at.page!.id); })}>{at.page.title}</button></li>
+                        <li className={styles.mindCrumbSep} aria-hidden="true"><IconChevron size={12} /></li>
+                        <li aria-current="location"><span>{at.section.title}</span></li>
+                      </>
+                    ) : <li aria-current="location"><button onClick={() => close(() => { ctx.openFolder(at.collection.id); ctx.openPage(at.page!.id); })}>{at.page.title}</button></li>}
+                  </>
+                ) : <li aria-current="location"><span>Vault</span></li>}
+              </ol>
+            </nav>
+          ) : <p className={styles.mindHint}>Not in a collection.</p>}
+
+          <button className={styles.mindDanger} onClick={() => close(() => removeItem(update, ctx.flash, id))}>Remove from Mind</button>
         </>
       )}
     </Sheet>
@@ -1194,9 +1501,7 @@ function PageSheet({ ctx, col, pageId, onDeleted }: { ctx: Ctx; col: Collection;
           <input className={`${styles.plainInput} ${styles.mindTitleInput}`} value={page.title} onChange={(e) => set((p) => ({ ...p, title: e.target.value }))} aria-label="Page name" />
           <div className={styles.mindField}><span>Pin to home</span><Toggle on={!!page.pinned} onChange={(v) => set((p) => ({ ...p, pinned: v }))} label="Pin to home" /></div>
           <p className={styles.sheetLabel}>Icon</p>
-          <div className={styles.mindEmojiGrid}>
-            {PAGE_EMOJIS.map((e) => <button key={e} className={page.emoji === e ? styles.mindPickOn : undefined} onClick={() => set((p) => ({ ...p, emoji: e }))}><Emoji char={e} /></button>)}
-          </div>
+          <EmojiPicker value={page.emoji} options={PAGE_EMOJIS} onPick={(e) => set((p) => ({ ...p, emoji: e }))} />
           <p className={styles.sheetLabel}>Colour</p>
           <div className={styles.mindSwatches}>
             {Object.values(TONES).map((c) => <button key={c} style={{ background: c }} className={page.tone === c ? styles.mindPickOn : undefined} onClick={() => set((p) => ({ ...p, tone: c }))} aria-label={`Colour ${c}`} />)}
@@ -1239,7 +1544,9 @@ function PageSheet({ ctx, col, pageId, onDeleted }: { ctx: Ctx; col: Collection;
             onClick={() => close(() => {
               update((m) => {
                 const c = m.collections.find((x) => x.id === col.id)!;
-                const doomed = [pageId, ...c.pages.filter((p) => p.parentId === pageId).map((p) => p.id)];
+                // The page and everything under it, however deep.
+                const doomed = [pageId];
+                for (let i = 0; i < doomed.length; i++) doomed.push(...childrenOf(c, doomed[i]).map((p) => p.id).filter((id) => !doomed.includes(id)));
                 const ids = c.pages.filter((p) => doomed.includes(p.id)).flatMap((p) => pageItems(m, p).map((b) => b.id));
                 let next = m;
                 ids.forEach((bid) => { next = detach(next, bid); });

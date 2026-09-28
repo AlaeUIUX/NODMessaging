@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { initials } from "@/lib/chat/avatar";
 import { isGrouped, userById } from "@/lib/chat/store";
 import type { AvatarTone, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { IconArrowUp, IconLock } from "./Icons";
 import type { BubblePos } from "./MessageRow";
+import { smooth } from "./ui";
 import styles from "./chat.module.css";
 
 export interface RowArgs {
@@ -44,22 +45,26 @@ function dayLabel(ts: number) {
   return date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 }
 
+const dayKey = (ts: number) => new Date(ts).toDateString();
+
 const clock = (ts: number) => new Date(ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
 export default function MessageList({
   chatId, messages, meId, isGroupChat, intro, firstUnreadId, typingUsers, hasEarlier, onLoadEarlier, children,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const seenIds = useRef<Set<string>>(new Set());
+  // Fresh thread on open: what's already there is "seen" from the first
+  // render, so nothing animates in. (Seeding it in an effect ran too late:
+  // every bubble played its entrance on open.)
+  const [openedWith] = useState(() => new Set(messages.map((m) => m.id)));
+  const seenIds = useRef(openedWith);
   const pendingScrollRestore = useRef<number | null>(null);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
 
-  // Fresh thread on open: nothing animates in, land at the bottom.
+  // Land at the bottom on open.
   useEffect(() => {
-    seenIds.current = new Set(messages.map((m) => m.id));
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId]);
 
   useLayoutEffect(() => {
@@ -85,7 +90,7 @@ export default function MessageList({
     const last = messages[messages.length - 1];
     const sentByMe = !!last && last.authorId === meId && !seenIds.current.has(last.id);
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 220;
-    if (nearBottom || sentByMe) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (nearBottom || sentByMe) el.scrollTo({ top: el.scrollHeight, behavior: smooth() });
   }, [messages, typingUsers.length, meId]);
 
   useEffect(() => {
@@ -107,15 +112,24 @@ export default function MessageList({
 
   const lastOwnIndex = messages.map((m) => m.authorId).lastIndexOf(meId);
 
+  // Per-thread lookups, once per change instead of per row per render.
+  const { days, byId } = useMemo(
+    () => ({ days: messages.map((m) => dayKey(m.createdAt)), byId: new Map(messages.map((m) => [m.id, m])) }),
+    [messages],
+  );
+
   // Far from the bottom, a button takes you back — and counts what arrived meanwhile.
+  // Only messages after the previous last one count: older pages prepended by
+  // "Load earlier" are not news.
   const [away, setAway] = useState(false);
   const [unseen, setUnseen] = useState(0);
-  const seenCount = useRef(messages.length);
+  const lastSeenId = useRef(messages[messages.length - 1]?.id);
   useEffect(() => {
-    const added = messages.length - seenCount.current;
-    seenCount.current = messages.length;
+    const from = messages.findIndex((m) => m.id === lastSeenId.current);
+    const added = from >= 0 ? messages.length - 1 - from : 0;
+    lastSeenId.current = messages[messages.length - 1]?.id;
     if (added > 0 && away) setUnseen((n) => n + added);
-  }, [messages.length, away]);
+  }, [messages, away]);
   // While a jump is scrolling down, don't bring the button back mid-flight.
   const jumping = useRef(false);
   const onScroll = () => {
@@ -129,7 +143,7 @@ export default function MessageList({
   };
   const jumpToLatest = () => {
     jumping.current = true;
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: smooth() });
     setAway(false);
     setUnseen(0);
   };
@@ -152,7 +166,7 @@ export default function MessageList({
 
   return (
     <>
-    <div className={styles.thread} ref={scrollRef} data-thread onScroll={onScroll}>
+    <div className={styles.thread} ref={scrollRef} data-thread onScroll={onScroll} role="log" aria-label="Messages">
       <div className={styles.threadFill} />
 
       {hasEarlier ? (
@@ -175,14 +189,16 @@ export default function MessageList({
       {messages.map((message, i) => {
         const prev = messages[i - 1];
         const next = messages[i + 1];
-        const showDay = !prev || dayLabel(prev.createdAt) !== dayLabel(message.createdAt);
+        const showDay = !prev || days[i - 1] !== days[i];
         const breakBefore = showDay || firstUnreadId === message.id;
         const joinPrev = !breakBefore && isGrouped(prev, message) && !prev?.deletedAt;
-        const nextBreaks = !next || dayLabel(next.createdAt) !== dayLabel(message.createdAt) || firstUnreadId === next.id;
+        const nextBreaks = !next || days[i + 1] !== days[i] || firstUnreadId === next.id;
         const joinNext = !nextBreaks && isGrouped(message, next) && !next?.deletedAt;
         const pos: BubblePos = joinPrev ? (joinNext ? "middle" : "last") : joinNext ? "first" : "single";
         const isMine = message.authorId === meId;
-        const quoted = message.replyToId ? messages.find((m) => m.id === message.replyToId) : undefined;
+        const quoted = message.replyToId ? byId.get(message.replyToId) : undefined;
+        // New means it arrived after the last message you'd seen — not an older page loaded above.
+        const isNew = !seenIds.current.has(message.id) && message.createdAt >= (byId.get(lastSeenId.current ?? "")?.createdAt ?? 0);
 
         return (
           <div key={message.id}>
@@ -203,7 +219,7 @@ export default function MessageList({
               // Receipts only while the conversation is still on your message:
               // once three or more newer messages arrive, the line goes (a failure always stays).
               showStatus: i === lastOwnIndex && (message.status === "failed" || messages.length - 1 - i < 3),
-              isNew: !seenIds.current.has(message.id),
+              isNew,
             })}
           </div>
         );

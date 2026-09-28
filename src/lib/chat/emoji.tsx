@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 /**
  * Apple emoji everywhere, on every platform. Images come from the MIT-licensed
@@ -14,12 +14,18 @@ const CDN = "https://cdn.jsdelivr.net/npm/emoji-datasource-apple@16.0.0/img/appl
  * text-default ones explicitly asked to be emoji (U+FE0F), with skin tones and
  * ZWJ sequences. Plain symbols like → or © stay text.
  */
-const PART = String.raw`(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}️)\p{Emoji_Modifier}?`;
+const PART = String.raw`(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\uFE0F)\p{Emoji_Modifier}?`;
 // Flags come first: each half of a flag is an emoji character on its own.
-const EMOJI = new RegExp(`\\p{Regional_Indicator}{2}|${PART}(?:\\u200D(?:${PART}|\\p{Extended_Pictographic}))*`, "gu");
+// Keycaps (1️⃣, #️⃣) are a digit, an optional U+FE0F and U+20E3.
+const EMOJI = new RegExp(
+  String.raw`\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|${PART}(?:\u200D(?:${PART}|\p{Extended_Pictographic}))*`,
+  "gu",
+);
+/** What an emoji keyboard types, including text-default symbols sent without U+FE0F (❤, ☀). */
+const TYPED = new RegExp(String.raw`${EMOJI.source}|\p{Extended_Pictographic}`, "u");
 
 function codepoints(char: string) {
-  return Array.from(char).map((c) => c.codePointAt(0)!.toString(16)).join("-");
+  return Array.from(char).map((c) => c.codePointAt(0)!.toString(16).padStart(4, "0")).join("-");
 }
 
 /** The datasource keeps FE0F on some filenames and drops it on others; try both. */
@@ -31,28 +37,28 @@ function candidates(char: string) {
 }
 
 export function Emoji({ char, className }: { char: string; className?: string }) {
-  const [first, ...rest] = candidates(char);
+  const sources = candidates(char);
+  // Which filename we're on, per character; a new `char` starts over.
+  const [miss, setMiss] = useState({ char, n: 0 });
+  const n = miss.char === char ? miss.n : 0;
+  // Last resort: the platform's own emoji, rendered by React (swapping the
+  // node by hand left React holding a detached <img>, and it crashed later).
+  if (n >= sources.length) return <>{char}</>;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
       className={`emoji ${className ?? ""}`}
-      src={`${CDN}${first}.png`}
+      src={`${CDN}${sources[n]}.png`}
       alt={char}
       draggable={false}
-      data-fallbacks={rest.join(",")}
-      onError={(e) => {
-        const img = e.currentTarget;
-        const [next, ...others] = (img.dataset.fallbacks ?? "").split(",").filter(Boolean);
-        if (next) {
-          img.dataset.fallbacks = others.join(",");
-          img.src = `${CDN}${next}.png`;
-        } else {
-          // Last resort: the platform's own emoji.
-          img.replaceWith(document.createTextNode(char));
-        }
-      }}
+      onError={() => setMiss({ char, n: n + 1 })}
     />
   );
+}
+
+/** The first emoji in some text (what a phone's emoji keyboard types), or null. */
+export function firstEmoji(text: string): string | null {
+  return TYPED.exec(text)?.[0] ?? null;
 }
 
 /** Splits text into strings and <Emoji/> images. */

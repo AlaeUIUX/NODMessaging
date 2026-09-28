@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { chatIdentity } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { USERS } from "@/lib/chat/seed";
@@ -23,7 +23,7 @@ import { MoveSheet } from "./Mind";
 import { MediaGrid, MediaViewer, ReceiptSheet } from "./MediaViewer";
 import ReactionSheet from "./ReactionSheet";
 import StatusBar from "./StatusBar";
-import { ChatUiProvider, getPermission, PermissionAlert, setPermission, type PermissionKind } from "./ui";
+import { ChatUiProvider, getPermission, PermissionAlert, setPermission, smooth, type PermissionKind } from "./ui";
 import styles from "./chat.module.css";
 
 interface MenuState {
@@ -43,7 +43,7 @@ export default function ChatView({ chat, leaving, onBack }: {
   onBack: (immediate?: boolean) => void;
 }) {
   const {
-    state, me, peers, send, sendCard, retry, toggleReaction, editMessage, deleteMessage,
+    state, me, isOnline, lastReadAt, send, sendCard, retry, toggleReaction, editMessage, deleteMessage,
     togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead,
   } = useChat();
 
@@ -67,28 +67,34 @@ export default function ChatView({ chat, leaving, onBack }: {
   const typing = typingUsers(chat.id).filter((id) => id !== me);
   const identity = chatIdentity(chat, me, userById);
   const other = chat.kind === "dm" ? chat.memberIds.find((id) => id !== me) : undefined;
-  const online = !!other && peers.some((p) => p.userId === other);
+  const online = !!other && isOnline(other);
+  const members = useMemo(() => USERS.filter((u) => chat.memberIds.includes(u.id) && u.id !== me), [chat, me]);
 
   // Frozen on open so the divider doesn't chase incoming messages.
   const [firstUnreadId] = useState(() => {
-    const lastRead = state.data.lastReadAt[chat.id] ?? 0;
+    const lastRead = lastReadAt(chat.id);
     if (!lastRead) return null;
     return messages.find((m) => m.authorId !== me && m.createdAt > lastRead)?.id ?? null;
   });
 
+  // Whatever lands while the chat is on screen is read: on open, on each new
+  // message, and when the tab comes back into view.
   useEffect(() => {
-    markRead(chat.id);
+    if (document.visibilityState === "visible") markRead(chat.id);
+  }, [chat.id, me, messages.length, markRead]);
+  useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState === "visible") markRead(chat.id);
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chat.id]);
+  }, [chat.id, markRead]);
 
   // The thread scrolls under the floating composer, so its bottom inset
   // tracks the composer's real height (reply previews, attachments, growth).
   useEffect(() => {
+    // The composer is absolutely positioned (the wrapper has no height) and
+    // stays mounted for the life of the chat, edit mode included.
     const composer = composerRef.current?.firstElementChild as HTMLElement | null;
     const screen = screenRef.current;
     if (!composer || !screen) return;
@@ -102,7 +108,7 @@ export default function ChatView({ chat, leaving, onBack }: {
     return () => ro.disconnect();
   }, []);
 
-  const flash = (text: string, actions?: { label: string; run: () => void }[]) => {
+  const flash = useCallback((text: string, actions?: { label: string; run: () => void }[]) => {
     const id = Date.now();
     setToast({ text, id, actions });
     // Fade out before unmounting, so toasts leave as gently as they arrive.
@@ -110,14 +116,14 @@ export default function ChatView({ chat, leaving, onBack }: {
     const stay = actions ? 4200 : 1800;
     setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), stay);
     setTimeout(() => setToast((t) => (t?.id === id ? null : t)), stay + 220);
-  };
+  }, []);
   const dismissToast = () => {
     setToast((t) => (t ? { ...t, leaving: true } : t));
     setTimeout(() => setToast(null), 220);
   };
 
   /** Asks for a permission the way the OS would: once, then remembered. */
-  const ask = (kind: PermissionKind) => new Promise<boolean>((resolve) => {
+  const ask = useCallback((kind: PermissionKind) => new Promise<boolean>((resolve) => {
     const state = getPermission(kind);
     if (state === "granted") { resolve(true); return; }
     // A denied permission asks again only when the person explicitly retries.
@@ -130,9 +136,9 @@ export default function ChatView({ chat, leaving, onBack }: {
         resolve(ok);
       },
     });
-  });
+  }), [flash]);
 
-  const closeSheet = () => setOverlaySheet(null);
+  const closeSheet = useCallback(() => setOverlaySheet(null), []);
   const shareCard = (card: Card, summary: string) => {
     sendCard(chat.id, card, summary);
     closeSheet();
@@ -215,13 +221,13 @@ export default function ChatView({ chat, leaving, onBack }: {
   };
 
   /** One photo opens full screen; a collection opens its grid first. */
-  const openMedia = (message: Message, index: number | "all") => {
+  const openMedia = useCallback((message: Message, index: number | "all") => {
     if (index === "all") {
       setOverlaySheet(<MediaGrid message={message} onClose={closeSheet} onPick={(i) => setViewer({ message, index: i })} />);
     } else {
       setViewer({ message, index });
     }
-  };
+  }, [closeSheet]);
 
   // Interactive swipe back: drag from the left edge and the inbox follows.
   const edge = useRef<{ x: number; dx: number; t: number } | null>(null);
@@ -279,14 +285,14 @@ export default function ChatView({ chat, leaving, onBack }: {
     settle(d.dx > width * 0.4 || velocity > 0.6 ? "back" : "stay");
   };
 
-  const jumpTo = (messageId: string) => {
+  const jumpTo = useCallback((messageId: string) => {
     const el = screenRef.current?.querySelector(`[data-message-id="${messageId}"]`);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    el?.scrollIntoView({ behavior: smooth(), block: "center" });
     setHighlighted(messageId);
     setTimeout(() => setHighlighted(null), 1200);
-  };
+  }, []);
 
-  const openMenu = (message: Message, pos: BubblePos, bubble: HTMLElement, armed: boolean) => {
+  const openMenu = useCallback((message: Message, pos: BubblePos, bubble: HTMLElement, armed: boolean) => {
     const host = screenRef.current?.getBoundingClientRect();
     if (!host) return;
     const r = bubble.getBoundingClientRect();
@@ -297,9 +303,20 @@ export default function ChatView({ chat, leaving, onBack }: {
       rect: { top: r.top - host.top, left: r.left - host.left, width: r.width, height: r.height },
       bounds: { width: host.width, height: host.height },
     });
-  };
+  }, []);
 
-  const members = USERS.filter((u) => chat.memberIds.includes(u.id) && u.id !== me);
+  // Stable, so memoized rows skip re-rendering when nothing about them changed.
+  const onReply = useCallback((m: Message) => { setReplyTo(m); setEditing(null); }, []);
+  const onShowReactions = useCallback((m: Message) => setSheetFor(m.id), []);
+  const onShowReceipts = useCallback(
+    (m: Message) => setOverlaySheet(<ReceiptSheet message={m} chat={chat} onClose={closeSheet} />),
+    [chat, closeSheet],
+  );
+
+  const ui = useMemo(
+    () => ({ chat, members, openSheet: setOverlaySheet, closeSheet, toast: flash, ask, openMedia }),
+    [chat, members, closeSheet, flash, ask, openMedia],
+  );
   const firstName = identity.label.split(" ")[0];
   const presence = typing.length
     ? chat.kind === "group" ? `${userById(typing[0]).name} is typing…` : "typing…"
@@ -311,7 +328,7 @@ export default function ChatView({ chat, leaving, onBack }: {
   const menuMessage = menu ? messages.find((m) => m.id === menu.message.id) ?? menu.message : null;
 
   return (
-    <ChatUiProvider value={{ chat, members, openSheet: setOverlaySheet, closeSheet, toast: flash, ask, openMedia }}>
+    <ChatUiProvider value={ui}>
     <div
       ref={screenRef}
       className={`${styles.screen} ${styles.chatScreen} ${leaving ? styles.leaving : ""}`}
@@ -370,11 +387,11 @@ export default function ChatView({ chat, leaving, onBack }: {
             highlighted={highlighted === row.message.id}
             focused={menu?.message.id === row.message.id}
             meId={me}
-            onReply={(m) => { setReplyTo(m); setEditing(null); }}
-            onMenu={(m, bubble, armed) => openMenu(m, row.pos, bubble, armed)}
+            onReply={onReply}
+            onMenu={openMenu}
             onToggleReaction={toggleReaction}
-            onShowReactions={(m) => setSheetFor(m.id)}
-            onShowReceipts={(m) => setOverlaySheet(<ReceiptSheet message={m} chat={chat} onClose={closeSheet} />)}
+            onShowReactions={onShowReactions}
+            onShowReceipts={onShowReceipts}
             isGroup={chat.kind === "group"}
             onRetry={retry}
             onJumpTo={jumpTo}
@@ -386,7 +403,6 @@ export default function ChatView({ chat, leaving, onBack }: {
 
       <div ref={composerRef}>
         <Composer
-          key={`${chat.id}:${editing?.id ?? "compose"}`}
           chatId={chat.id}
           meId={me}
           members={members}

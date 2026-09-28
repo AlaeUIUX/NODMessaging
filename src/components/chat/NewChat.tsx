@@ -87,7 +87,7 @@ export default function NewChat({ onOpen, onClose }: { onOpen: (chat: Chat) => v
           <>
             <input
               className={styles.bigInput}
-              autoFocus
+              data-autofocus
               placeholder="Group name"
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
@@ -119,7 +119,7 @@ export default function NewChat({ onOpen, onClose }: { onOpen: (chat: Chat) => v
         <>
           <label className={styles.sheetSearch}>
             <IconSearch size={18} />
-            <input placeholder="Search name" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
+            <input placeholder="Search name" value={query} onChange={(e) => setQuery(e.target.value)} data-autofocus />
           </label>
 
           {!q && (

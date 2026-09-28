@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getForceFailure, setForceFailure } from "@/lib/chat/api";
+import { clearMedia } from "@/lib/chat/media";
 import { USERS } from "@/lib/chat/seed";
 import { ChatProvider, useChat, userById } from "@/lib/chat/store";
 import type { Chat } from "@/lib/chat/types";
@@ -99,21 +100,18 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
         </label>
         <button
           className={styles.devReset}
-          onClick={() => {
-            // Fresh seed for demos: conversations, drafts, identity and permission answers.
+          onClick={async () => {
+            // Fresh seed for demos: conversations, drafts, identity, permission answers and stored files.
             try {
               Object.keys(localStorage).filter((k) => k.startsWith("nod.chat") || k.startsWith("nod.perm") || k.startsWith("nod.mind")).forEach((k) => localStorage.removeItem(k));
               sessionStorage.removeItem("nod.chat.me");
             } catch { /* private mode */ }
+            await clearMedia();
             location.reload();
           }}
         >
           Reset demo data
         </button>
-        <div className={styles.devLinks}>
-          <Link href="/prototype">Legacy prototype</Link>
-          <Link href="/onboarding-test">Onboarding</Link>
-        </div>
       </div>
     </details>
   );
@@ -134,6 +132,7 @@ function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
     const tick = () => {
       const now = Date.now();
       for (const chat of latest.current.chats) {
+        if (!chat.memberIds.includes(me)) continue;
         for (const m of latest.current.messages[chat.id] ?? []) {
           const c = m.card;
           if (!c || c.type !== "reminder" || c.firedAt !== null || c.at > now) continue;
@@ -157,20 +156,58 @@ function Device() {
   const [leaving, setLeaving] = useState(false);
   const [banner, setBanner] = useState<Banner | null>(null);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { state } = useChat();
+  const deviceRef = useRef<HTMLDivElement>(null);
+  const { state, saveFailed } = useChat();
+  const latestChats = useRef(state.data.chats);
+  useEffect(() => { latestChats.current = state.data.chats; }, [state.data.chats]);
+
+  // On a phone the device is the page. iOS Safari lays the keyboard over the
+  // page instead of resizing it, so follow the visual viewport: the composer
+  // then sits right above the keyboard rather than behind it.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const el = deviceRef.current;
+    if (!vv || !el) return;
+    const phone = window.matchMedia("(max-width: 520px)");
+    const fit = () => {
+      if (!phone.matches) {
+        el.style.removeProperty("--vv-h");
+        el.style.removeProperty("--vv-top");
+        return;
+      }
+      el.style.setProperty("--vv-h", `${vv.height}px`);
+      el.style.setProperty("--vv-top", `${vv.offsetTop}px`);
+    };
+    fit();
+    vv.addEventListener("resize", fit);
+    vv.addEventListener("scroll", fit);
+    phone.addEventListener("change", fit);
+    return () => {
+      vv.removeEventListener("resize", fit);
+      vv.removeEventListener("scroll", fit);
+      phone.removeEventListener("change", fit);
+    };
+  }, []);
+
+  // Say so once if storage fills up: nothing new would survive a reload.
+  const [storageWarned, setStorageWarned] = useState(false);
+  if (saveFailed && !storageWarned) {
+    setStorageWarned(true);
+    setBanner({ id: -1, chatId: "", title: "Storage is full", body: "New messages stay in this tab, but they won't be there after a reload." });
+  }
 
   const showBanner = useCallback((b: Banner) => {
     setBanner(b);
     setTimeout(() => setBanner((cur) => (cur?.id === b.id ? null : cur)), 5000);
   }, []);
 
-  const open = (chat: Chat) => {
+  const show = useCallback((chat: Chat) => {
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
     setLeaving(false);
     setOpenChat(chat);
-  };
+  }, []);
 
-  const back = (immediate?: boolean) => {
+  const hide = useCallback((immediate?: boolean) => {
     if (immediate) {
       // A swipe-back already slid the screen away; just unmount it.
       setOpenChat(null);
@@ -182,10 +219,44 @@ function Device() {
       setOpenChat(null);
       setLeaving(false);
     }, LEAVE_MS);
+  }, []);
+
+  // An open chat is a history entry, so the phone's Back (or a browser back
+  // swipe) closes the chat instead of leaving the site. Next.js keeps its own
+  // router state inside these entries.
+  const openRef = useRef<Chat | null>(null);
+  const popImmediate = useRef(false);
+  useEffect(() => { openRef.current = openChat; }, [openChat]);
+  const open = (chat: Chat) => {
+    show(chat);
+    if (window.history.state?.nodChat) window.history.replaceState({ ...window.history.state, nodChat: chat.id }, "");
+    else window.history.pushState({ nodChat: chat.id }, "");
   };
+  const back = (immediate?: boolean) => {
+    if (!window.history.state?.nodChat) { hide(immediate); return; }
+    popImmediate.current = !!immediate;
+    window.history.back();
+  };
+  useEffect(() => {
+    const onPop = () => {
+      // A same-page #anchor adds an entry with no state; it isn't a Back out of the chat.
+      if (window.history.state === null) return;
+      const id: string | undefined = window.history.state?.nodChat;
+      if (!id && openRef.current) {
+        hide(popImmediate.current);
+        popImmediate.current = false;
+      } else if (id && openRef.current?.id !== id) {
+        // Forward again: reopen the chat this entry belongs to.
+        const chat = latestChats.current.find((c) => c.id === id);
+        if (chat) show(chat);
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [hide, show]);
 
   return (
-    <div className={styles.device} data-device>
+    <div ref={deviceRef} className={styles.device} data-device>
       <i className={`${styles.key} ${styles.keyAction}`} />
       <i className={`${styles.key} ${styles.keyVolUp}`} />
       <i className={`${styles.key} ${styles.keyVolDown}`} />
@@ -274,21 +345,22 @@ export default function ChatApp() {
             >
               <span className={styles.themeKnob}>{theme === "light" ? <IconSun size={14} /> : <IconMoon size={14} />}</span>
             </button>
-            <a className={styles.cta} href="/" target="_blank" rel="noopener">
+            {/* The second window signs in as Charles, so the two can talk. */}
+            <a className={styles.cta} href="/?as=charles" target="_blank" rel="noopener">
               Open a second window
             </a>
           </div>
         </header>
 
         <section className={styles.hero}>
-          <p className={styles.pill}><span>Soon</span>Mind: keep anything from any chat</p>
+          <p className={styles.pill}><span>New</span>Mind: keep anything from any chat</p>
           <h1 className={styles.heroTitle}>Talk it through.<br /><em>Keep what matters.</em></h1>
           <p className={styles.heroLede}>
             Run your projects from the conversation. A Space for every team, polls, checklists and payments in the thread, and Mind to keep what you need.
           </p>
           <div className={styles.heroCtas}>
             <a className={styles.cta} href="#demo">Try the live demo <IconArrowRight size={16} /></a>
-            <a className={styles.ctaGhost} href="/" target="_blank" rel="noopener">Open a second tab to chat with yourself</a>
+            <a className={styles.ctaGhost} href="/?as=charles" target="_blank" rel="noopener">Open a second tab to chat with yourself</a>
           </div>
         </section>
 
@@ -296,7 +368,7 @@ export default function ChatApp() {
           <StageField dark={stageIsDark} />
           <div data-float className={`${styles.floatCard} ${styles.fcLeftTop} ${styles.glass}`}>
             <span className={styles.fcIcon}><IconPin size={16} /></span>
-            <div><b>Save it to Mind</b><span>Keep decisions, files and links from any chat. Coming soon.</span></div>
+            <div><b>Save it to Mind</b><span>Keep decisions, files and links from any chat, in collections of your own.</span></div>
           </div>
           <div data-float className={`${styles.floatCard} ${styles.fcLeftBottom} ${styles.glass}`}>
             <span className={styles.fcIcon}><IconChecklist size={16} /></span>

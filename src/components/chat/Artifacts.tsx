@@ -80,9 +80,26 @@ export function SketchCard({ message, card, interactive }: { message: Message; c
   };
   const set = (fn: (c: Of<"sketch">) => Of<"sketch">) => updateCard(message, (c) => (c.type === "sketch" ? fn(c) : c));
 
+  // iOS Safari doesn't reliably honour `touch-action: none` on an inline SVG,
+  // so a stroke would scroll the thread instead of drawing. React's touch
+  // listeners are passive; only a native one can cancel the pan.
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || !interactive) return;
+    const stop = (e: TouchEvent) => { if (e.cancelable) e.preventDefault(); };
+    el.addEventListener("touchstart", stop, { passive: false });
+    el.addEventListener("touchmove", stop, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", stop);
+      el.removeEventListener("touchmove", stop);
+    };
+  }, [interactive]);
+
   const down = (e: React.PointerEvent<SVGSVGElement>) => {
     e.stopPropagation();
     if (!interactive) return;
+    // No focus move onto the bubble (which would scroll it into view) and no text selection.
+    e.preventDefault();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
     drawing.current = point(e);
     setLive(drawing.current);
@@ -186,7 +203,7 @@ export function SketchBuilder({ onSend, onClose }: { onSend: Send; onClose: () =
         onClick: () => onSend({ type: "sketch", prompt: prompt.trim(), strokes: [] }, `Doodle: ${prompt.trim()}`),
       }}
     >
-      <input className={styles.bigInput} autoFocus placeholder="What are we drawing?" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+      <input className={styles.bigInput} data-autofocus placeholder="What are we drawing?" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
       <p className={styles.sheetLabel}>Ideas</p>
       <div className={styles.chipGrid}>
         {PROMPTS.map((p) => (
@@ -231,7 +248,9 @@ function botMove(board: (string | null)[], bot: string, human: string) {
 }
 
 export function TicTacToeCard({ message, card, interactive }: { message: Message; card: Of<"tictactoe">; interactive: boolean }) {
-  const { me, peers, updateCard } = useChat();
+  const { me, peers, isOnline, updateCard } = useChat();
+  // With this person signed in on several tabs, only the one that just moved plays the bot's reply.
+  const movedHere = useRef(false);
   const ui = useChatUi();
   const [x, o] = card.players;
   const moves = card.board.filter(Boolean).length;
@@ -253,15 +272,18 @@ export function TicTacToeCard({ message, card, interactive }: { message: Message
       board[i] = me;
       return { ...c, board, players: joining ? [c.players[0], me] : c.players };
     });
+    movedHere.current = true;
   };
 
-  // With nobody else online, the other person in the chat plays back.
-  const bot = !peers.length && interactive && me === x && opponent && opponent !== me ? opponent : null;
+  // Unless they have a tab open themselves, the other person in the chat plays back.
+  const soleTab = !peers.some((p) => p.userId === me);
+  const bot = interactive && me === x && opponent && opponent !== me && !isOnline(opponent) ? opponent : null;
   const botsTurn = !!bot && !result && moves % 2 === 1;
   const boardKey = card.board.map((v) => v ?? "-").join("");
   useEffect(() => {
-    if (!botsTurn || !bot) return;
+    if (!botsTurn || !bot || !(movedHere.current || soleTab)) return;
     const t = setTimeout(() => {
+      movedHere.current = false;
       set((c) => {
         if (outcome(c.board) || c.board.filter(Boolean).length % 2 === 0) return c;
         const board = [...c.board];
@@ -285,7 +307,7 @@ export function TicTacToeCard({ message, card, interactive }: { message: Message
       <h4 className={styles.cardTitle}>
         {nameOf(x, me)} <em className={styles.vs}>vs</em> {o ? nameOf(o, me) : "anyone"}
       </h4>
-      <div className={styles.ttt} {...contain} role="grid" aria-label="Tic-tac-toe board">
+      <div className={styles.ttt} {...contain} role="group" aria-label="Tic-tac-toe board">
         {card.board.map((v, i) => (
           <button
             key={i}
@@ -337,6 +359,12 @@ export function WheelCard({ message, card, interactive }: { message: Message; ca
     setSeen(card.spins.length);
     setSpinning(true);
   }
+  // transitionend never fires if the card is hidden or motion is reduced mid-spin.
+  useEffect(() => {
+    if (!spinning) return;
+    const t = setTimeout(() => setSpinning(false), 4000);
+    return () => clearTimeout(t);
+  }, [spinning]);
 
   const spin = () => {
     if (!interactive || spinning) return;
@@ -424,7 +452,7 @@ export function WheelBuilder({ onSend, onClose }: { onSend: Send; onClose: () =>
         onClick: () => onSend({ type: "wheel", question: question.trim(), options: filled.map((o) => o.label.trim()), spins: [] }, `Wheel: ${question.trim()}`),
       }}
     >
-      <input className={styles.bigInput} autoFocus placeholder="What are we deciding?" value={question} onChange={(e) => setQuestion(e.target.value)} />
+      <input className={styles.bigInput} data-autofocus placeholder="What are we deciding?" value={question} onChange={(e) => setQuestion(e.target.value)} />
       <div className={styles.chipGrid}>
         {WHEEL_IDEAS.map((idea) => (
           <button

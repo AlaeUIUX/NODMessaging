@@ -129,6 +129,53 @@ function PollCard({ message, card, interactive }: { message: Message; card: Of<"
    Checklist — edit permission, access requests, approvals
 --------------------------------------------------------------------------- */
 
+/**
+ * Reads the checklist live rather than from when it opened: an approval (or
+ * a request from another tab) shows up while the sheet is still on screen.
+ */
+function AccessSheet({ message, ownerName, onClose, onRequest, onWithdraw }: {
+  message: Message;
+  ownerName: string;
+  onClose: () => void;
+  onRequest: () => void;
+  onWithdraw: () => void;
+}) {
+  const { state, me } = useChat();
+  const live = state.data.messages[message.chatId]?.find((m) => m.id === message.id)?.card;
+  const card = live?.type === "checklist" ? live : null;
+  const pending = !!card?.requests.includes(me);
+  const approved = !!card && (card.everyoneCanEdit || card.editors.includes(me));
+  return (
+    <Sheet title="Edit access" onClose={onClose}>
+      {(close) => (
+        <div className={styles.accessSheet}>
+          <span className={styles.accessIcon}><IconLock size={22} /></span>
+          {approved ? (
+            <>
+              <b>You can edit this checklist now</b>
+              <p>{ownerName} gave you access.</p>
+              <button className={styles.primaryWide} onClick={() => close()}>Done</button>
+            </>
+          ) : (
+            <>
+              <b>Only {ownerName} can edit this checklist</b>
+              <p>{ownerName} turned off editing for everyone. Ask for access and you’ll be able to tick and add items once approved.</p>
+              {pending ? (
+                <>
+                  <p className={styles.pendingNote}>Your request is waiting for {ownerName}.</p>
+                  <button className={styles.secondaryWide} onClick={() => close(onWithdraw)}>Withdraw request</button>
+                </>
+              ) : (
+                <button className={styles.primaryWide} onClick={() => close(onRequest)}>Ask {ownerName} for access</button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
 function ChecklistCard({ message, card, interactive }: { message: Message; card: Of<"checklist">; interactive: boolean }) {
   const { me, updateCard } = useChat();
   const ui = useChatUi();
@@ -176,23 +223,7 @@ function ChecklistCard({ message, card, interactive }: { message: Message; card:
   }, [card.requests, card.editors, interactive, isOwner, me, owner.name, card.title, ui]);
 
   const askForAccess = () => ui.openSheet(
-    <Sheet title="Edit access" onClose={ui.closeSheet}>
-      {(close) => (
-        <div className={styles.accessSheet}>
-          <span className={styles.accessIcon}><IconLock size={22} /></span>
-          <b>Only {owner.name} can edit this checklist</b>
-          <p>{owner.name} turned off editing for everyone. Ask for access and you’ll be able to tick and add items once approved.</p>
-          {pending ? (
-            <>
-              <p className={styles.pendingNote}>Your request is waiting for {owner.name}.</p>
-              <button className={styles.secondaryWide} onClick={() => close(withdraw)}>Withdraw request</button>
-            </>
-          ) : (
-            <button className={styles.primaryWide} onClick={() => close(requestAccess)}>Ask {owner.name} for access</button>
-          )}
-        </div>
-      )}
-    </Sheet>,
+    <AccessSheet message={message} ownerName={owner.name} onClose={ui.closeSheet} onRequest={requestAccess} onWithdraw={withdraw} />,
   );
 
   const toggle = (id: string) => {

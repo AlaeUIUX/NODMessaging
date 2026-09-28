@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { initials, TONES } from "@/lib/chat/avatar";
 import type { AvatarTone, Card, User } from "@/lib/chat/types";
 import Avatar from "./Avatar";
@@ -129,7 +129,7 @@ export function PollBuilder({ onSend, onClose }: { onSend: Send; onClose: () => 
         }, `Poll: ${question.trim()}`),
       }}
     >
-      <input className={styles.bigInput} autoFocus placeholder="Ask a question" value={question} onChange={(e) => setQuestion(e.target.value)} />
+      <input className={styles.bigInput} data-autofocus placeholder="Ask a question" value={question} onChange={(e) => setQuestion(e.target.value)} />
       <p className={styles.sheetLabel}>Options</p>
       <div className={styles.fieldStack}>
         {options.map((o, i) => (
@@ -198,7 +198,7 @@ export function ChecklistBuilder({ onSend, onClose, ownerName }: { onSend: Send;
         }, `Checklist: ${title.trim()}`),
       }}
     >
-      <input className={styles.bigInput} autoFocus placeholder="Checklist title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <input className={styles.bigInput} data-autofocus placeholder="Checklist title" value={title} onChange={(e) => setTitle(e.target.value)} />
       <div className={styles.fieldStack}>
         {items.map((it, i) => (
           <div key={it.id} className={styles.optionField}>
@@ -270,7 +270,7 @@ export function ReminderBuilder({ onSend, onClose, seed }: { onSend: Send; onClo
         }, `Reminder: ${text.trim()}`),
       }}
     >
-      <input className={styles.bigInput} autoFocus placeholder="Remind about…" value={text} onChange={(e) => setText(e.target.value)} />
+      <input className={styles.bigInput} data-autofocus placeholder="Remind about…" value={text} onChange={(e) => setText(e.target.value)} />
       <p className={styles.sheetLabel}>Who</p>
       <Segmented value={who} options={[{ id: "everyone", label: "Everyone here" }, { id: "me", label: "Only me" }]} onChange={setWho} />
       <p className={styles.sheetLabel}>When</p>
@@ -385,7 +385,7 @@ export function EventBuilder({ onSend, onClose }: { onSend: Send; onClose: () =>
         onClick: () => onSend({ type: "event", title: title.trim(), startsAt: startsAt(), place: place.trim() || "To be decided", rsvps: {} }, `Event: ${title.trim()}`),
       }}
     >
-      <input className={styles.bigInput} autoFocus placeholder="What’s happening?" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <input className={styles.bigInput} data-autofocus placeholder="What’s happening?" value={title} onChange={(e) => setTitle(e.target.value)} />
       <p className={styles.sheetLabel}>Day</p>
       <div className={styles.chipGrid}>
         {days.map((d) => (
@@ -418,6 +418,8 @@ export function PaymentBuilder({ mode, members, onSend, onClose }: {
   const [note, setNote] = useState("");
   const [who, setWho] = useState<string[]>(members.length === 1 ? [members[0].id] : []);
   const [confirming, setConfirming] = useState(false);
+  // Cancel during the Face ID step wins, even in the last moments of the scan.
+  const cancelled = useRef(false);
   const value = Number(amount.replace(",", "."));
   const valid = value > 0 && value < 10_000 && who.length > 0;
   const fmt = (n: number) => n.toLocaleString(undefined, { style: "currency", currency: "EUR" });
@@ -428,6 +430,7 @@ export function PaymentBuilder({ mode, members, onSend, onClose }: {
     <Sheet
       title={mode === "pay" ? "Pay" : "Request money"}
       onClose={onClose}
+      onClosing={() => { cancelled.current = true; }}
       action={mode === "request" ? {
         label: "Request",
         disabled: !valid,
@@ -437,6 +440,7 @@ export function PaymentBuilder({ mode, members, onSend, onClose }: {
         <div className={styles.sheetFooter}>
           {confirming ? (
             <ConfirmPay amount={fmt(value)} onDone={() => {
+              if (cancelled.current) return;
               onSend(card(), `Sent ${fmt(value)}${note.trim() ? ` · ${note.trim()}` : ""}`);
               onClose();
             }} />
@@ -452,18 +456,19 @@ export function PaymentBuilder({ mode, members, onSend, onClose }: {
         <span>€</span>
         <input
           inputMode="decimal"
-          autoFocus
+          data-autofocus
           placeholder="0"
+          disabled={confirming}
           value={amount}
           onChange={(e) => setAmount(e.target.value.replace(/[^0-9.,]/g, "").slice(0, 7))}
           aria-label="Amount in euros"
         />
       </div>
-      <input className={styles.plainInput} placeholder="What’s it for?" value={note} onChange={(e) => setNote(e.target.value)} />
+      <input className={styles.plainInput} placeholder="What’s it for?" value={note} disabled={confirming} onChange={(e) => setNote(e.target.value)} />
       <p className={styles.sheetLabel}>{mode === "pay" ? "To" : "From"}</p>
       <div className={styles.memberPick}>
         {members.map((m) => (
-          <button key={m.id} className={who.includes(m.id) ? styles.memberOn : undefined} onClick={() => toggle(m.id)}>
+          <button key={m.id} className={who.includes(m.id) ? styles.memberOn : undefined} disabled={confirming} onClick={() => toggle(m.id)}>
             <Avatar glyph={initials(m.fullName)} tone={m.tone} size={40} shape="circle" />
             <span>{m.name}</span>
             {who.includes(m.id) && <i className={styles.memberTick}><IconCheck size={10} /></i>}

@@ -7,7 +7,7 @@ import { renderBody } from "./markdown";
  * (bubbles, previews, search) is unchanged.
  */
 
-const ZWSP = /​/g;
+const ZWSP = /\u200B/g;
 
 export function markdownToHtml(md: string): string {
   if (!md) return "";
@@ -109,5 +109,5 @@ export function htmlToMarkdown(root: HTMLElement): string {
   // Trim prefix-only lines left by empty blocks at the edges.
   while (lines.length && !lines[lines.length - 1].replace(/^(> |- |\d+\. )$/, "").trim()) lines.pop();
   while (lines.length && !lines[0].trim()) lines.shift();
-  return lines.join("\n").replace(/ /g, " ");
+  return lines.join("\n").replace(/\u00A0/g, " ");
 }

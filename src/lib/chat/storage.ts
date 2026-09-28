@@ -2,7 +2,14 @@ import { buildSeedState, CURRENT_VERSION } from "./seed";
 import type { ChatState, ChatStorage, Message } from "./types";
 
 const STATE_KEY = "nod.chat.state";
-const DRAFT_KEY = (chatId: string) => `nod.chat.draft.${chatId}`;
+// The first demo identity keeps the original, un-prefixed keys so existing drafts survive.
+const DRAFT_KEY = (chatId: string, userId: string) =>
+  userId === "me" ? `nod.chat.draft.${chatId}` : `nod.chat.draft.${userId}.${chatId}`;
+
+/** Where one person's "last read" time for a chat lives in `ChatState.lastReadAt`. */
+export const readKey = (chatId: string, userId: string) => (userId === "me" ? chatId : `${userId}:${chatId}`);
+
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 type LegacyMessage = Partial<Message> & Record<string, unknown>;
 
@@ -82,16 +89,21 @@ export function migrate(stored: unknown): ChatState {
 
   let raw = stored as Partial<ChatState> & { version?: number };
   if ((raw.version ?? 0) < 5) raw = renameCast(raw);
-  if (raw.version === CURRENT_VERSION && raw.messages) return raw as ChatState;
+  // Current-version data is trusted only if it has the right shape; anything
+  // else (a hand-edited or half-written record) goes through the backfill.
+  if (
+    raw.version === CURRENT_VERSION && Array.isArray(raw.chats) && isRecord(raw.messages)
+    && isRecord(raw.archive) && isRecord(raw.lastReadAt)
+  ) return raw as ChatState;
 
   const messages: Record<string, Message[]> = {};
-  for (const [chatId, list] of Object.entries(raw.messages ?? {})) {
+  for (const [chatId, list] of Object.entries(isRecord(raw.messages) ? raw.messages : {})) {
     if (!Array.isArray(list)) continue;
     messages[chatId] = list.map((m, i) => backfillMessage(m as LegacyMessage, chatId, i));
   }
 
   const archive: Record<string, Message[]> = {};
-  for (const [chatId, list] of Object.entries(raw.archive ?? {})) {
+  for (const [chatId, list] of Object.entries(isRecord(raw.archive) ? raw.archive : {})) {
     if (!Array.isArray(list)) continue;
     archive[chatId] = list.map((m, i) => backfillMessage(m as LegacyMessage, chatId, i));
   }
@@ -100,10 +112,10 @@ export function migrate(stored: unknown): ChatState {
     version: CURRENT_VERSION,
     // Chats are static config (v3 dropped photo avatars for colour tones), so
     // always take the current list and backfill threads for any new chat.
-    chats: [...seed.chats, ...(raw.chats ?? []).filter((c) => !seed.chats.some((s) => s.id === c.id))],
+    chats: [...seed.chats, ...(Array.isArray(raw.chats) ? raw.chats : []).filter((c) => !seed.chats.some((s) => s.id === c.id))],
     messages: mergeSeed(seed.messages, messages, archive),
     archive: { ...seed.archive, ...archive },
-    lastReadAt: raw.lastReadAt ?? {},
+    lastReadAt: isRecord(raw.lastReadAt) ? (raw.lastReadAt as Record<string, number>) : {},
   };
 }
 
@@ -119,26 +131,28 @@ export const localStorageAdapter: ChatStorage = {
     }
   },
   save(state) {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") return true;
     try {
       window.localStorage.setItem(STATE_KEY, JSON.stringify(state));
+      return true;
     } catch {
-      // Quota exceeded (large inlined attachments) — drop silently, the session still works.
+      // Quota exceeded or storage blocked: the session still works, but the caller should say so.
+      return false;
     }
   },
-  loadDraft(chatId) {
+  loadDraft(chatId, userId) {
     if (typeof window === "undefined") return "";
     try {
-      return window.localStorage.getItem(DRAFT_KEY(chatId)) ?? "";
+      return window.localStorage.getItem(DRAFT_KEY(chatId, userId)) ?? "";
     } catch {
       return "";
     }
   },
-  saveDraft(chatId, draft) {
+  saveDraft(chatId, userId, draft) {
     if (typeof window === "undefined") return;
     try {
-      if (draft) window.localStorage.setItem(DRAFT_KEY(chatId), draft);
-      else window.localStorage.removeItem(DRAFT_KEY(chatId));
+      if (draft) window.localStorage.setItem(DRAFT_KEY(chatId, userId), draft);
+      else window.localStorage.removeItem(DRAFT_KEY(chatId, userId));
     } catch {
       // ignore
     }

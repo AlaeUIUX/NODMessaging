@@ -12,13 +12,21 @@ const DB = "nod-media";
 const STORE = "blobs";
 export const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 
+/** One connection per tab, opened on first use. */
+let connection: Promise<IDBDatabase> | null = null;
 function open(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  connection ??= new Promise<IDBDatabase>((resolve, reject) => {
+    if (typeof indexedDB === "undefined") return reject(new Error("IndexedDB unavailable"));
     const req = indexedDB.open(DB, 1);
     req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      // Another tab upgrading the schema asks us to let go.
+      req.result.onversionchange = () => { req.result.close(); connection = null; };
+      resolve(req.result);
+    };
     req.onerror = () => reject(req.error);
-  });
+  }).catch((e) => { connection = null; throw e; });
+  return connection;
 }
 
 async function put(id: string, blob: Blob) {
@@ -32,12 +40,16 @@ async function put(id: string, blob: Blob) {
 }
 
 async function get(id: string): Promise<Blob | null> {
-  const db = await open();
-  return new Promise((resolve) => {
-    const req = db.transaction(STORE, "readonly").objectStore(STORE).get(id);
-    req.onsuccess = () => resolve((req.result as Blob | undefined) ?? null);
-    req.onerror = () => resolve(null);
-  });
+  try {
+    const db = await open();
+    return await new Promise((resolve) => {
+      const req = db.transaction(STORE, "readonly").objectStore(STORE).get(id);
+      req.onsuccess = () => resolve((req.result as Blob | undefined) ?? null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
 }
 
 /** Object URLs by attachment id, so each file is read from disk once per tab. */
@@ -52,6 +64,40 @@ function naturalSize(file: File): Promise<{ width: number; height: number } | nu
     img.onerror = () => { resolve(null); URL.revokeObjectURL(url); };
     img.src = url;
   });
+}
+
+/**
+ * Frees attachments nobody will show again (a deleted message, a chip taken
+ * out of the tray): the tab's object URL and the stored bytes.
+ */
+export function releaseMedia(ids: string[]) {
+  if (!ids.length) return;
+  for (const id of ids) {
+    const url = urls.get(id);
+    if (url) URL.revokeObjectURL(url);
+    urls.delete(id);
+  }
+  void open()
+    .then((db) => {
+      const tx = db.transaction(STORE, "readwrite");
+      ids.forEach((id) => tx.objectStore(STORE).delete(id));
+    })
+    .catch(() => { /* nothing stored */ });
+}
+
+/** Drops every stored file, for "Reset demo data". */
+export async function clearMedia() {
+  urls.forEach((u) => URL.revokeObjectURL(u));
+  urls.clear();
+  try {
+    const db = await open();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch { /* nothing stored */ }
 }
 
 /** Turns a picked/pasted/dropped file into an attachment, storing its bytes. */

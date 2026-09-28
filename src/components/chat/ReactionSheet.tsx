@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { initials } from "@/lib/chat/avatar";
 import { userById } from "@/lib/chat/store";
 import type { Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { Emoji } from "@/lib/chat/emoji";
+import { useDialog } from "./ui";
 import styles from "./chat.module.css";
 
 interface Props {
@@ -19,11 +20,18 @@ interface Props {
 export default function ReactionSheet({ message, meId, onRemove, onClose }: Props) {
   const [tab, setTab] = useState<string>("all");
   const [closing, setClosing] = useState(false);
+  const closingRef = useRef(false);
+  const ref = useRef<HTMLDivElement>(null);
 
+  // Once only: a double-tap on "Tap to remove" must not remove, then re-add.
   const dismiss = (after?: () => void) => {
+    if (closingRef.current) return;
+    closingRef.current = true;
     setClosing(true);
     setTimeout(() => { after?.(); onClose(); }, 200);
   };
+  useDialog(ref, () => dismiss());
+  useEffect(() => { ref.current?.focus({ preventScroll: true }); }, []);
 
   const entries = message.reactions.flatMap((r) => r.userIds.map((userId) => ({ emoji: r.emoji, userId })));
   const shown = tab === "all" ? entries : entries.filter((e) => e.emoji === tab);
@@ -31,7 +39,14 @@ export default function ReactionSheet({ message, meId, onRemove, onClose }: Prop
   return (
     <>
       <div className={`${styles.sheetScrim} ${closing ? styles.sheetClosing : ""}`} onClick={() => dismiss()} />
-      <div className={`${styles.sheet} ${styles.glassStrong} ${closing ? styles.sheetClosing : ""}`} role="dialog" aria-label="Reactions">
+      <div
+        ref={ref}
+        className={`${styles.sheet} ${styles.glassStrong} ${closing ? styles.sheetClosing : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Reactions"
+        tabIndex={-1}
+      >
         <div className={styles.grabber} />
         <h3>Reactions</h3>
         <div className={styles.sheetTabs}>

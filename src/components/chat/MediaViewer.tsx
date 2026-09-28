@@ -8,7 +8,7 @@ import type { Attachment, Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { IconBack, IconChevron, IconClose, IconDownload } from "./Icons";
 import { Photo } from "./Media";
-import { Sheet } from "./ui";
+import { Sheet, useDialog } from "./ui";
 import styles from "./chat.module.css";
 
 const photosOf = (m: Message) => m.attachments.filter((a) => a.kind === "image");
@@ -36,8 +36,10 @@ export function MediaViewer({ message, start, onClose }: { message: Message; sta
   const photos = photosOf(message);
   const [index, setIndex] = useState(start);
   const [closing, setClosing] = useState(false);
-  const drag = useRef<{ x: number; dx: number } | null>(null);
+  const drag = useRef<{ x: number; dx: number; id: number; captured: boolean } | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
   const author = userById(message.authorId);
 
   const close = () => {
@@ -45,10 +47,11 @@ export function MediaViewer({ message, start, onClose }: { message: Message; sta
     setTimeout(onClose, 220);
   };
   const go = (i: number) => setIndex(Math.max(0, Math.min(photos.length - 1, i)));
+  useDialog(rootRef, close);
 
   useEffect(() => {
+    closeRef.current?.focus({ preventScroll: true });
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
       if (e.key === "ArrowRight") setIndex((i) => Math.min(photos.length - 1, i + 1));
       if (e.key === "ArrowLeft") setIndex((i) => Math.max(0, i - 1));
     };
@@ -57,10 +60,21 @@ export function MediaViewer({ message, start, onClose }: { message: Message; sta
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const settle = () => {
+    const dx = drag.current?.dx ?? 0;
+    drag.current = null;
+    if (trackRef.current) {
+      trackRef.current.style.transition = "";
+      // React won't re-apply an unchanged style prop, so set the resting position explicitly.
+      trackRef.current.style.transform = `translateX(${-index * 100}%)`;
+    }
+    return dx;
+  };
+
   return (
-    <div className={`${styles.viewer} ${closing ? styles.viewerClosing : ""}`} role="dialog" aria-label="Photo viewer">
+    <div ref={rootRef} className={`${styles.viewer} ${closing ? styles.viewerClosing : ""}`} role="dialog" aria-modal="true" aria-label="Photo viewer">
       <header className={styles.viewerTop}>
-        <button className={styles.viewerBtn} onClick={close} aria-label="Close"><IconClose size={20} /></button>
+        <button ref={closeRef} className={styles.viewerBtn} onClick={close} aria-label="Close"><IconClose size={20} /></button>
         <div className={styles.viewerMeta}>
           <b>{author.name}</b>
           <span>{photos.length > 1 ? `${index + 1} of ${photos.length} · ` : ""}{clock(message.createdAt)}</span>
@@ -70,23 +84,30 @@ export function MediaViewer({ message, start, onClose }: { message: Message; sta
 
       <div
         className={styles.viewerStage}
-        onPointerDown={(e) => { drag.current = { x: e.clientX, dx: 0 }; e.currentTarget.setPointerCapture(e.pointerId); }}
+        onPointerDown={(e) => {
+          // The arrows are plain buttons: capturing their pointer would steal their click.
+          if ((e.target as HTMLElement).closest("button")) return;
+          drag.current = { x: e.clientX, dx: 0, id: e.pointerId, captured: false };
+        }}
         onPointerMove={(e) => {
-          if (!drag.current || !trackRef.current) return;
-          drag.current.dx = e.clientX - drag.current.x;
+          const d = drag.current;
+          if (!d || !trackRef.current) return;
+          d.dx = e.clientX - d.x;
+          // Capture only once it's clearly a swipe, so a tap stays a tap.
+          if (!d.captured && Math.abs(d.dx) > 6) {
+            d.captured = true;
+            try { e.currentTarget.setPointerCapture(d.id); } catch { /* pointer already gone */ }
+          }
+          if (!d.captured) return;
           trackRef.current.style.transition = "none";
-          trackRef.current.style.transform = `translateX(calc(${-index * 100}% + ${drag.current.dx}px))`;
+          trackRef.current.style.transform = `translateX(calc(${-index * 100}% + ${d.dx}px))`;
         }}
         onPointerUp={() => {
-          const dx = drag.current?.dx ?? 0;
-          drag.current = null;
-          if (trackRef.current) {
-            trackRef.current.style.transition = "";
-            trackRef.current.style.transform = "";
-          }
+          const dx = settle();
           if (dx < -60) go(index + 1);
           else if (dx > 60) go(index - 1);
         }}
+        onPointerCancel={() => { settle(); }}
       >
         <div ref={trackRef} className={styles.viewerTrack} style={{ transform: `translateX(${-index * 100}%)` }}>
           {photos.map((a) => (

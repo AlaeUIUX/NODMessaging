@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { renderBody, stripFormatting } from "@/lib/chat/markdown";
 import { userById } from "@/lib/chat/store";
 import type { Message } from "@/lib/chat/types";
@@ -8,7 +8,7 @@ import { initials } from "@/lib/chat/avatar";
 import Avatar from "./Avatar";
 import CardView from "./CardView";
 import { FileRow, MediaBlock } from "./Media";
-import { useChatUi } from "./ui";
+import { reducedMotion, useChatUi } from "./ui";
 import { Emoji, emojiCount, emojify } from "@/lib/chat/emoji";
 import { IconChevron, IconPause, IconPlay, IconReply } from "./Icons";
 import styles from "./chat.module.css";
@@ -164,7 +164,7 @@ interface Props {
   focused: boolean;
   meId: string;
   onReply: (message: Message) => void;
-  onMenu: (message: Message, bubble: HTMLElement, armed: boolean) => void;
+  onMenu: (message: Message, pos: BubblePos, bubble: HTMLElement, armed: boolean) => void;
   onToggleReaction: (message: Message, emoji: string) => void;
   onShowReactions: (message: Message) => void;
   onShowReceipts: (message: Message) => void;
@@ -174,7 +174,12 @@ interface Props {
 
 type Mode = "idle" | "pending" | "swipe" | "menu";
 
-export default function MessageRow({
+/**
+ * Memoized: with stable callbacks from ChatView, a new message or a typing
+ * change re-renders only the rows it touches, not the whole thread (each row
+ * re-parses its markdown).
+ */
+export default memo(function MessageRow({
   message, quoted, isMine, pos, showAvatar, avatarSlot, showByline, showStatus, isGroup, isNew, highlighted, focused,
   meId, onReply, onMenu, onToggleReaction, onShowReactions, onShowReceipts, onRetry, onJumpTo,
 }: Props) {
@@ -213,6 +218,8 @@ export default function MessageRow({
 
   const onPointerDown = (e: React.PointerEvent) => {
     suppressClick.current = false;
+    // A right-click starts fresh, even if the last gesture was a mouse long-press.
+    if (e.button > 0 && g.current.mode === "menu") g.current.mode = "idle";
     if (deleted || e.button > 0) return;
     // Controls inside cards (vote, tick, download…) get plain taps, not gestures.
     const t = e.target as HTMLElement;
@@ -228,7 +235,7 @@ export default function MessageRow({
         suppressClick.current = true;
         setPressing(false);
         haptic(12);
-        if (bubbleRef.current) onMenu(message, bubbleRef.current, true);
+        if (bubbleRef.current) onMenu(message, pos, bubbleRef.current, true);
       }, LONG_PRESS_MS),
     };
     setPressing(true);
@@ -283,7 +290,7 @@ export default function MessageRow({
     if (!fromComposer) return;
     const el = bubbleRef.current;
     const field = el?.closest("[data-chat-screen]")?.querySelector<HTMLElement>("[data-composer-field]");
-    if (!el || !field) return;
+    if (!el || !field || reducedMotion()) return;
     const to = el.getBoundingClientRect();
     const from = field.getBoundingClientRect();
     const dx = from.left + 16 - to.left;
@@ -367,7 +374,16 @@ export default function MessageRow({
         ) : showByline && <span className={styles.byline}>{author.name}</span>}
 
         {quoted && !deleted && (
-          <div className={styles.replyCtx} onClick={() => onJumpTo(quoted.id)}>
+          <div
+            className={styles.replyCtx}
+            role="button"
+            tabIndex={0}
+            aria-label="Show the message this replies to"
+            onClick={() => onJumpTo(quoted.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onJumpTo(quoted.id); }
+            }}
+          >
             <span className={styles.replyCaption}>
               <IconReply size={12} />
               {isMine ? "You" : author.name} replied to {quoted.authorId === meId ? "you" : userById(quoted.authorId).name}
@@ -415,12 +431,14 @@ export default function MessageRow({
               // Touch browsers fire this after our own long-press already opened the menu.
               if (g.current.mode === "menu") return;
               reset();
-              if (!deleted && bubbleRef.current) onMenu(message, bubbleRef.current, false);
+              if (!deleted && bubbleRef.current) onMenu(message, pos, bubbleRef.current, false);
             }}
             onKeyDown={(e) => {
+              // Only the bubble itself: Enter in a card's field or on its buttons is theirs.
+              if (e.target !== e.currentTarget) return;
               if ((e.key === "Enter" || e.key === "ContextMenu") && bubbleRef.current && !deleted) {
                 e.preventDefault();
-                onMenu(message, bubbleRef.current, false);
+                onMenu(message, pos, bubbleRef.current, false);
               }
             }}
           >
@@ -472,4 +490,4 @@ export default function MessageRow({
       </div>
     </div>
   );
-}
+});

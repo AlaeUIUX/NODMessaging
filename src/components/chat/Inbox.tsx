@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { chatIdentity, initials, TONES } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { useChat, userById } from "@/lib/chat/store";
@@ -18,6 +18,21 @@ type Filter = "all" | "unread" | "dms" | "spaces";
 type Tab = "chats" | "mind" | "spaces" | "explore";
 
 const REVEAL = 124;
+
+/** Pins and mutes are this person's own, and survive a reload. */
+const listKey = (kind: "pinned" | "muted", userId: string) => `nod.chat.${kind}.${userId}`;
+function readList(kind: "pinned" | "muted", userId: string, fallback: string[]) {
+  try {
+    const raw = localStorage.getItem(listKey(kind, userId));
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    return new Set(Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : fallback);
+  } catch {
+    return new Set(fallback);
+  }
+}
+function writeList(kind: "pinned" | "muted", userId: string, ids: Set<string>) {
+  try { localStorage.setItem(listKey(kind, userId), JSON.stringify([...ids])); } catch { /* private mode */ }
+}
 
 const TABS: { id: Tab; label: string; icon: string; w: number; h: number }[] = [
   { id: "chats", label: "Chats", icon: "/nod/chats.svg", w: 18, h: 18 },
@@ -63,6 +78,8 @@ function SwipeRow({
   const ref = useRef<HTMLButtonElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; base: number; active: boolean } | null>(null);
+  // A mouse drag still ends in a click; it must not open the chat or snap the row shut.
+  const dragged = useRef(false);
   const [offset, setOffset] = useState(0);
   const [settling, setSettling] = useState(false);
 
@@ -91,7 +108,10 @@ function SwipeRow({
       <button
         ref={ref}
         className={`${styles.inboxRow} ${settling ? styles.settling : ""}`}
-        onPointerDown={(e) => { drag.current = { x: e.clientX, y: e.clientY, base: offset, active: false }; }}
+        onPointerDown={(e) => {
+          dragged.current = false;
+          drag.current = { x: e.clientX, y: e.clientY, base: offset, active: false };
+        }}
         onPointerMove={(e) => {
           const d = drag.current;
           if (!d) return;
@@ -101,6 +121,7 @@ function SwipeRow({
             if (Math.abs(dy) > 8) { drag.current = null; return; }
             if (Math.abs(dx) < 8) return;
             d.active = true;
+            dragged.current = true;
             ref.current?.setPointerCapture(e.pointerId);
           }
           // Rubber-band past the reveal width so it never feels like a wall.
@@ -117,6 +138,7 @@ function SwipeRow({
         }}
         onPointerCancel={() => { drag.current = null; settle(offset); }}
         onClick={(e) => {
+          if (dragged.current) { dragged.current = false; e.preventDefault(); return; }
           if (offset !== 0) { e.preventDefault(); settle(0); return; }
           onTap();
         }}
@@ -166,8 +188,14 @@ function NavDock({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
   );
 }
 
+function toggle(set: Set<string>, id: string) {
+  const next = new Set(set);
+  if (next.has(id)) next.delete(id); else next.add(id);
+  return next;
+}
+
 export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void; pushed: boolean }) {
-  const { state, me, peers, typingUsers } = useChat();
+  const { state, me, isOnline, lastReadAt, typingUsers } = useChat();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [tab, setTab] = useState<Tab>("chats");
@@ -177,21 +205,32 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
   const searchRef = useRef<HTMLInputElement>(null);
   const meUser = userById(me);
 
+  // Read after mount (and per person): the prerendered HTML uses the defaults.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPinned(readList("pinned", me, ["dm"]));
+    setMuted(readList("muted", me, []));
+  }, [me]);
+  const togglePinned = (id: string) => setPinned((s) => { const next = toggle(s, id); writeList("pinned", me, next); return next; });
+  const toggleMuted = (id: string) => setMuted((s) => { const next = toggle(s, id); writeList("muted", me, next); return next; });
+
+  // Only chats this person is in: signed in as Reema, the Alae–Charles DM isn't yours to read.
   const rows = useMemo(() => {
-    return state.data.chats.map((chat) => {
+    return state.data.chats.filter((chat) => chat.memberIds.includes(me)).map((chat) => {
       const messages = state.data.messages[chat.id] ?? [];
       const last = messages[messages.length - 1];
-      const lastRead = state.data.lastReadAt[chat.id] ?? 0;
+      const lastRead = lastReadAt(chat.id);
       const unreadMsgs = messages.filter((m) => m.authorId !== me && m.createdAt > lastRead);
       const mentioned = unreadMsgs.some((m) => m.body.includes(`@${userById(me).name}`));
       return { chat, last, unread: unreadMsgs.length, mentioned };
     });
-  }, [state.data, me]);
+  }, [state.data, me, lastReadAt]);
 
   // Conversations (and their clock-relative labels) exist only once local
   // storage has loaded; rendering the seed on the server would mismatch.
   const ready = state.hydrated;
-  const unreadChats = ready ? rows.filter((r) => r.unread > 0).length : 0;
+  // Muted chats keep their own count but stay out of the Unread badge.
+  const unreadChats = ready ? rows.filter((r) => r.unread > 0 && !muted.has(r.chat.id)).length : 0;
   const spaceMention = ready && rows.some((r) => r.chat.kind === "group" && r.mentioned);
   const effective: Filter = tab === "spaces" ? "spaces" : filter;
 
@@ -211,11 +250,6 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
       return (b.last?.createdAt ?? 0) - (a.last?.createdAt ?? 0);
     });
 
-  const toggle = (set: Set<string>, id: string) => {
-    const next = new Set(set);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  };
 
   const chips: { id: Filter; label: string; badge?: string }[] = [
     { id: "all", label: "All" },
@@ -233,7 +267,8 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
   );
 
   return (
-    <div className={`${styles.screen} ${styles.inboxScreen} ${pushed ? styles.pushed : ""}`} data-inbox-screen>
+    // Covered by an open chat: out of the tab order and the accessibility tree.
+    <div className={`${styles.screen} ${styles.inboxScreen} ${pushed ? styles.pushed : ""}`} data-inbox-screen inert={pushed}>
       <StatusBar />
 
       {tab === "mind" ? <MindTab onOpenChat={onOpen} /> : (
@@ -293,7 +328,7 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
               {visible.map(({ chat, last, unread, mentioned }, i) => {
                 const id = chatIdentity(chat, me, userById);
                 const other = chat.kind === "dm" ? chat.memberIds.find((m) => m !== me) : undefined;
-                const online = !!other && peers.some((p) => p.userId === other);
+                const online = !!other && isOnline(other);
                 const typing = typingUsers(chat.id).filter((u) => u !== me);
                 const isMuted = muted.has(chat.id);
                 const showBadge = unread > 0 && !isMuted;
@@ -303,8 +338,8 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
                       onTap={() => onOpen(chat)}
                       pinned={pinned.has(chat.id)}
                       muted={isMuted}
-                      onPin={() => setPinned((s) => toggle(s, chat.id))}
-                      onMute={() => setMuted((s) => toggle(s, chat.id))}
+                      onPin={() => togglePinned(chat.id)}
+                      onMute={() => toggleMuted(chat.id)}
                     >
                       {chat.kind === "group" ? (
                         <span className={styles.spaceAvatar} style={{ background: TONES[id.tone] }}><Logo size={36} /></span>

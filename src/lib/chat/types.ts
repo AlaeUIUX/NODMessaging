@@ -124,13 +124,15 @@ export interface ChatState {
   messages: Record<string, Message[]>;
   /** Older pages not yet pulled into the thread, keyed by chat id. */
   archive: Record<string, Message[]>;
-  /** Last time the local user read each chat, for the new-messages divider. */
+  /** Last time each person read each chat (see `readKey`), for unread counts and the divider. */
   lastReadAt: Record<string, number>;
 }
 
 export type TransportEvent =
   | { type: "message"; message: Message }
   | { type: "status"; chatId: string; messageId: string; status: DeliveryStatus; byUserId: string }
+  /** One person read several messages at once (opening a chat), as a single event. */
+  | { type: "read-by"; chatId: string; messageIds: string[]; userId: string; at: number }
   | { type: "typing"; chatId: string; userId: string; isTyping: boolean }
   | { type: "reaction"; chatId: string; messageId: string; emoji: string; userId: string; op: "add" | "remove" }
   | { type: "edit"; chatId: string; messageId: string; body: string; editedAt: number }
@@ -149,7 +151,8 @@ export interface ChatTransport {
 
 export interface ChatStorage {
   load(): ChatState | null;
-  save(state: ChatState): void;
-  loadDraft(chatId: string): string;
-  saveDraft(chatId: string, draft: string): void;
+  /** False when the write failed (quota, blocked storage). */
+  save(state: ChatState): boolean;
+  loadDraft(chatId: string, userId: string): string;
+  saveDraft(chatId: string, userId: string, draft: string): void;
 }

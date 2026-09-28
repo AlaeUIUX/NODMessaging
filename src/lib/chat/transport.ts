@@ -14,6 +14,7 @@ export function createBroadcastTransport(): ChatTransport {
 
   const channel = new BroadcastChannel(CHANNEL);
   const handlers = new Set<(event: TransportEvent) => void>();
+  let closed = false;
 
   channel.onmessage = (e: MessageEvent<TransportEvent>) => {
     handlers.forEach((h) => h(e.data));
@@ -21,18 +22,22 @@ export function createBroadcastTransport(): ChatTransport {
 
   return {
     publish(event) {
-      channel.postMessage(event);
+      // A closed channel throws; late publishes (a pagehide "bye") are just dropped.
+      if (!closed) channel.postMessage(event);
     },
     subscribe(handler) {
       handlers.add(handler);
       return () => handlers.delete(handler);
     },
     close() {
+      closed = true;
       handlers.clear();
       channel.close();
     },
   };
 }
+
+export const NULL_TRANSPORT: ChatTransport = { publish() {}, subscribe: () => () => {}, close() {} };
 
 export const PRESENCE_INTERVAL_MS = 2000;
 export const PRESENCE_TIMEOUT_MS = 6000;
@@ -43,7 +48,7 @@ export interface Peer {
   at: number;
 }
 
-/** Drops peers whose last heartbeat is older than the timeout. */
-export function prunePeers(peers: Peer[], now = Date.now()): Peer[] {
-  return peers.filter((p) => now - p.at < PRESENCE_TIMEOUT_MS);
+/** Same tabs as the same people: heartbeats alone shouldn't re-render the app. */
+export function samePeers(a: Peer[], b: Peer[]) {
+  return a.length === b.length && a.every((p, i) => p.clientId === b[i].clientId && p.userId === b[i].userId);
 }

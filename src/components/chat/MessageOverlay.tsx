@@ -5,6 +5,7 @@ import type { Message } from "@/lib/chat/types";
 import { IconBookmark, IconCopy, IconEdit, IconPin, IconPlus, IconReply, IconTrash } from "./Icons";
 import { BubbleBody, bubbleClass, haptic, type BubblePos } from "./MessageRow";
 import { Emoji } from "@/lib/chat/emoji";
+import { reducedMotion, useDialog } from "./ui";
 import styles from "./chat.module.css";
 
 const QUICK = ["❤️", "👍", "😂", "😮", "😢", "🔥"];
@@ -132,7 +133,7 @@ export default function MessageOverlay({
         { transform: `translate(calc(-50% + ${tx * .5}px), calc(-50% + ${ty * .5 - 48}px)) scale(1.1)`, offset: .45 },
         { transform: `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px)) scale(.55)` },
       ],
-      { duration: FLY_MS, easing: "cubic-bezier(.3,.7,.2,1)", fill: "forwards" },
+      { duration: reducedMotion() ? 1 : FLY_MS, easing: "cubic-bezier(.3,.7,.2,1)", fill: "forwards" },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flyer]);
@@ -182,18 +183,17 @@ export default function MessageOverlay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [armed]);
 
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDialog(rootRef, dismiss);
   useEffect(() => {
     if (!armed) firstItemRef.current?.focus({ preventScroll: true });
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") dismiss(); };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const side = isMine ? `${styles.mine} ${styles.focusMine}` : `${styles.theirs} ${styles.focusTheirs}`;
 
   return (
-    <div className={`${styles.overlay} ${closing ? styles.closing : ""}`} role="dialog" aria-label="Message actions">
+    <div ref={rootRef} className={`${styles.overlay} ${closing ? styles.closing : ""}`} role="dialog" aria-modal="true" aria-label="Message actions">
       <div className={styles.scrim} onClick={dismiss} />
 
       <div

@@ -374,36 +374,51 @@ export function seedMind(userId: string): Mind {
 
 const KEY = "nod.mind.v3";
 let cache: Record<string, Mind> | null = null;
+/** The stored text the cache was read from (or last written), to tell when another tab changed it. */
+let raw: string | null = null;
+let watching = false;
 const listeners = new Set<() => void>();
 
-function load(): Record<string, Mind> {
-  if (cache) return cache;
-  try { cache = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { cache = {}; }
+/** `fresh` re-reads storage first, so a write never starts from another tab's stale copy. */
+function load(fresh = false): Record<string, Mind> {
+  if (cache && !fresh) return cache;
+  let text = "{}";
+  try { text = localStorage.getItem(KEY) || "{}"; } catch { /* storage blocked */ }
+  if (cache && text === raw) return cache;
+  raw = text;
+  try { cache = JSON.parse(text); } catch { cache = {}; }
   return cache!;
 }
-function persist() {
-  try { localStorage.setItem(KEY, JSON.stringify(cache)); } catch { /* storage full or blocked */ }
-  listeners.forEach((l) => l());
+function write() {
+  const text = JSON.stringify(cache);
+  // Only once it's stored; if it can't be, the next fresh read keeps the in-memory copy.
+  try { localStorage.setItem(KEY, text); raw = text; } catch { /* storage full or blocked */ }
 }
+function notify() { listeners.forEach((l) => l()); }
 function subscribe(listener: () => void) {
   listeners.add(listener);
-  const onStorage = (e: StorageEvent) => { if (e.key === KEY) { cache = null; listener(); } };
-  window.addEventListener("storage", onStorage);
-  return () => { listeners.delete(listener); window.removeEventListener("storage", onStorage); };
+  // Watch other tabs for the life of the page, not just while something is mounted.
+  if (!watching) {
+    watching = true;
+    window.addEventListener("storage", (e) => { if (e.key === KEY || e.key === null) { cache = null; notify(); } });
+  }
+  return () => { listeners.delete(listener); };
 }
 export function mindOf(userId: string): Mind {
   const all = load();
   if (!all[userId] || all[userId].version !== 3) {
     all[userId] = seedMind(userId);
-    try { localStorage.setItem(KEY, JSON.stringify(all)); } catch { /* ignore */ }
+    write();
   }
   return all[userId];
 }
 export function updateMind(userId: string, fn: (m: Mind) => Mind) {
-  const all = load();
-  all[userId] = fn(mindOf(userId));
-  cache = { ...all };
-  persist();
+  // Read, change and write in one go, from what's stored right now.
+  load(true);
+  const next = fn(mindOf(userId));
+  cache = { ...cache!, [userId]: next };
+  write();
+  notify();
 }
 export function useMind(userId: string) {
   const mind = useSyncExternalStore(subscribe, () => mindOf(userId), () => null);
@@ -529,6 +544,7 @@ export function routeSave(mind: Mind, input: { text: string; chatId: string; cha
 
 /** Chat → Mind: a live reference lands in a collection's Vault. */
 export function saveToMind(userId: string, save: { chatId: string; messageId: string; title: string; text: string; chatName: string; kind: "text" | "card" | "photos" | "file"; cardType?: string }) {
+  load(true);
   const mind = mindOf(userId);
   const existing = Object.values(mind.blocks).find((b) => b.ref?.chatId === save.chatId && b.ref?.messageId === save.messageId);
   if (existing) {

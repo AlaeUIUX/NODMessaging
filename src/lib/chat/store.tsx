@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -12,10 +13,13 @@ import {
   type ReactNode,
 } from "react";
 import { sendMessage as apiSend } from "./api";
+import { releaseMedia } from "./media";
 import { buildSeedState, CHATS, USERS } from "./seed";
-import { localStorageAdapter } from "./storage";
-import { createBroadcastTransport, prunePeers, PRESENCE_INTERVAL_MS, type Peer } from "./transport";
-import type { Attachment, Card, Chat, ChatState, DeliveryStatus, Message, TransportEvent } from "./types";
+import { localStorageAdapter, readKey } from "./storage";
+import {
+  createBroadcastTransport, NULL_TRANSPORT, PRESENCE_INTERVAL_MS, PRESENCE_TIMEOUT_MS, samePeers, type Peer,
+} from "./transport";
+import type { Attachment, Card, Chat, ChatState, ChatTransport, DeliveryStatus, Message, TransportEvent } from "./types";
 
 /**
  * One id per browsing context, fixed at module load — two tabs get different
@@ -24,6 +28,7 @@ import type { Attachment, Card, Chat, ChatState, DeliveryStatus, Message, Transp
  */
 const CLIENT_ID = typeof window === "undefined" ? "" : Math.random().toString(36).slice(2);
 
+const ME_KEY = "nod.chat.me";
 const TYPING_TIMEOUT_MS = 5000;
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 const PAGE_SIZE = 4;
@@ -47,14 +52,23 @@ type Action =
   | { type: "card"; chatId: string; messageId: string; card: Card }
   | { type: "load-earlier"; chatId: string }
   | { type: "typing"; chatId: string; userId: string; isTyping: boolean }
-  | { type: "mark-read"; chatId: string; at: number };
+  | { type: "read-by"; chatId: string; messageIds: string[]; userId: string; at: number }
+  | { type: "mark-read"; chatId: string; userId: string; at: number };
 
+/** Maps one thread; returns the same state when nothing changed, so no-op events don't re-render or re-save. */
 function mapMessages(state: State, chatId: string, fn: (m: Message) => Message): State {
   const list = state.data.messages[chatId];
   if (!list) return state;
+  let changed = false;
+  const next = list.map((m) => {
+    const out = fn(m);
+    if (out !== m) changed = true;
+    return out;
+  });
+  if (!changed) return state;
   return {
     ...state,
-    data: { ...state.data, messages: { ...state.data.messages, [chatId]: list.map(fn) } },
+    data: { ...state.data, messages: { ...state.data.messages, [chatId]: next } },
   };
 }
 
@@ -121,8 +135,11 @@ function reducer(state: State, action: Action): State {
       );
 
     case "delete":
+      // Nothing of the old message survives in storage: not its text, earlier versions or card.
       return mapMessages(state, action.chatId, (m) =>
-        m.id === action.messageId ? { ...m, deletedAt: action.deletedAt, body: "", attachments: [] } : m,
+        m.id === action.messageId && !m.deletedAt
+          ? { ...m, deletedAt: action.deletedAt, body: "", attachments: [], editHistory: [], reactions: [], card: undefined, pinned: false }
+          : m,
       );
 
     case "pin":
@@ -168,10 +185,20 @@ function reducer(state: State, action: Action): State {
       return { ...state, typing: { ...state.typing, [action.chatId]: forChat } };
     }
 
+    case "read-by": {
+      // Receipts are per person; the message status is the best of them.
+      const ids = new Set(action.messageIds);
+      return mapMessages(state, action.chatId, (m) =>
+        ids.has(m.id) && m.authorId !== action.userId && !m.readBy?.[action.userId]
+          ? { ...m, status: m.status === "failed" ? m.status : "read", readBy: { ...(m.readBy ?? {}), [action.userId]: action.at } }
+          : m,
+      );
+    }
+
     case "mark-read":
       return {
         ...state,
-        data: { ...state.data, lastReadAt: { ...state.data.lastReadAt, [action.chatId]: action.at } },
+        data: { ...state.data, lastReadAt: { ...state.data.lastReadAt, [readKey(action.chatId, action.userId)]: action.at } },
       };
 
     default:
@@ -192,7 +219,14 @@ interface ChatContextValue {
   state: State;
   me: string;
   setMe: (id: string) => void;
+  /** Other tabs, and who is signed in to each. */
   peers: Peer[];
+  /** Whether another tab is signed in as this person (so a real human answers, not the simulation). */
+  isOnline: (userId: string) => boolean;
+  /** When the signed-in person last read a chat (ms, 0 if never). */
+  lastReadAt: (chatId: string) => number;
+  /** True once a save failed (storage full or blocked); changes since then live only in this tab. */
+  saveFailed: boolean;
   send: (chatId: string, body: string, opts?: { replyToId?: string | null; attachments?: Attachment[] }) => void;
   /** Sends a structured message; `summary` is what previews and quotes show. */
   sendCard: (chatId: string, card: Card, summary: string) => void;
@@ -209,8 +243,11 @@ interface ChatContextValue {
   hasEarlier: (chatId: string) => boolean;
   setTyping: (chatId: string, isTyping: boolean) => void;
   typingUsers: (chatId: string) => string[];
+  /** Marks everything in the chat read by the signed-in person, sending receipts once per message. */
   markRead: (chatId: string) => void;
 }
+
+const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
@@ -229,41 +266,81 @@ function smiley(): number[][] {
 }
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, {
+  const [state, dispatch] = useReducer(reducer, null, (): State => ({
     data: buildSeedState(),
     typing: {},
     hydrated: false,
-  });
+  }));
 
   const [me, setMeState] = useState("me");
   const [peers, setPeers] = useState<Peer[]>([]);
-  const transport = useRef(createBroadcastTransport());
+  const [saveFailed, setSaveFailed] = useState(false);
+  // Opened after mount and closed on unmount; until then publishes are dropped.
+  const transport = useRef<ChatTransport>(NULL_TRANSPORT);
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const openChatId = useRef<string | null>(null);
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  // Heartbeat times live here; `peers` only changes when someone arrives or leaves.
+  const peerSeen = useRef(new Map<string, Peer>());
   // Long-lived subscriptions read the current identity without re-subscribing.
   const meRef = useRef(me);
-  useEffect(() => {
+  const peersRef = useRef(peers);
+  // Timers, subscriptions and child effects must read the freshest state, not
+  // the snapshot captured when they were scheduled. A layout effect updates it
+  // before any passive effect (ChatView's markRead among them) runs.
+  const latest = useRef(state.data);
+  useLayoutEffect(() => {
     meRef.current = me;
-  }, [me]);
+    peersRef.current = peers;
+    latest.current = state.data;
+  }, [me, peers, state.data]);
+
+  /** A timeout that is cleared if the provider unmounts first. */
+  const later = useCallback((fn: () => void, ms: number) => {
+    const t = setTimeout(() => {
+      timers.current.delete(t);
+      fn();
+    }, ms);
+    timers.current.add(t);
+  }, []);
+  useEffect(() => {
+    const pending = timers.current;
+    const typing = typingTimers.current;
+    return () => {
+      pending.forEach(clearTimeout);
+      pending.clear();
+      Object.values(typing).forEach(clearTimeout);
+    };
+  }, []);
 
   // Identity is per-tab so two tabs can hold a real conversation with each other.
-  // Read after mount rather than in a lazy initializer: the prerendered HTML
-  // always says "me", so seeding from sessionStorage during render would
+  // `?as=charles` signs a fresh tab in as someone else (the "second window"
+  // link uses it). Read after mount rather than in a lazy initializer: the
+  // prerendered HTML always says "me", so reading it during render would
   // hydrate mismatched markup.
   useEffect(() => {
+    let id: string | null = null;
     try {
-      const stored = window.sessionStorage.getItem("nod.chat.me");
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (stored) setMeState(stored);
+      const url = new URL(window.location.href);
+      const as = url.searchParams.get("as");
+      if (as && USERS.some((u) => u.id === as)) {
+        id = as;
+        window.sessionStorage.setItem(ME_KEY, as);
+        url.searchParams.delete("as");
+        window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+      } else {
+        id = window.sessionStorage.getItem(ME_KEY);
+      }
     } catch {
       // ignore
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (id) setMeState(id);
   }, []);
 
   const setMe = useCallback((id: string) => {
     setMeState(id);
     try {
-      window.sessionStorage.setItem("nod.chat.me", id);
+      window.sessionStorage.setItem(ME_KEY, id);
     } catch {
       // ignore
     }
@@ -274,7 +351,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (state.hydrated) localStorageAdapter.save(state.data);
+    if (!state.hydrated) return;
+    const ok = localStorageAdapter.save(state.data);
+    // Surfaced once, so the page can say changes won't survive a reload.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSaveFailed((was) => was || !ok);
   }, [state.data, state.hydrated]);
 
   const publish = useCallback((event: TransportEvent) => transport.current.publish(event), []);
@@ -288,40 +369,50 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  // Realtime inbound.
+  const chatOf = useCallback(
+    (chatId: string) => latest.current.chats.find((c) => c.id === chatId) ?? CHATS.find((c) => c.id === chatId),
+    [],
+  );
+
+  // Realtime: one channel per tab, plus presence. Every tab stores every
+  // event (localStorage is shared, the way a server would be); what each
+  // person sees is filtered by chat membership in the UI.
   useEffect(() => {
-    const t = transport.current;
+    const t = createBroadcastTransport();
+    transport.current = t;
+
+    const syncPeers = () => {
+      const now = Date.now();
+      for (const [id, p] of peerSeen.current) if (now - p.at >= PRESENCE_TIMEOUT_MS) peerSeen.current.delete(id);
+      const next = [...peerSeen.current.values()].sort((a, b) => a.clientId.localeCompare(b.clientId));
+      setPeers((prev) => (samePeers(prev, next) ? prev : next));
+    };
+
     const unsubscribe = t.subscribe((event) => {
       switch (event.type) {
         case "message": {
-          if (event.message.authorId === meRef.current) return;
-          dispatch({ type: "append", message: { ...event.message, status: "delivered" } });
+          const m = event.message;
+          // Sent by this same person from another tab: show it as-is, no receipts.
+          const own = m.authorId === meRef.current;
+          dispatch({ type: "append", message: own ? m : { ...m, status: "delivered" } });
+          if (own || !chatOf(m.chatId)?.memberIds.includes(meRef.current)) break;
           signal("in");
-          dispatch({ type: "typing", chatId: event.message.chatId, userId: event.message.authorId, isTyping: false });
-          // Acknowledge receipt, then read if this client is looking at the chat.
-          t.publish({
-            type: "status",
-            chatId: event.message.chatId,
-            messageId: event.message.id,
-            status: "delivered",
-            byUserId: meRef.current,
-          });
-          if (openChatId.current === event.message.chatId && document.visibilityState === "visible") {
-            t.publish({
-              type: "status",
-              chatId: event.message.chatId,
-              messageId: event.message.id,
-              status: "read",
-              byUserId: meRef.current,
-            });
-          }
+          dispatch({ type: "typing", chatId: m.chatId, userId: m.authorId, isTyping: false });
+          // Acknowledge receipt; ChatView marks it read if the chat is on screen.
+          t.publish({ type: "status", chatId: m.chatId, messageId: m.id, status: "delivered", byUserId: meRef.current });
           break;
         }
         case "status":
-          if (event.byUserId === meRef.current) return;
           dispatch({ type: "status", chatId: event.chatId, messageId: event.messageId, status: event.status, byUserId: event.byUserId, at: Date.now() });
           break;
+        case "read-by":
+          dispatch({ type: "read-by", chatId: event.chatId, messageIds: event.messageIds, userId: event.userId, at: event.at });
+          break;
         case "chat":
+          // Known right away, so a message that follows in the same tick passes the membership check.
+          if (!latest.current.chats.some((c) => c.id === event.chat.id)) {
+            latest.current = { ...latest.current, chats: [...latest.current.chats, event.chat] };
+          }
           dispatch({ type: "add-chat", chat: event.chat });
           break;
         case "typing":
@@ -330,7 +421,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           if (event.isTyping) clearTypingLater(event.chatId, event.userId);
           break;
         case "reaction":
-          if (event.userId === meRef.current) return;
+          // Adding and removing are idempotent, so this person's other tabs apply theirs too.
           dispatch({
             type: "react",
             chatId: event.chatId,
@@ -349,7 +440,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             editedAt: event.editedAt,
           });
           break;
-        case "delete":
+        case "delete": {
+          const gone = latest.current.messages[event.chatId]?.find((m) => m.id === event.messageId);
+          if (gone) releaseMedia(gone.attachments.filter((a) => a.stored === "idb").map((a) => a.id));
           dispatch({
             type: "delete",
             chatId: event.chatId,
@@ -357,6 +450,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             deletedAt: event.deletedAt,
           });
           break;
+        }
         case "pin":
           dispatch({
             type: "pin",
@@ -369,59 +463,82 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           dispatch({ type: "card", chatId: event.chatId, messageId: event.messageId, card: event.card });
           break;
         case "presence":
-          setPeers((prev) => {
-            if (event.clientId === CLIENT_ID) return prev;
-            const next = prev.filter((p) => p.clientId !== event.clientId);
-            next.push({ clientId: event.clientId, userId: event.userId, at: event.at });
-            return prunePeers(next);
-          });
+          if (event.clientId === CLIENT_ID) return;
+          peerSeen.current.set(event.clientId, { clientId: event.clientId, userId: event.userId, at: event.at });
+          syncPeers();
           break;
         case "presence-bye":
-          setPeers((prev) => prev.filter((p) => p.clientId !== event.clientId));
+          peerSeen.current.delete(event.clientId);
+          syncPeers();
           break;
       }
     });
-    return unsubscribe;
-  }, [clearTypingLater]);
 
-  // Presence heartbeat — drives whether the simulated peer is needed.
-  useEffect(() => {
-    const beat = () =>
-      publish({ type: "presence", clientId: CLIENT_ID, userId: meRef.current, at: Date.now() });
+    // Presence heartbeat — drives whether the simulated members are needed.
+    const beat = () => t.publish({ type: "presence", clientId: CLIENT_ID, userId: meRef.current, at: Date.now() });
     beat();
     const interval = setInterval(() => {
       beat();
-      setPeers((prev) => prunePeers(prev));
+      syncPeers();
     }, PRESENCE_INTERVAL_MS);
-    const bye = () => publish({ type: "presence-bye", clientId: CLIENT_ID });
+    const bye = () => t.publish({ type: "presence-bye", clientId: CLIENT_ID });
     window.addEventListener("pagehide", bye);
+
     return () => {
       clearInterval(interval);
-      bye();
       window.removeEventListener("pagehide", bye);
+      bye();
+      unsubscribe();
+      t.close();
+      transport.current = NULL_TRANSPORT;
     };
-  }, [publish]);
+  }, [chatOf, clearTypingLater]);
 
-  // Timers (simulated members, card updates) must read the freshest state,
-  // not the snapshot captured when they were scheduled.
-  const latest = useRef(state.data);
-  useEffect(() => { latest.current = state.data; }, [state.data]);
+  // Switching identity announces the new person straight away.
+  useEffect(() => {
+    publish({ type: "presence", clientId: CLIENT_ID, userId: me, at: Date.now() });
+  }, [me, publish]);
 
+  /** Someone other than me who is in this chat has a tab open, so they answer for themselves. */
+  const memberOnline = useCallback(
+    (chatId: string) => {
+      const members = chatOf(chatId)?.memberIds ?? [];
+      return peersRef.current.some((p) => p.userId !== meRef.current && members.includes(p.userId));
+    },
+    [chatOf],
+  );
+
+  /** Applies a receipt here and in every other tab. */
+  const receipt = useCallback(
+    (chatId: string, messageId: string, status: DeliveryStatus, byUserId: string) => {
+      dispatch({ type: "status", chatId, messageId, status, byUserId, at: Date.now() });
+      publish({ type: "status", chatId, messageId, status, byUserId });
+    },
+    [publish],
+  );
+
+  // Simulated members act through the same events a real tab would send, so
+  // this person's other tabs see the replies too.
   const simulate = useCallback(
     (sent: Message) => {
-      const chat = latest.current.chats.find((c) => c.id === sent.chatId) ?? CHATS.find((c) => c.id === sent.chatId);
+      const chat = chatOf(sent.chatId);
       const counterpart = chat?.memberIds.find((id) => id !== sent.authorId) ?? "charles";
+      const typing = (isTyping: boolean) => {
+        dispatch({ type: "typing", chatId: sent.chatId, userId: counterpart, isTyping });
+        publish({ type: "typing", chatId: sent.chatId, userId: counterpart, isTyping });
+      };
 
-      setTimeout(() => dispatch({ type: "status", chatId: sent.chatId, messageId: sent.id, status: "delivered" }), 700);
-      setTimeout(() => {
-        dispatch({ type: "typing", chatId: sent.chatId, userId: counterpart, isTyping: true });
+      later(() => receipt(sent.chatId, sent.id, "delivered", counterpart), 700);
+      later(() => {
+        typing(true);
         clearTypingLater(sent.chatId, counterpart);
       }, 1200);
-      setTimeout(() => {
-        dispatch({ type: "typing", chatId: sent.chatId, userId: counterpart, isTyping: false });
+      later(() => {
+        typing(false);
+        const id = `sim-${newId()}`;
         const reply: Message = {
-          id: `sim-${Date.now()}`,
-          clientId: `sim-${Date.now()}`,
+          id,
+          clientId: id,
           chatId: sent.chatId,
           authorId: counterpart,
           kind: "text",
@@ -437,24 +554,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           attachments: [],
         };
         dispatch({ type: "append", message: reply });
+        publish({ type: "message", message: reply });
         signal("in");
-        dispatch({ type: "status", chatId: sent.chatId, messageId: sent.id, status: "read", byUserId: counterpart, at: Date.now() });
+        receipt(sent.chatId, sent.id, "read", counterpart);
       }, 2600);
       // In a group, everyone else reads it too, one by one.
       (chat?.memberIds ?? [])
         .filter((id) => id !== sent.authorId && id !== counterpart)
-        .forEach((uid, i) => setTimeout(() => {
-          dispatch({ type: "status", chatId: sent.chatId, messageId: sent.id, status: "read", byUserId: uid, at: Date.now() });
-        }, 3400 + i * 1300));
+        .forEach((uid, i) => later(() => receipt(sent.chatId, sent.id, "read", uid), 3400 + i * 1300));
     },
-    [clearTypingLater],
+    [chatOf, clearTypingLater, later, publish, receipt],
   );
 
   const send = useCallback<ChatContextValue["send"]>(
     (chatId, body, opts) => {
       const trimmed = body.trim();
       if (!trimmed && !opts?.attachments?.length) return;
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const id = newId();
       const optimistic: Message = {
         id,
         clientId: id,
@@ -480,13 +596,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         .then((accepted) => {
           dispatch({ type: "patch", chatId, clientId: optimistic.clientId, patch: { status: "sent" } });
           publish({ type: "message", message: { ...accepted, status: "sent" } });
-          if (peers.length === 0) simulate(accepted);
+          if (!memberOnline(chatId)) simulate(accepted);
         })
         .catch(() => {
           dispatch({ type: "patch", chatId, clientId: optimistic.clientId, patch: { status: "failed" } });
         });
     },
-    [peers.length, publish, simulate],
+    [memberOnline, publish, simulate],
   );
 
   const retry = useCallback<ChatContextValue["retry"]>(
@@ -496,13 +612,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         .then((accepted) => {
           dispatch({ type: "patch", chatId: message.chatId, clientId: message.clientId, patch: { status: "sent" } });
           publish({ type: "message", message: { ...accepted, status: "sent" } });
-          if (peers.length === 0) simulate(accepted);
+          if (!memberOnline(message.chatId)) simulate(accepted);
         })
         .catch(() => {
           dispatch({ type: "patch", chatId: message.chatId, clientId: message.clientId, patch: { status: "failed" } });
         });
     },
-    [peers.length, publish, simulate],
+    [memberOnline, publish, simulate],
   );
 
   const updateCard = useCallback<ChatContextValue["updateCard"]>(
@@ -526,11 +642,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   /** With nobody else online, the other members answer structured messages. */
   const simulateCard = useCallback(
     (sent: Message) => {
-      const chat = latest.current.chats.find((c) => c.id === sent.chatId) ?? CHATS.find((c) => c.id === sent.chatId);
-      const others = (chat?.memberIds ?? []).filter((id) => id !== sent.authorId);
+      const others = (chatOf(sent.chatId)?.memberIds ?? []).filter((id) => id !== sent.authorId);
       const card = sent.card;
       if (!card || !others.length) return;
-      const act = (delay: number, fn: (c: Card) => Card) => setTimeout(() => updateCard(sent, fn), delay);
+      const act = (delay: number, fn: (c: Card) => Card) => later(() => updateCard(sent, fn), delay);
       if (card.type === "poll") {
         others.forEach((uid, i) => act(1400 + i * 1100, (c) => {
           if (c.type !== "poll" || c.closedAt) return c;
@@ -546,7 +661,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         // Someone adds a little smiley to the corner of the doodle.
         const by = others[0];
         act(2600, (c) => (c.type === "sketch"
-          ? { ...c, strokes: [...c.strokes, ...smiley().map((pts, i) => ({ id: `sim-${Date.now()}-${i}`, by, color: "blue", size: 4, pts }))] }
+          ? { ...c, strokes: [...c.strokes, ...smiley().map((pts, i) => ({ id: `sim-${newId()}-${i}`, by, color: "blue", size: 4, pts }))] }
           : c));
       } else if (card.type === "wheel") {
         const by = others[0];
@@ -557,7 +672,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         act(2400, (c) => (c.type === "checklist" ? { ...c, items: c.items.map((it, j) => (j === 0 && !it.doneBy ? { ...it, doneBy: others[0] } : it)) } : c));
       }
     },
-    [updateCard],
+    [chatOf, later, updateCard],
   );
 
   const createGroup = useCallback<ChatContextValue["createGroup"]>(
@@ -579,7 +694,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const sendCard = useCallback<ChatContextValue["sendCard"]>(
     (chatId, card, summary) => {
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const id = newId();
       const message: Message = {
         id,
         clientId: id,
@@ -605,12 +720,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           const out: Message = { ...accepted, card };
           dispatch({ type: "patch", chatId, clientId: id, patch: { status: "sent" } });
           publish({ type: "message", message: { ...out, status: "sent" } });
-          setTimeout(() => dispatch({ type: "status", chatId, messageId: id, status: "delivered" }), 700);
-          if (peers.length === 0) simulateCard(out);
+          if (!memberOnline(chatId)) {
+            const to = chatOf(chatId)?.memberIds.find((m) => m !== meRef.current) ?? "charles";
+            later(() => receipt(chatId, id, "delivered", to), 700);
+            simulateCard(out);
+          }
         })
         .catch(() => dispatch({ type: "patch", chatId, clientId: id, patch: { status: "failed" } }));
     },
-    [peers.length, publish, simulateCard],
+    [chatOf, later, memberOnline, publish, receipt, simulateCard],
   );
 
   const toggleReaction = useCallback<ChatContextValue["toggleReaction"]>(
@@ -636,6 +754,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const deleteMessage = useCallback<ChatContextValue["deleteMessage"]>(
     (message) => {
       const deletedAt = Date.now();
+      releaseMedia(message.attachments.filter((a) => a.stored === "idb").map((a) => a.id));
       dispatch({ type: "delete", chatId: message.chatId, messageId: message.id, deletedAt });
       publish({ type: "delete", chatId: message.chatId, messageId: message.id, deletedAt });
     },
@@ -675,25 +794,37 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const markRead = useCallback(
     (chatId: string) => {
-      openChatId.current = chatId;
-      const list = state.data.messages[chatId] ?? [];
-      list
-        .filter((m) => m.authorId !== meRef.current && m.status !== "read")
-        .forEach((m) =>
-          publish({ type: "status", chatId, messageId: m.id, status: "read", byUserId: meRef.current }),
-        );
-      dispatch({ type: "mark-read", chatId, at: Date.now() });
+      const who = meRef.current;
+      const list = latest.current.messages[chatId] ?? [];
+      const unread = list.filter((m) => m.authorId !== who && !m.readBy?.[who]);
+      const at = Date.now();
+      if (unread.length) {
+        // One event for the lot: opening a long chat must not send a receipt per message.
+        const messageIds = unread.map((m) => m.id);
+        dispatch({ type: "read-by", chatId, messageIds, userId: who, at });
+        publish({ type: "read-by", chatId, messageIds, userId: who, at });
+      }
+      const newest = list[list.length - 1]?.createdAt ?? 0;
+      if (unread.length || newest > (latest.current.lastReadAt[readKey(chatId, who)] ?? 0)) {
+        dispatch({ type: "mark-read", chatId, userId: who, at });
+      }
     },
-    [publish, state.data.messages],
+    [publish],
+  );
+
+  const isOnline = useCallback((userId: string) => peers.some((p) => p.userId === userId), [peers]);
+  const lastReadAt = useCallback(
+    (chatId: string) => state.data.lastReadAt[readKey(chatId, me)] ?? 0,
+    [state.data.lastReadAt, me],
   );
 
   const value = useMemo<ChatContextValue>(
     () => ({
-      state, me, setMe, peers, send, sendCard, updateCard, createGroup, retry, toggleReaction, editMessage,
-      deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead,
+      state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, createGroup, retry,
+      toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead,
     }),
-    [state, me, setMe, peers, send, sendCard, updateCard, createGroup, retry, toggleReaction, editMessage,
-      deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead],
+    [state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, createGroup, retry,
+      toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead],
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
