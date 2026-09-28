@@ -5,18 +5,17 @@ import { chatIdentity, initials } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { openState } from "@/lib/chat/open";
 import { doneColumn, tasksIn } from "@/lib/chat/ops";
-import { newProject, newTask, parseDue, parseTaskCommand, projectOf } from "@/lib/chat/project";
+import { newProject, newTask, parseDue, parseTaskCommand, projectsOf, type BoardMessage } from "@/lib/chat/project";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Card, Chat, Message, ProjectCard, Task, User } from "@/lib/chat/types";
 import Avatar from "./Avatar";
-import { IconBack, IconBoard, IconCheck, IconChevron, IconClock, IconLink, IconPlus } from "./Icons";
+import { IconBack, IconBoard, IconCheck, IconChevron, IconChevronDown, IconClock, IconEdit, IconLink, IconMore, IconPlus, IconTrash } from "./Icons";
 import StatusBar from "./StatusBar";
-import { relative, Sheet, smooth, useChatUi, useDialog, useNow } from "./ui";
+import { relative, Sheet, smooth, uid, useChatUi, useDialog, useNow } from "./ui";
 import styles from "./chat.module.css";
 import s from "./project.module.css";
 
 type Send = (card: Card, summary: string) => void;
-type BoardMessage = Message & { card: ProjectCard };
 
 const DAY = 86_400_000;
 /** How long a finger rests on a task before it lifts. */
@@ -263,7 +262,7 @@ export function ProjectCardView({ message, card, interactive }: { message: Messa
         </div>
       )}
 
-      <button className={`${styles.secondaryWide} ${s.openBtn}`} onClick={ui.openBoard} disabled={!interactive}>
+      <button className={`${styles.secondaryWide} ${s.openBtn}`} onClick={() => ui.openBoard(message.id)} disabled={!interactive}>
         Open board
       </button>
     </div>
@@ -407,8 +406,32 @@ function TaskBody({ task, now, done, onShow }: { task: Task; now: number; done: 
   );
 }
 
-function ColumnHead({ name, count, onRename }: { name: string; count: number; onRename: (name: string) => void }) {
-  const [draft, setDraft] = useState<string | null>(null);
+/**
+ * A column's name (tap to rename) and its menu: rename, or delete the group
+ * with its tasks after a confirm. A new group opens straight into renaming.
+ */
+function ColumnHead({ name, count, renameNow, canDelete, menuOpen, onMenu, onRename, onDelete, onRenamed }: {
+  name: string;
+  count: number;
+  /** Start in the name field (a group that was just added). */
+  renameNow: boolean;
+  canDelete: boolean;
+  /** The board keeps one menu open at a time; this says whether it's this one. */
+  menuOpen: boolean;
+  onMenu: (open: boolean) => void;
+  onRename: (name: string) => void;
+  onDelete: () => void;
+  onRenamed: () => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(renameNow ? name : null);
+  const [confirming, setConfirming] = useState(false);
+  // Closed from elsewhere (another menu, a tap outside): the next open starts at the menu, not the confirm.
+  if (!menuOpen && confirming) setConfirming(false);
+  const menu = !menuOpen ? "closed" : confirming ? "confirm" : "open";
+  const setMenu = (next: "closed" | "open" | "confirm") => {
+    setConfirming(next === "confirm");
+    onMenu(next !== "closed");
+  };
   const ref = useRef<HTMLInputElement>(null);
   const editing = draft !== null;
   // The field replaces the name the person just tapped.
@@ -416,12 +439,14 @@ function ColumnHead({ name, count, onRename }: { name: string; count: number; on
   const commit = () => {
     const next = draft?.trim();
     setDraft(null);
+    onRenamed();
     if (next && next !== name) onRename(next);
   };
+  const tasks = `${count} ${count === 1 ? "task" : "tasks"}`;
   return (
     <header className={s.colHead}>
       {draft === null ? (
-        <button className={s.colName} onClick={() => setDraft(name)} aria-label={`${name}, ${count} ${count === 1 ? "task" : "tasks"}. Rename column`}>
+        <button className={s.colName} onClick={() => setDraft(name)} aria-label={`${name}, ${tasks}. Rename group`}>
           {name}
         </button>
       ) : (
@@ -435,12 +460,61 @@ function ColumnHead({ name, count, onRename }: { name: string; count: number; on
           onKeyDown={(e) => {
             if (e.key === "Enter") commit();
             // Handled here, so the board itself stays open.
-            if (e.key === "Escape") { e.preventDefault(); setDraft(null); }
+            if (e.key === "Escape") { e.preventDefault(); setDraft(null); onRenamed(); }
           }}
-          aria-label="Column name"
+          aria-label="Group name"
         />
       )}
       <em aria-hidden="true">{count}</em>
+      <button
+        className={s.colMore}
+        onClick={() => setMenu(menu === "closed" ? "open" : "closed")}
+        aria-haspopup="menu"
+        aria-expanded={menu !== "closed"}
+        aria-label={`${name} options`}
+      >
+        <IconMore size={18} />
+      </button>
+      {menu !== "closed" && (
+        <>
+          <div
+            className={`${s.colMenu} ${styles.glassStrong}`}
+            role="menu"
+            aria-label={`${name} options`}
+            onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setMenu("closed"); } }}
+          >
+            {menu === "open" ? (
+              <>
+                <button role="menuitem" className={s.pickRow} autoFocus onClick={() => { setMenu("closed"); setDraft(name); }}>
+                  <span className={s.pickIcon}><IconEdit size={16} /></span>
+                  <span className={s.pickText}><b>Rename group</b></span>
+                </button>
+                <button
+                  role="menuitem"
+                  className={`${s.pickRow} ${s.pickDanger}`}
+                  disabled={!canDelete}
+                  onClick={() => setMenu("confirm")}
+                >
+                  <span className={s.pickIcon}><IconTrash size={16} /></span>
+                  <span className={s.pickText}>
+                    <b>Delete group</b>
+                    <small>{canDelete ? (count ? `Its ${tasks} go too` : "It's empty") : "A board keeps at least one group"}</small>
+                  </span>
+                </button>
+              </>
+            ) : (
+              <div className={s.confirm} role="alertdialog" aria-label={`Delete ${name}?`}>
+                <b>Delete “{name}”?</b>
+                <p>{count ? `Its ${tasks} will be deleted for everyone in this chat.` : "It has no tasks."}</p>
+                <div className={s.confirmRow}>
+                  <button className={s.confirmCancel} autoFocus onClick={() => setMenu("closed")}>Cancel</button>
+                  <button className={s.confirmDelete} onClick={() => { setMenu("closed"); onDelete(); }}>Delete</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </header>
   );
 }
@@ -496,8 +570,22 @@ function AddTask({ open, onOpen, onClose, onAdd, first }: {
 
 type Drop = { col: string; before: string | null };
 
-/** The full-screen board for one project card. */
-export function ProjectBoard({ message, onClose }: { message: BoardMessage; onClose: () => void }) {
+/** Counts for a board in the switcher. */
+function boardCounts(card: ProjectCard) {
+  const done = doneColumn(card);
+  const live = Object.values(card.tasks).filter((t) => !t.deleted);
+  return { open: live.filter((t) => t.column !== done).length, total: live.length };
+}
+
+/** The full-screen board for one project card; the title switches between the chat's boards. */
+export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
+  message: BoardMessage;
+  /** Every board in this chat, oldest first. */
+  boards: BoardMessage[];
+  onSwitch: (messageId: string) => void;
+  onNew: () => void;
+  onClose: () => void;
+}) {
   const { me, cardOp } = useChat();
   const ui = useChatUi();
   const now = useNow(60_000);
@@ -512,6 +600,62 @@ export function ProjectBoard({ message, onClose }: { message: BoardMessage; onCl
   const ghostRef = useRef<HTMLDivElement>(null);
   const [leaving, setLeaving] = useState(false);
   const [adding, setAdding] = useState<string | null>(null);
+  // Which menu is open: "boards" (the switcher), a column id, or none. Opening one closes the rest.
+  const [menu, setMenu] = useState<string | null>(null);
+  const picking = menu === "boards";
+  const setPicking = (open: boolean | ((v: boolean) => boolean)) =>
+    setMenu((cur) => ((typeof open === "function" ? open(cur === "boards") : open) ? "boards" : null));
+  // A group just added from the header: it opens with its name ready to type.
+  const [renaming, setRenaming] = useState<string | null>(null);
+
+  // A different board: start at its first column, with nothing half-added.
+  const [shown, setShown] = useState(message.id);
+  if (shown !== message.id) {
+    setShown(message.id);
+    setAdding(null);
+    setMenu(null);
+  }
+  useEffect(() => { scrollRef.current?.scrollTo({ left: 0 }); }, [message.id]);
+
+  // A mouse wheel scrolls up and down; over the board it moves between columns,
+  // unless a column's own list can still scroll that way.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const wheel = (e: WheelEvent) => {
+      if (e.ctrlKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      const body = (e.target as HTMLElement).closest<HTMLElement>("[data-col-body]");
+      if (body) {
+        const canUp = body.scrollTop > 0;
+        const canDown = body.scrollTop + body.clientHeight < body.scrollHeight - 1;
+        if ((e.deltaY < 0 && canUp) || (e.deltaY > 0 && canDown)) return;
+      }
+      e.preventDefault();
+      el.scrollBy({ left: e.deltaY, behavior: "auto" });
+    };
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => el.removeEventListener("wheel", wheel);
+  }, []);
+
+  // With a mouse, dragging the board's background pans it (touch already pans natively).
+  const pan = useRef<{ x: number; left: number; id: number } | null>(null);
+  const [panning, setPanning] = useState(false);
+  const onPanDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "mouse" || e.button !== 0) return;
+    if ((e.target as HTMLElement).closest("[data-task], button, input, textarea, label")) return;
+    pan.current = { x: e.clientX, left: e.currentTarget.scrollLeft, id: e.pointerId };
+  };
+  const onPanMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const p = pan.current;
+    if (!p) return;
+    const dx = e.clientX - p.x;
+    if (Math.abs(dx) > 3 && !e.currentTarget.hasPointerCapture(p.id)) {
+      try { e.currentTarget.setPointerCapture(p.id); } catch { /* pointer gone */ }
+      setPanning(true);
+    }
+    e.currentTarget.scrollLeft = p.left - dx;
+  };
+  const onPanEnd = () => { pan.current = null; setPanning(false); };
 
   const close = (after?: () => void) => {
     if (leaving) return;
@@ -527,6 +671,21 @@ export function ProjectBoard({ message, onClose }: { message: BoardMessage; onCl
   const openTask = (t: Task) => ui.openSheet(
     <TaskSheet chatId={message.chatId} messageId={message.id} taskId={t.id} onClose={ui.closeSheet} onShowInChat={showInChat} />,
   );
+
+  /** A new group, before Done, named and ready to rename; the board scrolls to it. */
+  const addGroup = () => {
+    const id = `col-${uid()}`;
+    cardOp(message, { kind: "column.add", column: { id, name: "New group" } });
+    setRenaming(id);
+    requestAnimationFrame(() => {
+      scrollRef.current?.querySelector<HTMLElement>(`[data-col="${id}"]`)?.scrollIntoView({ behavior: smooth(), inline: "start", block: "nearest" });
+    });
+  };
+  const removeGroup = (id: string) => {
+    const col = card.columns.find((c) => c.id === id);
+    cardOp(message, { kind: "column.remove", id });
+    if (col) ui.toast(`Deleted “${col.name}”`);
+  };
 
   const addTo = (column: string, text: string) => {
     const parsed = parseTaskCommand(`/task ${text}`, people);
@@ -707,29 +866,86 @@ export function ProjectBoard({ message, onClose }: { message: BoardMessage; onCl
           <IconBack />
         </button>
         <div className={s.headTitle}>
-          <span className={`${s.headName} ${styles.glass}`}><IconBoard size={15} /><span>{card.name}</span></span>
-          <span className={s.headSub}>{openCount} open · {live.length - openCount} done</span>
+          <button
+            className={`${s.headName} ${s.headSwitch} ${styles.glass}`}
+            onClick={() => setPicking((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={picking}
+            aria-label={`${card.name}. Switch board`}
+          >
+            <IconBoard size={15} /><span>{card.name}</span><IconChevronDown size={14} />
+          </button>
+          <span className={s.headSub}>
+            {openCount} open · {live.length - openCount} done{boards.length > 1 ? ` · ${boards.length} boards` : ""}
+          </span>
         </div>
-        <button
-          className={`${styles.circleBtn} ${styles.glass}`}
-          onClick={() => {
-            scrollRef.current?.scrollTo({ left: 0, behavior: smooth() });
-            setAdding(card.columns[0]?.id ?? null);
-          }}
-          aria-label={`Add a task to ${card.columns[0]?.name ?? "the board"}`}
-        >
+        <button className={`${styles.circleBtn} ${styles.glass}`} onClick={addGroup} aria-label="New group">
           <IconPlus />
         </button>
       </header>
 
-      <div className={s.columns} ref={scrollRef}>
+      {/* One tap-away layer for whichever menu is open, over the whole board. */}
+      {menu && <div className={s.pickScrim} onClick={() => setMenu(null)} aria-hidden="true" />}
+      {picking && (
+        <>
+          <div
+            className={`${s.picker} ${styles.glassStrong}`}
+            role="menu"
+            aria-label="Boards in this chat"
+            onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setPicking(false); } }}
+          >
+            <p className={s.pickLabel}>Boards in this chat</p>
+            {[...boards].reverse().map((b) => {
+              const n = boardCounts(b.card);
+              const on = b.id === message.id;
+              return (
+                <button
+                  key={b.id}
+                  role="menuitemradio"
+                  aria-checked={on}
+                  className={`${s.pickRow} ${on ? s.pickOn : ""}`}
+                  onClick={() => { setPicking(false); if (!on) onSwitch(b.id); }}
+                  autoFocus={on}
+                >
+                  <span className={s.pickIcon}><IconBoard size={16} /></span>
+                  <span className={s.pickText}><b>{b.card.name}</b><small>{n.open} open · {n.total - n.open} done</small></span>
+                  {on && <IconCheck size={16} />}
+                </button>
+              );
+            })}
+            <button role="menuitem" className={`${s.pickRow} ${s.pickNew}`} onClick={() => { setPicking(false); onNew(); }}>
+              <span className={s.pickIcon}><IconPlus size={16} /></span>
+              <span className={s.pickText}><b>New board</b><small>Another project in this chat</small></span>
+            </button>
+          </div>
+        </>
+      )}
+
+      <div
+        className={`${s.columns} ${panning ? s.columnsPanning : ""}`}
+        ref={scrollRef}
+        onPointerDown={onPanDown}
+        onPointerMove={onPanMove}
+        onPointerUp={onPanEnd}
+        onPointerCancel={onPanEnd}
+      >
         {card.columns.map((col, ci) => {
           const list = tasksIn(card, col.id);
           const isDone = col.id === done;
           const target = drop?.col === col.id ? drop : null;
           return (
             <section key={col.id} className={`${s.column} ${target ? s.columnInto : ""}`} data-col={col.id} aria-label={col.name}>
-              <ColumnHead name={col.name} count={list.length} onRename={(name) => cardOp(message, { kind: "column.rename", id: col.id, name })} />
+              <ColumnHead
+                name={col.name}
+                count={list.length}
+                renameNow={renaming === col.id}
+                canDelete={card.columns.length > 1}
+                menuOpen={menu === col.id}
+                onMenu={(open) => setMenu(open ? col.id : null)}
+                onRename={(name) => cardOp(message, { kind: "column.rename", id: col.id, name })}
+                onRenamed={() => setRenaming(null)}
+                onDelete={() => removeGroup(col.id)}
+              />
               <div className={s.colBody} data-col-body>
                 {list.map((t) => (
                   <div
@@ -853,12 +1069,12 @@ export function MyTasks({ onOpenChat }: { onOpenChat: (chat: Chat) => void }) {
     const out: { task: Task; chat: Chat; board: string; label: string }[] = [];
     for (const chat of state.data.chats) {
       if (!chat.memberIds.includes(me)) continue;
-      const board = projectOf(state.data.messages[chat.id] ?? []);
-      if (!board) continue;
-      const done = doneColumn(board.card);
       const label = chatIdentity(chat, me, userById).label;
-      for (const task of Object.values(board.card.tasks)) {
-        if (!task.deleted && task.column !== done && task.assignee === me) out.push({ task, chat, board: board.card.name, label });
+      for (const board of projectsOf(state.data.messages[chat.id] ?? [])) {
+        const done = doneColumn(board.card);
+        for (const task of Object.values(board.card.tasks)) {
+          if (!task.deleted && task.column !== done && task.assignee === me) out.push({ task, chat, board: board.card.name, label });
+        }
       }
     }
     return out.sort((a, b) => byDue(a.task, b.task));

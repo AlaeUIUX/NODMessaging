@@ -2,7 +2,8 @@
 
 import { useMediaUrl } from "@/lib/chat/media";
 import type { Attachment, Message } from "@/lib/chat/types";
-import { IconDownload, IconFile } from "./Icons";
+import FileTypeIcon from "./FileTypeIcon";
+import { IconDownload } from "./Icons";
 import styles from "./chat.module.css";
 
 export function fileSize(bytes: number) {
@@ -75,14 +76,15 @@ export function FileRow({ a }: { a: Attachment }) {
   const url = useMediaUrl(a);
   return (
     <div className={styles.fileRow}>
-      <span className={styles.fileIcon}><IconFile size={24} /></span>
+      <FileTypeIcon name={a.name} mime={a.mime} size={34} />
       <span className={styles.fileMeta}><b>{a.name}</b><small>{fileSize(a.size)}</small></span>
       {url ? (
-        <a className={styles.fileDownload} href={url} download={a.name} onClick={(e) => e.stopPropagation()}>
-          <IconDownload size={14} />Download
+        // A round icon button, like other messengers: the file's name gets the room.
+        <a className={styles.fileDownload} href={url} download={a.name} onClick={(e) => e.stopPropagation()} aria-label={`Download ${a.name}`} title="Download">
+          <IconDownload size={17} />
         </a>
       ) : (
-        <span className={styles.fileDownload} aria-disabled="true">Loading…</span>
+        <span className={styles.fileDownload} aria-disabled="true" aria-label="Loading"><span className={styles.spinner} /></span>
       )}
     </div>
   );

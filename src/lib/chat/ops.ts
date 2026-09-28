@@ -159,6 +159,19 @@ function reduceProject(card: ProjectCard, op: CardOp): ProjectCard {
     case "column.rename":
       if (!card.columns.some((c) => c.id === op.id && c.name !== op.name)) return card;
       return { ...card, columns: card.columns.map((c) => (c.id === op.id ? { ...c, name: op.name } : c)) };
+    case "column.add": {
+      if (card.columns.some((c) => c.id === op.column.id)) return card;
+      // New groups go before the last column: that one is "done", and should stay so.
+      const at = card.columns.length > 1 ? card.columns.length - 1 : card.columns.length;
+      return { ...card, columns: [...card.columns.slice(0, at), op.column, ...card.columns.slice(at)] };
+    }
+    case "column.remove": {
+      // A board always keeps one column; its tasks go with it (as tombstones, like task.remove).
+      if (card.columns.length <= 1 || !card.columns.some((c) => c.id === op.id)) return card;
+      const tasks: Record<string, Task> = {};
+      for (const [id, t] of Object.entries(card.tasks)) tasks[id] = t.column === op.id && !t.deleted ? { ...t, deleted: true } : t;
+      return { ...card, columns: card.columns.filter((c) => c.id !== op.id), tasks };
+    }
     default:
       return card;
   }

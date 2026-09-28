@@ -9,6 +9,7 @@ import { localStorageAdapter } from "@/lib/chat/storage";
 import { userById } from "@/lib/chat/store";
 import type { Attachment, Message, User } from "@/lib/chat/types";
 import Avatar from "./Avatar";
+import FileTypeIcon from "./FileTypeIcon";
 import type { AddKind } from "./CardBuilders";
 import {
   IconArrowUp, IconAt, IconBell, IconBold, IconBullets, IconCheck, IconChecklist, IconClose, IconCode, IconHeading,
@@ -72,7 +73,7 @@ function AttachChip({ a, onRemove }: { a: Attachment; onRemove: () => void }) {
   return (
     <span className={styles.attachChip}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      {a.kind === "image" && url && <img src={url} alt="" />}
+      {a.kind === "image" && url ? <img src={url} alt="" /> : a.kind !== "image" && <FileTypeIcon name={a.name} mime={a.mime} size={22} />}
       {a.name.length > 16 ? `${a.name.slice(0, 16)}…` : a.name}
       <button onClick={onRemove} aria-label="Remove">×</button>
     </span>

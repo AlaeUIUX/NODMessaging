@@ -10,7 +10,8 @@ import type { Message } from "@/lib/chat/types";
 import { INKS, outcome, pathOf } from "./Artifacts";
 import Avatar from "./Avatar";
 import { fileSize, Photo } from "./Media";
-import { IconCheck, IconDownload, IconFile, IconPlay } from "./Icons";
+import FileTypeIcon from "./FileTypeIcon";
+import { IconCheck, IconDownload, IconPlay } from "./Icons";
 import { useMediaUrl } from "@/lib/chat/media";
 import styles from "./chat.module.css";
 
@@ -113,7 +114,7 @@ export function BlockView({ block, shape, onToggle }: { block: Block; shape: Blo
     );
     case "file": return (
       <div className={cls}>
-        <span className={styles.mbFileIcon}><IconFile size={20} /></span>
+        <FileTypeIcon name={block.attachment?.name ?? block.title} mime={block.attachment?.mime} size={30} />
         <span className={styles.mbText}><b>{block.title}</b><small>{block.size ? fileSize(block.size) : "File"}</small></span>
         {block.attachment && <FileLink block={block} />}
       </div>
@@ -326,7 +327,7 @@ function LivePreview({ message, shape, me }: { message: Message; shape: BlockSha
   if (file) {
     return (
       <span className={`${styles.mbLiveBody} ${styles.mbLiveFile}`}>
-        <span className={styles.mbFileIcon}><IconFile size={18} /></span>
+        <FileTypeIcon name={file.name} mime={file.mime} size={26} />
         <span className={styles.mbText}><b>{file.name}</b><small>{fileSize(file.size)}</small></span>
       </span>
     );

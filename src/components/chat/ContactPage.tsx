@@ -18,7 +18,7 @@ import { reducedMotion, relative, useChatUi, useDialog, useNow } from "./ui";
 import styles from "./chat.module.css";
 import s from "./contact.module.css";
 
-export type ContactTab = "live" | "media" | "files" | "links" | "members";
+export type ContactTab = "live" | "media" | "files" | "links";
 
 const LEAVE_MS = 220;
 const EDGE = 24;
@@ -139,7 +139,10 @@ function snippet(text: string, q: string): ReactNode {
    The page
 --------------------------------------------------------------------------- */
 
-/** The person (DM) or Space behind a chat: Live items, media, files, links, members. */
+/**
+ * The person (DM) or Space behind a chat: Live items, media, files and links
+ * in tabs; for a Space, its members in their own section below.
+ */
 export default function ContactPage({ chat, startTab, onClose, onJump }: {
   chat: Chat;
   startTab: ContactTab;
@@ -156,7 +159,7 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
   const tabsAnchorRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const isGroup = chat.kind === "group";
-  const [tab, setTab] = useState<ContactTab>(startTab === "members" && !isGroup ? "media" : startTab);
+  const [tab, setTab] = useState<ContactTab>(startTab);
   const [leaving, setLeaving] = useState(false);
   const [compact, setCompact] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -335,7 +338,7 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
             done = true;
             window.removeEventListener("popstate", go);
             clearTimeout(fallback);
-            ui.openBoard();
+            ui.openBoard(m.id);
           };
           window.addEventListener("popstate", go);
           const fallback = setTimeout(go, 400);
@@ -461,37 +464,14 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
     <Empty icon={<IconLink size={22} />} title="No links yet">Links sent in messages are gathered here, with who sent them and when.</Empty>
   );
 
-  /* ---- Members ---- */
-
-  const members = [...chat.memberIds].sort((a, b) =>
-    a === me ? -1 : b === me ? 1 : Number(isOnline(b)) - Number(isOnline(a)) || userById(a).fullName.localeCompare(userById(b).fullName));
-  const membersPanel = (
-    <ul className={`${s.list} ${s.group}`}>
-      {members.map((id) => {
-        const u = userById(id);
-        const on = id !== me && isOnline(id);
-        return (
-          <li key={id} className={s.member}>
-            <Avatar glyph={initials(u.fullName)} tone={u.tone} size={40} shape="circle" online={on} />
-            <span className={s.memberText}>
-              <b>{u.fullName}{id === me && <em> · You</em>}</b>
-              <span className={on ? s.online : undefined}>{on ? "Active now" : `@${u.name}`}</span>
-            </span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-
   const panels: Record<ContactTab, ReactNode> = {
-    live: livePanel, media: mediaPanel, files: filesPanel, links: linksPanel, members: membersPanel,
+    live: livePanel, media: mediaPanel, files: filesPanel, links: linksPanel,
   };
   const tabs: { id: ContactTab; label: string; count?: number }[] = [
     { id: "live", label: "Live", count: live.length },
     { id: "media", label: "Media" },
     { id: "files", label: "Files" },
     { id: "links", label: "Links" },
-    ...(isGroup ? [{ id: "members" as const, label: "Members" }] : []),
   ];
   const tabIndex = Math.max(0, tabs.findIndex((t) => t.id === tab));
 
@@ -592,7 +572,10 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
           </>
         ) : (
           <>
-            <div className={s.stick}>
+            {/* Its own block, so the sticky tabs let go before the Space's sections below. */}
+            <section className={s.tabbed} aria-label="Shared in this chat">
+            {/* In a Space the tabs are one block among the Space's sections: they scroll with the page. */}
+            <div className={`${s.stick} ${isGroup ? s.flat : ""}`}>
               <div className={s.tabs} role="tablist" aria-label="Details" style={{ ["--n" as string]: tabs.length }}>
                 <span className={s.lens} style={{ transform: `translateX(${tabIndex * 100}%)` }} aria-hidden="true" />
                 {tabs.map((t) => (
@@ -614,10 +597,45 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
             <div key={tab} id="contact-panel" className={s.panel} role="tabpanel" aria-labelledby={`contact-tab-${tab}`}>
               {panels[tab]}
             </div>
+            </section>
+            {isGroup && <SpaceMembers chat={chat} />}
           </>
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * A Space's people, apart from the shared-content tabs. This is where roles
+ * and permissions will live, and the Space's channels will sit alongside it.
+ */
+function SpaceMembers({ chat }: { chat: Chat }) {
+  const { me, isOnline } = useChat();
+  const members = [...chat.memberIds].sort((a, b) =>
+    a === me ? -1 : b === me ? 1 : Number(isOnline(b)) - Number(isOnline(a)) || userById(a).fullName.localeCompare(userById(b).fullName));
+  const online = members.filter((id) => id !== me && isOnline(id)).length;
+  return (
+    <section className={s.space} aria-labelledby="space-members">
+      <h3 id="space-members" className={s.spaceHead}>
+        Members <em>{members.length}{online ? ` · ${online} online` : ""}</em>
+      </h3>
+      <ul className={`${s.list} ${s.group}`}>
+        {members.map((id) => {
+          const u = userById(id);
+          const on = id !== me && isOnline(id);
+          return (
+            <li key={id} className={s.member}>
+              <Avatar glyph={initials(u.fullName)} tone={u.tone} size={40} shape="circle" online={on} />
+              <span className={s.memberText}>
+                <b>{u.fullName}{id === me && <em> · You</em>}</b>
+                <span className={on ? s.online : undefined}>{on ? "Active now" : `@${u.name}`}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

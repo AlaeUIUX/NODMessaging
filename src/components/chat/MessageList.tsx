@@ -47,6 +47,22 @@ function dayLabel(ts: number) {
 
 const dayKey = (ts: number) => new Date(ts).toDateString();
 
+/** Cards, photos and posts are objects, not lines of text: they never sit flush, even in a run. */
+const isBlock = (m: Message) =>
+  !m.deletedAt && (m.kind === "card" || m.attachments.some((a) => a.kind === "image") || /^# /.test(m.body));
+
+/**
+ * The gap above a message, the way iMessage, WhatsApp and Telegram space a
+ * conversation: lines in one burst stay close, a pause opens a little air,
+ * a new speaker gets a clear break. Day labels and the "New" line carry their
+ * own margins, so a message right under one needs none.
+ */
+function gapBefore(prev: Message | undefined, message: Message, joinPrev: boolean, breakBefore: boolean) {
+  if (!prev || breakBefore) return 0;
+  if (joinPrev) return isBlock(prev) || isBlock(message) ? 10 : 4;
+  return prev.authorId === message.authorId ? 12 : 18;
+}
+
 const clock = (ts: number) => new Date(ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
 export default function MessageList({
@@ -201,7 +217,7 @@ export default function MessageList({
         const isNew = !seenIds.current.has(message.id) && message.createdAt >= (byId.get(lastSeenId.current ?? "")?.createdAt ?? 0);
 
         return (
-          <div key={message.id}>
+          <div key={message.id} style={{ paddingTop: gapBefore(prev, message, joinPrev, breakBefore) }}>
             {showDay && (
               <div className={styles.dayLabel}>
                 <span><b>{dayLabel(message.createdAt)}</b> {clock(message.createdAt)}</span>
@@ -226,7 +242,7 @@ export default function MessageList({
       })}
 
       {typingShown && (
-        <div className={`${styles.row} ${styles.theirs} ${typingShown.leaving ? styles.typingLeaving : styles.enterTheirs}`}>
+        <div className={`${styles.row} ${styles.theirs} ${styles.typingRow} ${typingShown.leaving ? styles.typingLeaving : styles.enterTheirs}`}>
           {isGroupChat && (
             <div className={styles.avatarSlot}>
               <Avatar glyph={initials(userById(typingShown.user).fullName)} tone={userById(typingShown.user).tone} size={28} />

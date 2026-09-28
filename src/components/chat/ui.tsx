@@ -20,8 +20,8 @@ export interface ChatUi {
   ask: (kind: PermissionKind) => Promise<boolean>;
   /** Opens a photo full screen, or a collection's grid ("all"). */
   openMedia: (message: Message, index: number | "all") => void;
-  /** Opens this chat's board full screen, or offers to start one. */
-  openBoard: () => void;
+  /** Opens a board full screen: the one given, else the last one viewed here, else offers to start one. */
+  openBoard: (messageId?: string) => void;
   /** Adds a task to this chat's board, starting the board if there isn't one yet. */
   addTask: (fields: { title: string; assignee: string | null; due: number | null; fromMessageId?: string }) => void;
   /** Scrolls the thread to a message and flashes it. */

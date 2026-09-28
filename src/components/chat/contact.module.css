@@ -487,3 +487,17 @@
 }
 .empty b { font: var(--t-headline); letter-spacing: -.01em; }
 .empty p { max-width: 290px; margin: 0; font: var(--t-subhead); color: var(--ink-3); }
+
+/* ---- A Space's own sections, below the shared-content tabs ---- */
+.tabbed { position: relative; }
+.space { margin: 32px 16px 0; padding-top: 20px; border-top: 1px solid var(--line); }
+.spaceHead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 4px 10px;
+  font: var(--t-headline);
+  color: var(--ink);
+}
+.spaceHead em { font: var(--t-footnote); font-style: normal; color: var(--ink-3); }
+.stick.flat { position: static; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }

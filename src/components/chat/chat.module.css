@@ -953,15 +953,15 @@
 .chatHeader {
   position: absolute;
   top: var(--inset-top);
-  left: 14px;
-  right: 14px;
+  left: 12px;
+  right: 12px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   z-index: 30;
 }
 /* Equal sides keep the name centred whatever sits on either side. */
-.headerSide { width: 98px; flex-shrink: 0; display: flex; gap: 10px; }
+.headerSide { width: 94px; flex-shrink: 0; display: flex; gap: 6px; }
 .headerEnd { justify-content: flex-end; }
 .titleCapsule {
   flex: 1;
@@ -983,22 +983,38 @@
 .titleButton:active .tcName { transform: scale(.96); }
 .titleButton:focus-visible { outline: none; }
 .titleButton:focus-visible .tcName { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
-/* Something in this chat is still open: pulses once when it appears, then rests. */
-.liveDot {
-  width: 7px;
-  height: 7px;
+/* (Not .liveDot: that name is the live-location pulse.) Something in this
+   chat is still open: a solid blue dot that never fades,
+   with a ring that breathes around it. */
+.theme { --live-dot: #0A7CFF; }
+.theme[data-theme="dark"] { --live-dot: #4DA3FF; }
+.openDot {
+  position: relative;
+  width: 8px;
+  height: 8px;
   flex-shrink: 0;
+  /* With the capsule's 4px gap: 8px clear of the name, 6px before the chevron. */
+  margin: 0 2px 0 4px;
   border-radius: var(--r-pill);
-  background: var(--accent);
-  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--accent) 22%, transparent);
-  animation: liveDotIn var(--t-slow) var(--ease-out) both, liveDotPulse 1.4s var(--ease-out) var(--t-slow) 1;
+  background: var(--live-dot);
 }
-@keyframes liveDotIn { from { transform: scale(0); } to { transform: scale(1); } }
-@keyframes liveDotPulse {
-  0% { box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--accent) 22%, transparent); }
-  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 0%, transparent); }
-  100% { box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--accent) 22%, transparent); }
+.openDot::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: var(--r-pill);
+  border: 1.5px solid var(--live-dot);
+  animation: liveRing 2.4s ease-in-out infinite;
 }
+@keyframes liveRing {
+  0%, 100% { transform: scale(.85); opacity: .6; }
+  50% { transform: scale(1.3); opacity: .15; }
+}
+/* Still motion: the ring rests, visible, around the dot. */
+@media (prefers-reduced-motion: reduce) {
+  .openDot::after { animation: none; opacity: .4; }
+}
+
 .titleCapsule .tcName {
   display: flex;
   align-items: center;
@@ -1098,7 +1114,7 @@
 
 .dayLabel {
   text-align: center;
-  margin: 18px 0 10px;
+  margin: 24px 0 12px;
   font-size: var(--fs-meta);
   line-height: var(--lh-meta);
   font-weight: 500;
@@ -1109,7 +1125,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 14px 8px 8px;
+  margin: 22px 8px 12px;
   font-size: var(--fs-meta);
   font-weight: 600;
   color: var(--accent);
@@ -1226,7 +1242,8 @@
 .bubble > * + * { margin-top: 4px; }
 .bubble ul, .bubble ol { padding-left: 20px; white-space: normal; }
 .bubble li + li { margin-top: 2px; }
-.bubble blockquote { padding-left: 10px; box-shadow: inset 2px 0 0 color-mix(in srgb, currentColor 35%, transparent); opacity: .85; }
+/* A quote reads at the same size and weight as the text around it; the rule marks it, not fading. */
+.bubble blockquote { padding-left: 10px; box-shadow: inset 2px 0 0 color-mix(in srgb, currentColor 35%, transparent); font: inherit; }
 .bubble code {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: .86em;
@@ -3147,16 +3164,19 @@
    units, 12–16 between groups, 20+ between sections.
    ========================================================================== */
 
-/* thread rhythm */
-.row { margin-top: 14px; }
-.row.grouped { margin-top: 3px; }
-.row.hasReactions { margin-bottom: 18px; }
-.byline { padding: 0 14px 5px; }
+/* Thread rhythm. The gap between messages is set by MessageList (gapBefore):
+   4 within a burst, 10 when a card or photo is in it, 12 after a pause,
+   18 for a new speaker. Rows themselves carry no top margin. */
+.row, .row.grouped { margin-top: 0; }
+/* Reaction badges hang 18px below their bubble: keep them clear of the next message. */
+.row.hasReactions { margin-bottom: 20px; }
+.typingRow { margin-top: 12px; }
+.byline { padding: 0 14px 4px; }
 .madeWith { margin: 0 4px 8px; gap: 5px; flex-wrap: wrap; color: var(--ink-3); }
 .madeWith b { height: 22px; padding: 0 8px; }
 .bubble { padding: 10px 14px; }
 .bubble > * + * { margin-top: 6px; }
-.statusLine { padding-top: 6px; }
+.statusLine { padding-top: 4px; }
 
 /* A post reads like a short article: a clear title, then paragraphs,
    lists and quotes with breathing room between them. */
@@ -3173,9 +3193,11 @@
   background: none;
   box-shadow: none;
   border-left: 2px solid var(--line-2);
-  color: var(--ink-2);
+  color: inherit;
   opacity: 1;
-  line-height: 22px;
+  /* Same rhythm as the post's paragraphs. */
+  font: inherit;
+  line-height: 24px;
 }
 
 /* files: one row inside the bubble, no second box */
@@ -3187,6 +3209,9 @@
   max-width: 100%;
 }
 .fileIcon { display: flex; flex-shrink: 0; opacity: .8; }
+/* A file's type at a glance (FileTypeIcon): the glyph scales to the span's width. */
+.fileType { display: block; flex-shrink: 0; line-height: 0; }
+.fileType svg { display: block; width: 100%; height: auto; overflow: visible; }
 .fileMeta { gap: 2px; }
 .fileDownload { height: 32px; padding: 0 12px; }
 
@@ -3385,6 +3410,7 @@
 .fileRow { align-items: center; }
 .fileMeta { justify-content: center; }
 .fileDownload { gap: 6px; align-self: center; }
+.fileRow .fileDownload { width: 36px; height: 36px; padding: 0; justify-content: center; flex-shrink: 0; border-radius: var(--r-pill); }
 
 /* ==========================================================================
    Photo viewer

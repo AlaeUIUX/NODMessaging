@@ -22,7 +22,7 @@ import ContactPage, { type ContactTab } from "./ContactPage";
 import { PlanBuilder } from "./Plans";
 import { ProjectBoard, ProjectBuilder, TaskFromMessage } from "./Project";
 import { openItems, openState } from "@/lib/chat/open";
-import { newProject, newTask, parseTaskCommand, projectOf } from "@/lib/chat/project";
+import { newProject, newTask, parseTaskCommand, projectsOf } from "@/lib/chat/project";
 import { emojify } from "@/lib/chat/emoji";
 import { saveToMind } from "@/lib/chat/mind";
 import { MoveSheet } from "./Mind";
@@ -66,7 +66,8 @@ export default function ChatView({ chat, leaving, onBack }: {
   const [alert, setAlert] = useState<{ kind: PermissionKind; resolve: (ok: boolean) => void } | null>(null);
   const [incoming, setIncoming] = useState<{ files: File[]; id: number } | null>(null);
   const [contact, setContact] = useState<ContactTab | null>(null);
-  const [boardOpen, setBoardOpen] = useState(false);
+  // The open board, by message id: a chat can hold several.
+  const [boardId, setBoardId] = useState<string | null>(null);
   const photoInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -81,9 +82,10 @@ export default function ChatView({ chat, leaving, onBack }: {
   // Re-checked each minute too: a poll closing or an event starting ends "open" with no new message.
   const minute = useNow(60_000);
   const live = useMemo(() => openItems(messages, me, minute), [messages, me, minute]);
-  const board = projectOf(messages);
+  const boards = useMemo(() => projectsOf(messages), [messages]);
+  const openBoardMessage = boardId ? boards.find((b) => b.id === boardId) : undefined;
   useBackLayer("nodContact", contact !== null, () => setContact(null));
-  useBackLayer("nodBoard", boardOpen && !!board, () => setBoardOpen(false));
+  useBackLayer("nodBoard", !!openBoardMessage, () => setBoardId(null));
 
   // Frozen on open so the divider doesn't chase incoming messages.
   const [firstUnreadId] = useState(() => {
@@ -287,7 +289,7 @@ export default function ChatView({ chat, leaving, onBack }: {
   const onEdgeDown = (e: React.PointerEvent) => {
     const el = screenRef.current;
     // A layer over the chat (contact page, board) handles its own edge swipe.
-    if (!el || menu || viewer || overlaySheet || alert || contact || boardOpen) return;
+    if (!el || menu || viewer || overlaySheet || alert || contact || openBoardMessage) return;
     const x = e.clientX - el.getBoundingClientRect().left;
     if (x > EDGE) return;
     // Claim edge drags before a bubble underneath starts its own gesture.
@@ -317,26 +319,51 @@ export default function ChatView({ chat, leaving, onBack }: {
     setTimeout(() => setHighlighted(null), 1200);
   }, []);
 
-  // The board is found fresh each time: it's the latest project card in the thread.
-  const boardRef = useRef(board);
-  useEffect(() => { boardRef.current = board; }, [board]);
-  const openBoard = useCallback(() => {
-    if (boardRef.current) { setBoardOpen(true); return; }
-    setOverlaySheet(<ProjectBuilder onSend={(card, summary) => { sendCard(chat.id, card, summary); closeSheet(); setBoardOpen(true); }} onClose={closeSheet} />);
-  }, [chat.id, closeSheet, sendCard]);
+  // Boards are read fresh in callbacks; the last one viewed here is remembered per chat.
+  const boardsRef = useRef(boards);
+  useEffect(() => { boardsRef.current = boards; }, [boards]);
+  const openIdRef = useRef(boardId);
+  useEffect(() => { openIdRef.current = boardId; }, [boardId]);
+  const lastBoardKey = `nod.chat.board.${me}.${chat.id}`;
+  const showBoard = useCallback((id: string) => {
+    setBoardId(id);
+    try { localStorage.setItem(lastBoardKey, id); } catch { /* private mode */ }
+  }, [lastBoardKey]);
+  /** The board new tasks go to: the one on screen, else the last one viewed, else the newest. */
+  const currentBoard = useCallback(() => {
+    const list = boardsRef.current;
+    let last: string | null = null;
+    try { last = localStorage.getItem(lastBoardKey); } catch { /* private mode */ }
+    return list.find((b) => b.id === openIdRef.current) ?? list.find((b) => b.id === last) ?? list[list.length - 1];
+  }, [lastBoardKey]);
+  const newBoard = useCallback(() => {
+    setOverlaySheet(
+      <ProjectBuilder
+        onSend={(card, summary) => { const id = sendCard(chat.id, card, summary); closeSheet(); showBoard(id); }}
+        onClose={closeSheet}
+      />,
+    );
+  }, [chat.id, closeSheet, sendCard, showBoard]);
+  const openBoard = useCallback((messageId?: string) => {
+    const target = (messageId && boardsRef.current.find((b) => b.id === messageId)) || currentBoard();
+    if (target) showBoard(target.id);
+    else newBoard();
+  }, [currentBoard, newBoard, showBoard]);
 
   const addTask = useCallback((fields: { title: string; assignee: string | null; due: number | null; fromMessageId?: string }) => {
-    const existing = boardRef.current;
+    const existing = currentBoard();
     const task = newTask({ ...fields, column: existing?.card.columns[0]?.id ?? "todo" }, me);
     if (existing) {
       cardOp(existing, { kind: "task.add", task });
     } else {
       const card = newProject(chat.kind === "group" ? chat.name : "Our board");
       card.tasks[task.id] = task;
-      sendCard(chat.id, card, `Board: ${card.name}`);
+      const id = sendCard(chat.id, card, `Board: ${card.name}`);
+      flash(`Added “${task.title}” to a new board`, [{ label: "Open board", run: () => showBoard(id) }]);
+      return;
     }
-    flash(`Added “${task.title}”`, [{ label: "Open board", run: () => setBoardOpen(true) }]);
-  }, [cardOp, chat, flash, me, sendCard]);
+    flash(`Added “${task.title}” to ${existing.card.name}`, [{ label: "Open board", run: () => showBoard(existing.id) }]);
+  }, [cardOp, chat, currentBoard, flash, me, sendCard, showBoard]);
 
   const openMenu = useCallback((message: Message, pos: BubblePos, bubble: HTMLElement, armed: boolean) => {
     const host = screenRef.current?.getBoundingClientRect();
@@ -403,13 +430,17 @@ export default function ChatView({ chat, leaving, onBack }: {
           <Avatar glyph={identity.glyph} tone={identity.tone} size={40} online={online} />
           <span className={`${styles.tcName} ${styles.glass}`}>
             <span>{chat.kind === "dm" ? firstName : identity.label}</span>
-            {live.length > 0 && <i className={styles.liveDot} key={live.length} aria-hidden="true" />}
+            {live.length > 0 && <i className={styles.openDot} aria-hidden="true" />}
             <IconChevron />
           </span>
           <span className={`${styles.tcPresence} ${typing.length ? styles.isTyping : ""}`}>{presence}</span>
         </button>
         <div className={`${styles.headerSide} ${styles.headerEnd}`}>
-          <button className={`${styles.circleBtn} ${styles.glass}`} aria-label={board ? "Open board" : "Start a board"} onClick={openBoard}>
+          <button
+            className={`${styles.circleBtn} ${styles.glass}`}
+            aria-label={boards.length ? `Open boards (${boards.length})` : "Start a board"}
+            onClick={() => openBoard()}
+          >
             <IconBoard />
           </button>
           <button
@@ -576,7 +607,15 @@ export default function ChatView({ chat, leaving, onBack }: {
           onJump={(id) => { setContact(null); setTimeout(() => jumpTo(id), 260); }}
         />
       )}
-      {boardOpen && board && <ProjectBoard message={board} onClose={() => setBoardOpen(false)} />}
+      {openBoardMessage && (
+        <ProjectBoard
+          message={openBoardMessage}
+          boards={boards}
+          onSwitch={showBoard}
+          onNew={newBoard}
+          onClose={() => setBoardId(null)}
+        />
+      )}
       {overlaySheet}
       {viewer && <MediaViewer message={viewer.message} start={viewer.index} onClose={() => setViewer(null)} />}
       {alert && <PermissionAlert kind={alert.kind} onResolve={alert.resolve} />}

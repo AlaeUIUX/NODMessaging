@@ -238,8 +238,8 @@ interface ChatContextValue {
   /** True once a save failed (storage full or blocked); changes since then live only in this tab. */
   saveFailed: boolean;
   send: (chatId: string, body: string, opts?: { replyToId?: string | null; attachments?: Attachment[] }) => void;
-  /** Sends a structured message; `summary` is what previews and quotes show. */
-  sendCard: (chatId: string, card: Card, summary: string) => void;
+  /** Sends a structured message; `summary` is what previews and quotes show. Returns its id. */
+  sendCard: (chatId: string, card: Card, summary: string) => string;
   /** Creates a group with the current user in it, and returns it. */
   createGroup: (name: string, memberIds: string[]) => Chat;
   /** Replaces a card's state (votes, ticks, RSVPs…) and syncs it. */
@@ -774,6 +774,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           }
         })
         .catch(() => dispatch({ type: "patch", chatId, clientId: id, patch: { status: "failed" } }));
+      return id;
     },
     [chatOf, later, memberOnline, publish, receipt, simulateCard],
   );

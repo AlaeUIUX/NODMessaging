@@ -1,10 +1,17 @@
 import type { Message, ProjectCard, Task, User } from "./types";
 
-/** The chat's board: the most recent project card in the thread. One per chat (DMs and Spaces). */
-export function projectOf(messages: Message[]): (Message & { card: ProjectCard }) | undefined {
+export type BoardMessage = Message & { card: ProjectCard };
+
+/** Every board in the chat, oldest first (a chat can hold several). */
+export function projectsOf(messages: Message[]): BoardMessage[] {
+  return messages.filter((m): m is BoardMessage => !m.deletedAt && m.card?.type === "project");
+}
+
+/** The chat's newest board. */
+export function projectOf(messages: Message[]): BoardMessage | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (!m.deletedAt && m.card?.type === "project") return m as Message & { card: ProjectCard };
+    if (!m.deletedAt && m.card?.type === "project") return m as BoardMessage;
   }
   return undefined;
 }
