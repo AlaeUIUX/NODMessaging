@@ -40,7 +40,8 @@ function limited(ip: string) {
   const hits = (recent.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
   hits.push(now);
   recent.set(ip, hits);
-  if (recent.size > 1000) recent.clear();
+  // Forget quiet addresses instead of wiping everyone's count when the map grows.
+  if (recent.size > 1000) for (const [key, times] of recent) if (times.every((t) => now - t >= WINDOW_MS)) recent.delete(key);
   return hits.length > PER_WINDOW;
 }
 
@@ -50,11 +51,19 @@ const cents = (n: number | null | undefined) => (typeof n === "number" && Number
 export async function POST(request: Request) {
   if (!process.env.ANTHROPIC_API_KEY) return fail(501, "not-configured", "Receipt reading isn’t set up on this server yet.");
 
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "local";
+  // Only the app itself may spend reads: browsers always send Origin on a cross-site POST.
+  const origin = request.headers.get("origin");
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  const originHost = (() => { try { return origin ? new URL(origin).host : null; } catch { return null; } })();
+  if (!originHost || !host || originHost !== host) return fail(403, "forbidden", "Receipts can only be read from the NOD app.");
+
+  // Vercel sets these from the connection itself, so they can't be spoofed by the client.
+  const ip = request.headers.get("x-real-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "local";
   if (limited(ip)) return fail(429, "rate-limited", "Too many receipts at once. Try again in a minute.");
 
-  // Refuse oversized uploads before buffering them.
-  const declared = Number(request.headers.get("content-length") ?? 0);
+  // Refuse oversized (or unsized, chunked) uploads before buffering anything.
+  const declared = Number(request.headers.get("content-length"));
+  if (!Number.isFinite(declared) || declared <= 0) return fail(411, "length-required", "The upload needs a size.");
   if (declared > MAX_RECEIPT_BYTES + 64 * 1024) return fail(413, "too-large", "That photo is too large.");
 
   let image: FormDataEntryValue | null;

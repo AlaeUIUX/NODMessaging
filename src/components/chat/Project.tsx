@@ -755,7 +755,8 @@ export function ProjectBoard({ message, onClose }: { message: BoardMessage; onCl
                     }}
                     onContextMenu={(e) => e.preventDefault()}
                   >
-                    <TaskBody task={t} now={now} done={isDone} onShow={showInChat} />
+                    {/* No button inside the tile (it's a button itself); the task sheet has "Show in chat". */}
+                    <TaskBody task={t} now={now} done={isDone} />
                   </div>
                 ))}
                 {target && target.before === null && <div className={s.dropEnd} aria-hidden="true" />}

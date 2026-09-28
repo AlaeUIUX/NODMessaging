@@ -761,7 +761,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       signal("out");
       apiSend(message)
         .then((accepted) => {
-          const out: Message = { ...accepted, card };
+          // Whatever changed while it was sending (a task added, a stop ticked) goes out with it:
+          // other tabs dropped those ops, since the message didn't exist for them yet.
+          const current = latest.current.messages[chatId]?.find((m) => m.id === id);
+          const out: Message = { ...accepted, card: current?.card ?? card };
           dispatch({ type: "patch", chatId, clientId: id, patch: { status: "sent" } });
           publish({ type: "message", message: { ...out, status: "sent" } });
           if (!memberOnline(chatId)) {

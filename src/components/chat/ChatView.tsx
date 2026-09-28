@@ -29,7 +29,7 @@ import { MoveSheet } from "./Mind";
 import { MediaGrid, MediaViewer, ReceiptSheet } from "./MediaViewer";
 import ReactionSheet from "./ReactionSheet";
 import StatusBar from "./StatusBar";
-import { ChatUiProvider, getPermission, PermissionAlert, setPermission, smooth, useBackLayer, type PermissionKind } from "./ui";
+import { ChatUiProvider, getPermission, PermissionAlert, setPermission, smooth, useBackLayer, useNow, type PermissionKind } from "./ui";
 import styles from "./chat.module.css";
 
 interface MenuState {
@@ -78,7 +78,9 @@ export default function ChatView({ chat, leaving, onBack }: {
   const online = !!other && isOnline(other);
   const members = useMemo(() => USERS.filter((u) => chat.memberIds.includes(u.id) && u.id !== me), [chat, me]);
   // Anything unfinished in this chat puts a blue dot after the name.
-  const live = useMemo(() => openItems(messages, me), [messages, me]);
+  // Re-checked each minute too: a poll closing or an event starting ends "open" with no new message.
+  const minute = useNow(60_000);
+  const live = useMemo(() => openItems(messages, me, minute), [messages, me, minute]);
   const board = projectOf(messages);
   useBackLayer("nodContact", contact !== null, () => setContact(null));
   useBackLayer("nodBoard", boardOpen && !!board, () => setBoardOpen(false));
@@ -520,7 +522,7 @@ export default function ChatView({ chat, leaving, onBack }: {
             const m = menuMessage;
             const c = m.card;
             // Every card names itself the same way the Live tab does.
-            const cardTitle = c && (c.type === "wheel" ? c.question : c.type === "sketch" ? c.prompt
+            const cardTitle = c && (c.type === "wheel" ? c.question : c.type === "sketch" ? c.prompt : c.type === "location" ? c.place
               : openState(m, me)?.title ?? (c.type === "payment" ? c.note : undefined));
             const title = cardTitle || stripFormatting(m.body).split(/\n/)[0].slice(0, 80) || m.attachments[0]?.name || "Saved message";
             const photos = m.attachments.some((x) => x.kind === "image");
