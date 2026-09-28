@@ -1,0 +1,180 @@
+/* ==========================================================================
+   Analytics — everything created in any chat (polls, checklists, bills,
+   plans, boards, artifacts), filterable by kind from a dropdown. Cards, not
+   plain rows: a kicker (which chat), tags (kind), a progress bar where one
+   is earned, and a status chip — the same shapes the rest of the app uses
+   for cards, reused here as a feed.
+   ========================================================================== */
+
+/* ---- filter dropdown ---- */
+
+.pickerWrap { position: relative; flex-shrink: 0; }
+
+.pickerBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px 0 14px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink);
+  font: var(--t-subhead);
+  font-weight: var(--w-emph);
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.pickerBtn:active { transform: scale(.96); }
+.pickerBtn em {
+  font-style: normal;
+  font-weight: var(--w-control);
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, currentColor 65%, transparent);
+}
+.pickerBtn svg { flex-shrink: 0; }
+
+.pickerDot {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+  opacity: .5;
+}
+
+.scrim { position: fixed; inset: 0; z-index: 39; }
+
+.menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 212px;
+  padding: 6px;
+  border-radius: var(--r-md);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transform-origin: top right;
+  animation: menuIn var(--t-mid) var(--ease-out) both;
+}
+@keyframes menuIn {
+  from { opacity: 0; transform: translateY(-4px) scale(.97); }
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--ink);
+  font: var(--t-subhead);
+  text-align: left;
+  cursor: pointer;
+}
+.menuItem:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.menuItem:active { transform: scale(.98); }
+.menuItem span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menuItem em {
+  flex-shrink: 0;
+  font-style: normal;
+  color: var(--ink-3);
+  font: var(--t-footnote);
+  font-variant-numeric: tabular-nums;
+}
+.menuItem svg { color: var(--accent); flex-shrink: 0; }
+.menuItemOn { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.menuItemOn span { color: var(--ink); font-weight: var(--w-emph); }
+
+/* ---- the feed, grouped like "Your tasks": a labelled section per kind ---- */
+
+.section { margin-top: 18px; }
+.section:first-child { margin-top: 0; }
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 4px 8px;
+  font: var(--t-footnote);
+  font-weight: var(--w-emph);
+}
+.sectionHead em { font-style: normal; font-weight: var(--w-control); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+
+.card {
+  width: 100%;
+  display: block;
+  padding: 14px 16px;
+  border: none;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--e1), 0 0 0 .5px var(--line);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.card:active { transform: scale(.98); }
+
+.cardTop { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.divider { display: block; width: 56px; height: 1px; margin: 0 0 14px; background: var(--line); }
+.kicker {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--t-footnote);
+  font-weight: var(--w-control);
+  color: var(--ink-3);
+}
+.statusText {
+  flex-shrink: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--t-footnote);
+  font-weight: var(--w-control);
+}
+
+.metaRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.metaRow > svg { flex-shrink: 0; color: var(--ink-3); }
+.authorName {
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--t-footnote);
+  font-weight: var(--w-control);
+  color: var(--ink-2);
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  font: var(--t-caption1);
+  font-weight: var(--w-control);
+  white-space: nowrap;
+}
+.tagNeutral { background: var(--fill); color: var(--ink-2); }
+
+.cardFoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.statGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex-shrink: 0;
+  font: var(--t-footnote);
+  font-weight: var(--w-control);
+  color: var(--ink-3);
+}
+.statGroup svg { flex-shrink: 0; }

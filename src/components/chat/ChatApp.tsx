@@ -6,20 +6,24 @@ import { getForceFailure, setForceFailure } from "@/lib/chat/api";
 import { clearMedia } from "@/lib/chat/media";
 import { USERS } from "@/lib/chat/seed";
 import { ChatProvider, useChat, userById } from "@/lib/chat/store";
-import type { Chat } from "@/lib/chat/types";
+import type { Chat, Message } from "@/lib/chat/types";
 import ChatView from "./ChatView";
 import { IconArrowRight, IconChecklist, IconMoneyReceive, IconMoon, IconPin, IconSun, IconUserGroup } from "./Icons";
 import Inbox from "./Inbox";
 import Logo from "./Logo";
 import StageField from "./StageField";
-import { getPermission } from "./ui";
+import { getPermission, useBackLayer } from "./ui";
+import WidgetPage from "./WidgetPage";
 import styles from "./chat.module.css";
 
 const LEAVE_MS = 220;
 const THEME_KEY = "nod.theme";
 const STAGE_KEY = "nod.stage";
+const ANALYTICS_KEY = "nod.analyticsMode";
 
 type Theme = "light" | "dark";
+/** v1: a tapped item opens in its chat, scrolled to and highlighted. v2: it opens its own page. */
+type AnalyticsMode = "v1" | "v2";
 
 /** The hero stage is one solid colour; swap it here or from the Developer drawer. */
 export const STAGE_COLORS = [
@@ -46,7 +50,12 @@ const MIND_PERSONAS: Record<string, string> = {
   salman: "Salman starts with a blank Mind.",
 };
 
-function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => void }) {
+function DevDrawer({ stage, onStage, analyticsMode, onAnalyticsMode }: {
+  stage: string;
+  onStage: (v: string) => void;
+  analyticsMode: AnalyticsMode;
+  onAnalyticsMode: (v: AnalyticsMode) => void;
+}) {
   const { me, setMe, peers } = useChat();
   const [failing, setFailing] = useState(getForceFailure());
 
@@ -88,6 +97,17 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
                 title={c.name}
               />
             ))}
+          </div>
+        </div>
+        <div>
+          <span className={styles.devLabel}>Analytics</span>
+          <div className={styles.devIds}>
+            <button className={analyticsMode === "v1" ? styles.devOn : undefined} onClick={() => onAnalyticsMode("v1")}>
+              v1 · in chat
+            </button>
+            <button className={analyticsMode === "v2" ? styles.devOn : undefined} onClick={() => onAnalyticsMode("v2")}>
+              v2 · own page
+            </button>
           </div>
         </div>
         <label className={styles.devToggle}>
@@ -183,11 +203,15 @@ function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
 }
 
 /** iPhone 16 Pro-style shell: titanium band, side keys, black bezel, Dynamic Island. */
-function Device() {
+function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
   const [openChat, setOpenChat] = useState<Chat | null>(null);
+  const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [banner, setBanner] = useState<Banner | null>(null);
+  const [widget, setWidget] = useState<{ chat: Chat; message: Message } | null>(null);
+  const [widgetLeaving, setWidgetLeaving] = useState(false);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const widgetLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deviceRef = useRef<HTMLDivElement>(null);
   const { state, saveFailed } = useChat();
   const latestChats = useRef(state.data.chats);
@@ -233,11 +257,35 @@ function Device() {
     setTimeout(() => setBanner((cur) => (cur?.id === b.id ? null : cur)), 5000);
   }, []);
 
-  const show = useCallback((chat: Chat) => {
+  const show = useCallback((chat: Chat, messageId?: string) => {
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
     setLeaving(false);
     setOpenChat(chat);
+    // Cleared when not given, so reopening the same chat later doesn't replay an old jump.
+    setFocusMessageId(messageId ?? null);
   }, []);
+
+  const onOpenWidget = useCallback((chat: Chat, message: Message) => {
+    if (widgetLeaveTimer.current) clearTimeout(widgetLeaveTimer.current);
+    setWidgetLeaving(false);
+    setWidget({ chat, message });
+  }, []);
+  // Mirrors `hide()` below: flips `pushed` the instant Back is pressed, so the
+  // Inbox's reveal and the widget's own slide-out animate in the same tick
+  // instead of the Inbox waiting for the widget to finish closing first.
+  const closeWidget = useCallback(() => {
+    setWidgetLeaving(true);
+    widgetLeaveTimer.current = setTimeout(() => {
+      setWidget(null);
+      setWidgetLeaving(false);
+    }, LEAVE_MS);
+  }, []);
+  const hideWidgetImmediate = useCallback(() => {
+    if (widgetLeaveTimer.current) clearTimeout(widgetLeaveTimer.current);
+    setWidget(null);
+    setWidgetLeaving(false);
+  }, []);
+  useBackLayer("nodWidget", !!widget, hideWidgetImmediate);
 
   const hide = useCallback((immediate?: boolean) => {
     if (immediate) {
@@ -259,8 +307,10 @@ function Device() {
   const openRef = useRef<Chat | null>(null);
   const popImmediate = useRef(false);
   useEffect(() => { openRef.current = openChat; }, [openChat]);
-  const open = (chat: Chat) => {
-    show(chat);
+  const open = (chat: Chat, messageId?: string) => {
+    // A banner tap (or an Analytics widget's "show in chat") while a widget page is open replaces it.
+    hideWidgetImmediate();
+    show(chat, messageId);
     if (window.history.state?.nodChat) {
       // Switching chats (a banner tap) while a contact page or board is open: this entry now
       // belongs to the new chat, so the old layer's cleanup mustn't step back from it.
@@ -303,8 +353,24 @@ function Device() {
       <div className={styles.bezel}>
         <div className={styles.screenBox}>
           <div className={styles.island} />
-          <Inbox onOpen={open} pushed={!!openChat && !leaving} />
-          {openChat && <ChatView key={openChat.id} chat={openChat} leaving={leaving} onBack={back} />}
+          <Inbox
+            onOpen={open}
+            pushed={(!!openChat && !leaving) || (!!widget && !widgetLeaving)}
+            analyticsMode={analyticsMode}
+            onOpenWidget={onOpenWidget}
+          />
+          {openChat && <ChatView key={openChat.id} chat={openChat} leaving={leaving} onBack={back} focusMessageId={focusMessageId} />}
+          {widget && (
+            <WidgetPage
+              key={widget.message.id}
+              chat={widget.chat}
+              message={widget.message}
+              leaving={widgetLeaving}
+              onClose={closeWidget}
+              onCloseInstant={hideWidgetImmediate}
+              onOpenChat={open}
+            />
+          )}
           <ReminderWatcher onBanner={showBanner} />
           {banner && (
             <button
@@ -335,12 +401,14 @@ export default function ChatApp() {
   // Light is the product's primary mode; dark is opt-in and remembered.
   const [theme, setTheme] = useState<Theme>("light");
   const [stage, setStage] = useState(STAGE_COLORS[0].value);
+  const [analyticsMode, setAnalyticsMode] = useState<AnalyticsMode>("v1");
 
   useEffect(() => {
     // Restoring saved preferences after mount keeps server and client HTML identical.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTheme(readPref(THEME_KEY, "light") === "dark" ? "dark" : "light");
     setStage(readPref(STAGE_KEY, STAGE_COLORS[0].value));
+    setAnalyticsMode(readPref(ANALYTICS_KEY, "v1") === "v2" ? "v2" : "v1");
   }, []);
 
   // The page sits inside the global <body>; keep its backdrop and scrollbars in step.
@@ -358,6 +426,11 @@ export default function ChatApp() {
   const pickStage = (value: string) => {
     setStage(value);
     writePref(STAGE_KEY, value);
+  };
+
+  const pickAnalyticsMode = (value: AnalyticsMode) => {
+    setAnalyticsMode(value);
+    writePref(ANALYTICS_KEY, value);
   };
 
   const stageIsDark = stage === "#1C1917";
@@ -422,7 +495,7 @@ export default function ChatApp() {
             <div><b>Collect from everyone</b><span>Payments, files, places and events, sent straight into the chat.</span></div>
           </div>
 
-          <Device />
+          <Device analyticsMode={analyticsMode} />
         </section>
 
         <footer className={styles.footer}>
@@ -430,7 +503,7 @@ export default function ChatApp() {
           <span>NOD · Interactive prototype</span>
         </footer>
 
-        <DevDrawer stage={stage} onStage={pickStage} />
+        <DevDrawer stage={stage} onStage={pickStage} analyticsMode={analyticsMode} onAnalyticsMode={pickAnalyticsMode} />
       </div>
     </ChatProvider>
   );

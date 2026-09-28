@@ -9,14 +9,14 @@ import Avatar from "./Avatar";
 import { IconBellOff, IconPin } from "./Icons";
 import Logo from "./Logo";
 import { emojify } from "@/lib/chat/emoji";
+import AnalyticsTab from "./Analytics";
 import MindTab from "./Mind";
 import NewChat from "./NewChat";
-import { MyTasks } from "./Project";
 import StatusBar from "./StatusBar";
 import styles from "./chat.module.css";
 
 type Filter = "all" | "unread" | "dms" | "spaces";
-type Tab = "chats" | "mind" | "spaces" | "explore";
+type Tab = "chats" | "mind" | "analytics" | "explore";
 
 const REVEAL = 124;
 
@@ -38,7 +38,7 @@ function writeList(kind: "pinned" | "muted", userId: string, ids: Set<string>) {
 const TABS: { id: Tab; label: string; icon: string; w: number; h: number }[] = [
   { id: "chats", label: "Chats", icon: "/nod/chats.svg", w: 18, h: 18 },
   { id: "mind", label: "Mind", icon: "/nod/mind.svg", w: 16, h: 16 },
-  { id: "spaces", label: "Spaces", icon: "/nod/spaces.svg", w: 30, h: 16 },
+  { id: "analytics", label: "Analytics", icon: "/nod/analytics.svg", w: 18, h: 18 },
   { id: "explore", label: "Explore", icon: "/nod/explore.svg", w: 16, h: 16 },
 ];
 
@@ -195,7 +195,12 @@ function toggle(set: Set<string>, id: string) {
   return next;
 }
 
-export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void; pushed: boolean }) {
+export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
+  onOpen: (chat: Chat, messageId?: string) => void;
+  pushed: boolean;
+  analyticsMode: "v1" | "v2";
+  onOpenWidget: (chat: Chat, message: Message) => void;
+}) {
   const { state, me, isOnline, lastReadAt, typingUsers } = useChat();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -237,7 +242,7 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
   // Muted chats keep their own count but stay out of the Unread badge.
   const unreadChats = ready ? rows.filter((r) => r.unread > 0 && !muted.has(r.chat.id)).length : 0;
   const spaceMention = ready && rows.some((r) => r.chat.kind === "group" && r.mentioned);
-  const effective: Filter = tab === "spaces" ? "spaces" : filter;
+  const effective: Filter = filter;
 
   const visible = (ready ? rows : [])
     .filter(({ chat, last, unread }) => {
@@ -260,7 +265,7 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
     { id: "all", label: "All" },
     { id: "unread", label: "Unread", badge: unreadChats ? String(unreadChats) : undefined },
     { id: "dms", label: "DMs" },
-    { id: "spaces", label: "Spaces", badge: spaceMention ? "@" : undefined },
+    { id: "spaces", label: "Groups", badge: spaceMention ? "@" : undefined },
   ];
 
   const placeholder = (title: string, body: string) => (
@@ -276,7 +281,9 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
     <div className={`${styles.screen} ${styles.inboxScreen} ${pushed ? styles.pushed : ""}`} data-inbox-screen inert={pushed}>
       <StatusBar />
 
-      {tab === "mind" ? <MindTab onOpenChat={onOpen} /> : (
+      {tab === "mind" ? <MindTab onOpenChat={onOpen} /> : tab === "analytics" ? (
+        <AnalyticsTab onOpenChat={onOpen} mode={analyticsMode} onOpenWidget={onOpenWidget} />
+      ) : (
       <>
       <header className={styles.profile}>
         <div className={styles.profileRow}>
@@ -328,8 +335,6 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
                 ))}
               </div>
             )}
-
-            {tab === "spaces" && ready && <MyTasks onOpenChat={onOpen} />}
 
             <div className={styles.rows} key={`${tab}-${effective}`}>
               {visible.map(({ chat, last, unread, mentioned }, i) => {
