@@ -1,3 +1,7 @@
+import { msg } from "./seedkit";
+import { billSeed } from "./seed-bill";
+import { planSeed } from "./seed-plan";
+import { projectSeed } from "./seed-project";
 import type { Chat, ChatState, Message, User } from "./types";
 
 export const USERS: User[] = [
@@ -17,22 +21,6 @@ export const CHATS: Chat[] = [
 ];
 
 const HOUR = 60 * 60 * 1000;
-
-function msg(partial: Partial<Message> & Pick<Message, "id" | "chatId" | "authorId" | "body" | "createdAt">): Message {
-  return {
-    clientId: partial.id,
-    kind: "text",
-    status: partial.authorId === "me" ? "read" : "delivered",
-    reactions: [],
-    replyToId: null,
-    editedAt: null,
-    editHistory: [],
-    pinned: false,
-    deletedAt: null,
-    attachments: [],
-    ...partial,
-  };
-}
 
 export function buildSeedState(now = Date.now()): ChatState {
   const dm: Message[] = [
@@ -170,13 +158,22 @@ export function buildSeedState(now = Date.now()): ChatState {
     msg({ id: "s-2", chatId: "salman", authorId: "me", body: "On my way 👋", createdAt: now - 26 * HOUR + 90_000, status: "read" }),
   ];
 
+  // Feature demos (plans, bills, boards) live in their own seed files and slot into their chats by time.
+  const messages: Record<string, Message[]> = { dm, general, reema, jamshad, salman };
+  for (const m of [...planSeed(now), ...billSeed(now), ...projectSeed(now)]) {
+    (messages[m.chatId] ??= []).push(m);
+  }
+  for (const list of Object.values(messages)) list.sort((a, b) => a.createdAt - b.createdAt);
+
   return {
     version: CURRENT_VERSION,
     chats: CHATS,
-    messages: { dm, general, reema, jamshad, salman },
+    messages,
     archive,
     lastReadAt: {},
   };
 }
 
-export const CURRENT_VERSION = 6;
+// v7/v8 added the plan, bill and board demos; existing threads keep theirs and gain these
+// (v8 again, for anyone who loaded v7 before the demos were filled in).
+export const CURRENT_VERSION = 8;

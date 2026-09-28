@@ -534,7 +534,9 @@ export function routeSave(mind: Mind, input: { text: string; chatId: string; cha
     const hits = [...tokens].filter((w) => vocab.has(w));
     if (hits.length) bump(Math.min(4, hits.length * 1.5), `it mentions “${hits[0]}”`);
     if (input.kind === "photos" && items.filter((b) => b.kind === "image").length > 2) bump(2, "it's a photo, like the rest");
-    if ((input.cardType === "payment") && items.some((b) => b.kind === "amount")) bump(3, "it's about money");
+    if ((input.cardType === "payment" || input.cardType === "bill") && items.some((b) => b.kind === "amount")) bump(3, "it's about money");
+    if ((input.cardType === "plan" || input.cardType === "event") && items.some((b) => b.kind === "date")) bump(2, "it's a plan");
+    if (input.cardType === "project" && items.some((b) => b.kind === "todo")) bump(1.5, "it's a task list");
     if ((input.cardType === "checklist" || input.cardType === "poll") && items.some((b) => b.kind === "todo")) bump(1.5, "it's a task");
     if (c.id === mind.current) bump(0.5, "it's the collection you had open");
     if (!best || score > best.score) best = { c, score, reason };

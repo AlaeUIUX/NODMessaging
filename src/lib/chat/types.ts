@@ -40,7 +40,96 @@ export type Card =
   /* Artifacts: small, playful apps that live in the thread. */
   | { type: "sketch"; prompt: string; strokes: SketchStroke[] }
   | { type: "tictactoe"; players: [string, string | null]; board: (string | null)[] }
-  | { type: "wheel"; question: string; options: string[]; spins: { by: string; index: number; at: number }[] };
+  | { type: "wheel"; question: string; options: string[]; spins: { by: string; index: number; at: number }[] }
+  /* Shared work: synced as operations (see lib/chat/ops.ts), not whole-card replaces. */
+  | PlanCard
+  | BillCard
+  | ProjectCard;
+
+/** A small itinerary: stops grouped by day, each with an optional time and place. */
+export interface PlanStop {
+  id: string;
+  /** Start time (ms), or null for "sometime that day". */
+  at: number | null;
+  title: string;
+  place?: string;
+  note?: string;
+  url?: string;
+  /** Euros per person. */
+  cost?: number;
+  /** Who's responsible for this stop (booking, tickets…). */
+  owner?: string | null;
+  doneBy: string | null;
+}
+export interface PlanDay { id: string; /** Local midnight (ms). */ date: number; stops: PlanStop[] }
+export interface PlanCard {
+  type: "plan";
+  title: string;
+  days: PlanDay[];
+  rsvps: Record<string, Rsvp>;
+  /** Same access model as checklists: when false only the owner and `editors` change stops. */
+  everyoneCanEdit: boolean;
+  editors: string[];
+}
+
+/** A scanned (or typed) receipt, split by who had what. Amounts are integer cents. */
+export interface BillItem { id: string; name: string; quantity: number; /** Line total, cents. */ total: number }
+export interface BillCard {
+  type: "bill";
+  merchant: string;
+  currency: string;
+  items: BillItem[];
+  /** Cents; spread over people in proportion to what they had. */
+  tax: number;
+  tip: number;
+  /** Receipt total, cents (items + tax + tip). */
+  total: number;
+  /** Who paid the bill, and is owed the shares. */
+  paidBy: string;
+  /** Who had each item; an item shared by several splits evenly between them. */
+  claims: Record<string, string[]>;
+  /** Everyone who has paid their share (or was marked settled). */
+  paid: string[];
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  column: string;
+  /** Position within the column; fractional so a move is one write. */
+  order: number;
+  assignee: string | null;
+  due: number | null;
+  /** The message this task was made from, if any. */
+  fromMessageId?: string;
+  createdBy: string;
+  createdAt: number;
+  /** When each field last changed: concurrent edits merge per field, newest wins. */
+  updatedAt: Partial<Record<"title" | "column" | "order" | "assignee" | "due", number>>;
+  deleted?: boolean;
+}
+export interface ProjectCard {
+  type: "project";
+  name: string;
+  columns: { id: string; name: string }[];
+  tasks: Record<string, Task>;
+}
+
+/** One change to a shared card. Applied by the reducer in every tab, in any order. */
+export type CardOp =
+  | { kind: "plan.tick"; stopId: string; by: string | null }
+  | { kind: "plan.addStop"; dayId: string; stop: PlanStop }
+  | { kind: "plan.editStop"; stopId: string; patch: Partial<Omit<PlanStop, "id" | "doneBy">> }
+  | { kind: "plan.removeStop"; stopId: string }
+  | { kind: "plan.addDay"; day: PlanDay }
+  | { kind: "plan.rsvp"; userId: string; value: Rsvp | null }
+  | { kind: "bill.claim"; itemId: string; userId: string; on: boolean }
+  | { kind: "bill.claimAll"; userIds: string[] }
+  | { kind: "bill.pay"; userId: string }
+  | { kind: "task.add"; task: Task }
+  | { kind: "task.update"; id: string; patch: Partial<Pick<Task, "title" | "column" | "order" | "assignee" | "due">>; at: number }
+  | { kind: "task.remove"; id: string }
+  | { kind: "column.rename"; id: string; name: string };
 
 /** One pen stroke on a shared doodle; points are x,y pairs in a 300×220 space. */
 export interface SketchStroke { id: string; by: string; color: string; size: number; pts: number[] }
@@ -139,6 +228,7 @@ export type TransportEvent =
   | { type: "delete"; chatId: string; messageId: string; deletedAt: number }
   | { type: "pin"; chatId: string; messageId: string; pinned: boolean }
   | { type: "card"; chatId: string; messageId: string; card: Card }
+  | { type: "card-op"; chatId: string; messageId: string; op: CardOp; by: string }
   | { type: "chat"; chat: Chat }
   | { type: "presence"; clientId: string; userId: string; at: number }
   | { type: "presence-bye"; clientId: string };

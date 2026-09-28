@@ -6,7 +6,7 @@ import {
   LeftToRightListBulletIcon, LeftToRightListNumberIcon, Link01Icon, Location01Icon, LockIcon, Mic02Icon,
   MoneyReceive01Icon, MoneySend01Icon, Moon02Icon, Notification01Icon, NotificationOff01Icon, PauseIcon,
   PencilEdit01Icon, PencilEdit02Icon, PinIcon, PlayIcon, PlusSignIcon, QuoteDownIcon, Search01Icon, SmileIcon,
-  Share08Icon, SourceCodeIcon, Folder01Icon, ArrowUpRight01Icon, Bookmark02Icon, GridViewIcon, LibraryIcon, KanbanIcon, Tag01Icon, MoreHorizontalIcon, InboxIcon, ArrowDown01Icon, LeftToRightListDashIcon, PaintBrush01Icon, GameController03Icon, PieChartIcon, SparklesIcon, Undo02Icon, FavouriteIcon, Sun03Icon, TextBoldIcon, TextItalicIcon, TextStrikethroughIcon, TextUnderlineIcon, Tick02Icon, UserGroupIcon,
+  Share08Icon, SourceCodeIcon, Route01Icon, Invoice03Icon, ScanIcon, Task01Icon, Clock01Icon, DragDropVerticalIcon, Flag01Icon, Folder01Icon, ArrowUpRight01Icon, Bookmark02Icon, GridViewIcon, LibraryIcon, KanbanIcon, Tag01Icon, MoreHorizontalIcon, InboxIcon, ArrowDown01Icon, LeftToRightListDashIcon, PaintBrush01Icon, GameController03Icon, PieChartIcon, SparklesIcon, Undo02Icon, FavouriteIcon, Sun03Icon, TextBoldIcon, TextItalicIcon, TextStrikethroughIcon, TextUnderlineIcon, Tick02Icon, UserGroupIcon,
 } from "@hugeicons/core-free-icons";
 
 /**
@@ -90,3 +90,10 @@ export const IconChevronDown = make(ArrowDown01Icon, 1.8);
 export const IconListView = make(LeftToRightListDashIcon);
 export const IconFolder = make(Folder01Icon);
 export const IconOpen = make(ArrowUpRight01Icon, 1.8);
+export const IconRoute = make(Route01Icon);
+export const IconReceipt = make(Invoice03Icon);
+export const IconScan = make(ScanIcon);
+export const IconTask = make(Task01Icon);
+export const IconClock = make(Clock01Icon);
+export const IconDrag = make(DragDropVerticalIcon);
+export const IconFlag = make(Flag01Icon);

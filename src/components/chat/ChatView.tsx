@@ -12,18 +12,24 @@ import {
   AddSheet, ChecklistBuilder, EventBuilder, LocationBuilder, PaymentBuilder, PollBuilder, ReminderBuilder, type AddKind,
 } from "./CardBuilders";
 import Composer from "./Composer";
-import { IconBack, IconCheck, IconChevron, IconPhone } from "./Icons";
+import { IconBack, IconBoard, IconCheck, IconChevron, IconPhone } from "./Icons";
 import MessageList from "./MessageList";
 import MessageOverlay from "./MessageOverlay";
 import MessageRow, { type BubblePos } from "./MessageRow";
 import { ArtifactGallery, SketchBuilder, WheelBuilder } from "./Artifacts";
+import { BillFlow } from "./Bill";
+import ContactPage, { type ContactTab } from "./ContactPage";
+import { PlanBuilder } from "./Plans";
+import { ProjectBoard, ProjectBuilder, TaskFromMessage } from "./Project";
+import { openItems, openState } from "@/lib/chat/open";
+import { newProject, newTask, parseTaskCommand, projectOf } from "@/lib/chat/project";
 import { emojify } from "@/lib/chat/emoji";
 import { saveToMind } from "@/lib/chat/mind";
 import { MoveSheet } from "./Mind";
 import { MediaGrid, MediaViewer, ReceiptSheet } from "./MediaViewer";
 import ReactionSheet from "./ReactionSheet";
 import StatusBar from "./StatusBar";
-import { ChatUiProvider, getPermission, PermissionAlert, setPermission, smooth, type PermissionKind } from "./ui";
+import { ChatUiProvider, getPermission, PermissionAlert, setPermission, smooth, useBackLayer, type PermissionKind } from "./ui";
 import styles from "./chat.module.css";
 
 interface MenuState {
@@ -43,7 +49,7 @@ export default function ChatView({ chat, leaving, onBack }: {
   onBack: (immediate?: boolean) => void;
 }) {
   const {
-    state, me, isOnline, lastReadAt, send, sendCard, retry, toggleReaction, editMessage, deleteMessage,
+    state, me, isOnline, lastReadAt, send, sendCard, cardOp, retry, toggleReaction, editMessage, deleteMessage,
     togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead,
   } = useChat();
 
@@ -59,6 +65,8 @@ export default function ChatView({ chat, leaving, onBack }: {
   const [overlaySheet, setOverlaySheet] = useState<ReactNode>(null);
   const [alert, setAlert] = useState<{ kind: PermissionKind; resolve: (ok: boolean) => void } | null>(null);
   const [incoming, setIncoming] = useState<{ files: File[]; id: number } | null>(null);
+  const [contact, setContact] = useState<ContactTab | null>(null);
+  const [boardOpen, setBoardOpen] = useState(false);
   const photoInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -69,6 +77,11 @@ export default function ChatView({ chat, leaving, onBack }: {
   const other = chat.kind === "dm" ? chat.memberIds.find((id) => id !== me) : undefined;
   const online = !!other && isOnline(other);
   const members = useMemo(() => USERS.filter((u) => chat.memberIds.includes(u.id) && u.id !== me), [chat, me]);
+  // Anything unfinished in this chat puts a blue dot after the name.
+  const live = useMemo(() => openItems(messages, me), [messages, me]);
+  const board = projectOf(messages);
+  useBackLayer("nodContact", contact !== null, () => setContact(null));
+  useBackLayer("nodBoard", boardOpen && !!board, () => setBoardOpen(false));
 
   // Frozen on open so the divider doesn't chase incoming messages.
   const [firstUnreadId] = useState(() => {
@@ -207,6 +220,15 @@ export default function ChatView({ chat, leaving, onBack }: {
       case "wheel":
         setOverlaySheet(<WheelBuilder onSend={shareCard} onClose={closeSheet} />);
         return;
+      case "plan":
+        setOverlaySheet(<PlanBuilder onSend={shareCard} onClose={closeSheet} />);
+        return;
+      case "bill":
+        setOverlaySheet(<BillFlow onSend={shareCard} onClose={closeSheet} />);
+        return;
+      case "board":
+        openBoard();
+        return;
       case "tictactoe":
         sendCard(chat.id, { type: "tictactoe", players: [me, null], board: Array(9).fill(null) }, "Tic-tac-toe: who's in?");
         return;
@@ -262,7 +284,8 @@ export default function ChatView({ chat, leaving, onBack }: {
   };
   const onEdgeDown = (e: React.PointerEvent) => {
     const el = screenRef.current;
-    if (!el || menu || viewer || overlaySheet || alert) return;
+    // A layer over the chat (contact page, board) handles its own edge swipe.
+    if (!el || menu || viewer || overlaySheet || alert || contact || boardOpen) return;
     const x = e.clientX - el.getBoundingClientRect().left;
     if (x > EDGE) return;
     // Claim edge drags before a bubble underneath starts its own gesture.
@@ -292,6 +315,27 @@ export default function ChatView({ chat, leaving, onBack }: {
     setTimeout(() => setHighlighted(null), 1200);
   }, []);
 
+  // The board is found fresh each time: it's the latest project card in the thread.
+  const boardRef = useRef(board);
+  useEffect(() => { boardRef.current = board; }, [board]);
+  const openBoard = useCallback(() => {
+    if (boardRef.current) { setBoardOpen(true); return; }
+    setOverlaySheet(<ProjectBuilder onSend={(card, summary) => { sendCard(chat.id, card, summary); closeSheet(); setBoardOpen(true); }} onClose={closeSheet} />);
+  }, [chat.id, closeSheet, sendCard]);
+
+  const addTask = useCallback((fields: { title: string; assignee: string | null; due: number | null; fromMessageId?: string }) => {
+    const existing = boardRef.current;
+    const task = newTask({ ...fields, column: existing?.card.columns[0]?.id ?? "todo" }, me);
+    if (existing) {
+      cardOp(existing, { kind: "task.add", task });
+    } else {
+      const card = newProject(chat.kind === "group" ? chat.name : "Our board");
+      card.tasks[task.id] = task;
+      sendCard(chat.id, card, `Board: ${card.name}`);
+    }
+    flash(`Added “${task.title}”`, [{ label: "Open board", run: () => setBoardOpen(true) }]);
+  }, [cardOp, chat, flash, me, sendCard]);
+
   const openMenu = useCallback((message: Message, pos: BubblePos, bubble: HTMLElement, armed: boolean) => {
     const host = screenRef.current?.getBoundingClientRect();
     if (!host) return;
@@ -314,8 +358,8 @@ export default function ChatView({ chat, leaving, onBack }: {
   );
 
   const ui = useMemo(
-    () => ({ chat, members, openSheet: setOverlaySheet, closeSheet, toast: flash, ask, openMedia }),
-    [chat, members, closeSheet, flash, ask, openMedia],
+    () => ({ chat, members, openSheet: setOverlaySheet, closeSheet, toast: flash, ask, openMedia, openBoard, addTask, jumpTo }),
+    [chat, members, closeSheet, flash, ask, openMedia, openBoard, addTask, jumpTo],
   );
   const firstName = identity.label.split(" ")[0];
   const presence = typing.length
@@ -343,24 +387,37 @@ export default function ChatView({ chat, leaving, onBack }: {
       <div className={styles.edgeTop} />
 
       <header className={styles.chatHeader}>
-        <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => onBack()} aria-label="Back to messages">
-          <IconBack />
-        </button>
-        <div className={styles.titleCapsule}>
-          <Avatar glyph={identity.glyph} tone={identity.tone} size={40} online={online} />
-          <div className={`${styles.tcName} ${styles.glass}`}>
-            <span>{chat.kind === "dm" ? firstName : identity.label}</span>
-            <IconChevron />
-          </div>
-          <span className={`${styles.tcPresence} ${typing.length ? styles.isTyping : ""}`}>{presence}</span>
+        <div className={styles.headerSide}>
+          <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => onBack()} aria-label="Back to messages">
+            <IconBack />
+          </button>
         </div>
+        {/* The name opens the contact page; a blue dot means something here is still open. */}
         <button
-          className={`${styles.circleBtn} ${styles.glass}`}
-          aria-label="Call"
-          onClick={() => flash("Calls are coming soon")}
+          className={`${styles.titleCapsule} ${styles.titleButton}`}
+          onClick={() => setContact(live.length ? "live" : "media")}
+          aria-label={`${chat.kind === "dm" ? firstName : identity.label}${live.length ? `, ${live.length} open ${live.length === 1 ? "item" : "items"}` : ""}. Open details`}
         >
-          <IconPhone />
+          <Avatar glyph={identity.glyph} tone={identity.tone} size={40} online={online} />
+          <span className={`${styles.tcName} ${styles.glass}`}>
+            <span>{chat.kind === "dm" ? firstName : identity.label}</span>
+            {live.length > 0 && <i className={styles.liveDot} key={live.length} aria-hidden="true" />}
+            <IconChevron />
+          </span>
+          <span className={`${styles.tcPresence} ${typing.length ? styles.isTyping : ""}`}>{presence}</span>
         </button>
+        <div className={`${styles.headerSide} ${styles.headerEnd}`}>
+          <button className={`${styles.circleBtn} ${styles.glass}`} aria-label={board ? "Open board" : "Start a board"} onClick={openBoard}>
+            <IconBoard />
+          </button>
+          <button
+            className={`${styles.circleBtn} ${styles.glass}`}
+            aria-label="Call"
+            onClick={() => flash("Calls are coming soon")}
+          >
+            <IconPhone />
+          </button>
+        </div>
       </header>
 
       <MessageList
@@ -412,6 +469,9 @@ export default function ChatView({ chat, leaving, onBack }: {
           onCancelReply={() => setReplyTo(null)}
           onCancelEdit={() => setEditing(null)}
           onSend={(body, attachments) => {
+            // "/task Hero copy @Reema fri" goes to the board instead of the thread.
+            const task = attachments.length ? null : parseTaskCommand(body, USERS.filter((u) => chat.memberIds.includes(u.id)));
+            if (task) { addTask(task); setReplyTo(null); return; }
             send(chat.id, body, { replyToId: replyTo?.id ?? null, attachments });
             setReplyTo(null);
           }}
@@ -459,13 +519,20 @@ export default function ChatView({ chat, leaving, onBack }: {
           onSave={() => {
             const m = menuMessage;
             const c = m.card;
-            const title = c ? (c.type === "checklist" || c.type === "event" ? c.title : c.type === "poll" || c.type === "wheel" ? c.question
-              : c.type === "sketch" ? c.prompt : c.type === "reminder" ? c.text : c.type === "location" ? c.place : c.type === "payment" ? c.note : "Tic-tac-toe")
-              : stripFormatting(m.body).split(/\n/)[0].slice(0, 80) || m.attachments[0]?.name || "Saved message";
+            // Every card names itself the same way the Live tab does.
+            const cardTitle = c && (c.type === "wheel" ? c.question : c.type === "sketch" ? c.prompt
+              : openState(m, me)?.title ?? (c.type === "payment" ? c.note : undefined));
+            const title = cardTitle || stripFormatting(m.body).split(/\n/)[0].slice(0, 80) || m.attachments[0]?.name || "Saved message";
             const photos = m.attachments.some((x) => x.kind === "image");
             const result = saveToMind(me, {
               chatId: chat.id, messageId: m.id, title, chatName: chat.name,
-              text: [m.body, c && "question" in c ? c.question : "", c && "title" in c ? c.title : "", ...(c?.type === "checklist" ? c.items.map((i) => i.label) : [])].filter(Boolean).join(" "),
+              text: [
+                m.body, c && "question" in c ? c.question : "", c && "title" in c ? c.title : "",
+                ...(c?.type === "checklist" ? c.items.map((i) => i.label) : []),
+                ...(c?.type === "plan" ? c.days.flatMap((d) => d.stops.map((st) => st.title)) : []),
+                ...(c?.type === "bill" ? [c.merchant, ...c.items.map((i) => i.name)] : []),
+                ...(c?.type === "project" ? [c.name, ...Object.values(c.tasks).filter((t) => !t.deleted).map((t) => t.title)] : []),
+              ].filter(Boolean).join(" "),
               kind: c ? "card" : photos ? "photos" : m.attachments.length ? "file" : "text",
               cardType: c?.type,
             });
@@ -486,6 +553,7 @@ export default function ChatView({ chat, leaving, onBack }: {
             void navigator.clipboard?.writeText(stripFormatting(menuMessage.body));
             flash("Copied");
           }}
+          onTask={() => setOverlaySheet(<TaskFromMessage message={menuMessage} chat={chat} onClose={closeSheet} />)}
         />
       )}
 
@@ -498,6 +566,15 @@ export default function ChatView({ chat, leaving, onBack }: {
         />
       )}
 
+      {contact && (
+        <ContactPage
+          chat={chat}
+          startTab={contact}
+          onClose={() => setContact(null)}
+          onJump={(id) => { setContact(null); setTimeout(() => jumpTo(id), 260); }}
+        />
+      )}
+      {boardOpen && board && <ProjectBoard message={board} onClose={() => setBoardOpen(false)} />}
       {overlaySheet}
       {viewer && <MediaViewer message={viewer.message} start={viewer.index} onClose={() => setViewer(null)} />}
       {alert && <PermissionAlert kind={alert.kind} onResolve={alert.resolve} />}

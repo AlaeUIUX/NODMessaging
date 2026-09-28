@@ -11,6 +11,7 @@ import Logo from "./Logo";
 import { emojify } from "@/lib/chat/emoji";
 import MindTab from "./Mind";
 import NewChat from "./NewChat";
+import { MyTasks } from "./Project";
 import StatusBar from "./StatusBar";
 import styles from "./chat.module.css";
 
@@ -210,6 +211,10 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPinned(readList("pinned", me, ["dm"]));
     setMuted(readList("muted", me, []));
+    // The contact page can mute too; re-read when it does, so neither overwrites the other.
+    const reread = () => setMuted(readList("muted", me, []));
+    window.addEventListener("nod:muted", reread);
+    return () => window.removeEventListener("nod:muted", reread);
   }, [me]);
   const togglePinned = (id: string) => setPinned((s) => { const next = toggle(s, id); writeList("pinned", me, next); return next; });
   const toggleMuted = (id: string) => setMuted((s) => { const next = toggle(s, id); writeList("muted", me, next); return next; });
@@ -323,6 +328,8 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
                 ))}
               </div>
             )}
+
+            {tab === "spaces" && ready && <MyTasks onOpenChat={onOpen} />}
 
             <div className={styles.rows} key={`${tab}-${effective}`}>
               {visible.map(({ chat, last, unread, mentioned }, i) => {

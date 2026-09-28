@@ -7,7 +7,7 @@ import Avatar from "./Avatar";
 import {
   IconAttachment, IconBell, IconCalendar, IconCamera, IconCheck, IconChecklist, IconClose, IconImage, IconLocation,
   IconMoneyReceive, IconMoneySend, IconPlus, IconPoll, IconSmile,
-  IconBrush, IconGame, IconSparkles, IconWheel,
+  IconBrush, IconGame, IconSparkles, IconWheel, IconBoard, IconReceipt, IconRoute,
 } from "./Icons";
 import MiniMap from "./MiniMap";
 import { Segmented, Sheet, Toggle, uid } from "./ui";
@@ -15,8 +15,8 @@ import styles from "./chat.module.css";
 
 export type AddKind =
   | "photos" | "camera" | "file"
-  | "checklist" | "poll" | "reminder" | "location" | "event"
-  | "pay" | "request"
+  | "checklist" | "poll" | "reminder" | "location" | "event" | "plan" | "board"
+  | "pay" | "request" | "bill"
   | "sketch" | "tictactoe" | "wheel" | "gallery";
 
 type Send = (card: Card, summary: string) => void;
@@ -44,6 +44,8 @@ const GROUPS: { title: string; tone: AvatarTone; items: { kind: AddKind; label: 
       { kind: "reminder", label: "Reminder", icon: <IconBell size={24} /> },
       { kind: "location", label: "Location", icon: <IconLocation size={24} /> },
       { kind: "event", label: "Event", icon: <IconCalendar size={24} /> },
+      { kind: "plan", label: "Plan", icon: <IconRoute size={24} /> },
+      { kind: "board", label: "Board", icon: <IconBoard size={24} /> },
     ],
   },
   {
@@ -52,6 +54,7 @@ const GROUPS: { title: string; tone: AvatarTone; items: { kind: AddKind; label: 
     items: [
       { kind: "pay", label: "Pay", icon: <IconMoneySend size={24} /> },
       { kind: "request", label: "Request", icon: <IconMoneyReceive size={24} /> },
+      { kind: "bill", label: "Split bill", icon: <IconReceipt size={24} /> },
     ],
   },
   {

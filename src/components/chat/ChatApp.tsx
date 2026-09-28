@@ -128,13 +128,41 @@ function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
   const latest = useRef(state.data);
   useEffect(() => { latest.current = state.data; }, [state.data]);
 
+  // Plan stops and task due dates are announced once per tab; whatever was
+  // already due when the tab opened counts as seen, so a reload doesn't replay it.
+  const announced = useRef<Set<string> | null>(null);
+
   useEffect(() => {
     const tick = () => {
       const now = Date.now();
+      const first = announced.current === null;
+      const seen = (announced.current ??= new Set());
+      const notify = (key: string, chat: Chat, title: string, body: string) => {
+        if (seen.has(key)) return;
+        seen.add(key);
+        if (!first && getPermission("notifications") === "granted") onBanner({ id: Date.now(), chatId: chat.id, title, body });
+      };
       for (const chat of latest.current.chats) {
         if (!chat.memberIds.includes(me)) continue;
         for (const m of latest.current.messages[chat.id] ?? []) {
           const c = m.card;
+          if (c && !m.deletedAt && c.type === "plan") {
+            const going = c.rsvps[me] !== "no";
+            for (const stop of c.days.flatMap((d) => d.stops)) {
+              // Ten minutes ahead, for stops you're responsible for or plans you're going to.
+              if (stop.doneBy || stop.at === null || stop.at - now > 10 * 60_000 || stop.at < now - 60_000) continue;
+              if (stop.owner === me || (going && !stop.owner)) {
+                notify(`plan:${stop.id}`, chat, `${c.title} · ${new Date(stop.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`, stop.place ? `${stop.title} at ${stop.place}` : stop.title);
+              }
+            }
+          }
+          if (c && !m.deletedAt && c.type === "project") {
+            const done = c.columns[c.columns.length - 1]?.id;
+            for (const task of Object.values(c.tasks)) {
+              if (task.deleted || task.assignee !== me || task.column === done || task.due === null || task.due > now) continue;
+              notify(`task:${task.id}:${task.due}`, chat, `Due now · ${c.name}`, task.title);
+            }
+          }
           if (!c || c.type !== "reminder" || c.firedAt !== null || c.at > now) continue;
           updateCard(m, (x) => (x.type === "reminder" ? { ...x, firedAt: Date.now() } : x));
           const forMe = c.audience === "everyone" || m.authorId === me;

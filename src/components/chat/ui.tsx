@@ -20,6 +20,12 @@ export interface ChatUi {
   ask: (kind: PermissionKind) => Promise<boolean>;
   /** Opens a photo full screen, or a collection's grid ("all"). */
   openMedia: (message: Message, index: number | "all") => void;
+  /** Opens this chat's board full screen, or offers to start one. */
+  openBoard: () => void;
+  /** Adds a task to this chat's board, starting the board if there isn't one yet. */
+  addTask: (fields: { title: string; assignee: string | null; due: number | null; fromMessageId?: string }) => void;
+  /** Scrolls the thread to a message and flashes it. */
+  jumpTo: (messageId: string) => void;
 }
 
 const Ctx = createContext<ChatUi | null>(null);
@@ -281,6 +287,26 @@ export function relative(ms: number) {
 }
 
 export const uid = () => Math.random().toString(36).slice(2, 9);
+
+/**
+ * A screen stacked on the chat (contact page, board) gets its own history
+ * entry, so the phone's Back closes it rather than the chat underneath.
+ */
+export function useBackLayer(key: string, open: boolean, onBack: () => void) {
+  const back = useRef(onBack);
+  useEffect(() => { back.current = onBack; }, [onBack]);
+  useEffect(() => {
+    if (!open) return;
+    window.history.pushState({ ...window.history.state, [key]: true }, "");
+    const onPop = () => { if (!window.history.state?.[key]) back.current(); };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      // Closed from the page itself: drop the entry so Back doesn't land on it.
+      if (window.history.state?.[key]) window.history.back();
+    };
+  }, [key, open]);
+}
 
 /** For motion driven from script (Web Animations, smooth scrolling), which the CSS reduced-motion rule can't reach. */
 export const reducedMotion = () =>

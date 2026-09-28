@@ -14,12 +14,13 @@ import {
 } from "react";
 import { sendMessage as apiSend } from "./api";
 import { releaseMedia } from "./media";
+import { reduceCardOp, tasksIn, unclaimedItems } from "./ops";
 import { buildSeedState, CHATS, USERS } from "./seed";
 import { localStorageAdapter, readKey } from "./storage";
 import {
   createBroadcastTransport, NULL_TRANSPORT, PRESENCE_INTERVAL_MS, PRESENCE_TIMEOUT_MS, samePeers, type Peer,
 } from "./transport";
-import type { Attachment, Card, Chat, ChatState, ChatTransport, DeliveryStatus, Message, TransportEvent } from "./types";
+import type { Attachment, Card, CardOp, Chat, ChatState, ChatTransport, DeliveryStatus, Message, TransportEvent } from "./types";
 
 /**
  * One id per browsing context, fixed at module load — two tabs get different
@@ -50,6 +51,7 @@ type Action =
   | { type: "delete"; chatId: string; messageId: string; deletedAt: number }
   | { type: "pin"; chatId: string; messageId: string; pinned: boolean }
   | { type: "card"; chatId: string; messageId: string; card: Card }
+  | { type: "card-op"; chatId: string; messageId: string; op: CardOp }
   | { type: "load-earlier"; chatId: string }
   | { type: "typing"; chatId: string; userId: string; isTyping: boolean }
   | { type: "read-by"; chatId: string; messageIds: string[]; userId: string; at: number }
@@ -161,6 +163,13 @@ function reducer(state: State, action: Action): State {
     case "card":
       return mapMessages(state, action.chatId, (m) => (m.id === action.messageId ? { ...m, card: action.card } : m));
 
+    case "card-op":
+      return mapMessages(state, action.chatId, (m) => {
+        if (m.id !== action.messageId || !m.card) return m;
+        const card = reduceCardOp(m.card, action.op);
+        return card === m.card ? m : { ...m, card };
+      });
+
     case "load-earlier": {
       const pool = state.data.archive[action.chatId] ?? [];
       if (!pool.length) return state;
@@ -172,7 +181,8 @@ function reducer(state: State, action: Action): State {
           archive: { ...state.data.archive, [action.chatId]: pool.slice(0, -PAGE_SIZE) },
           messages: {
             ...state.data.messages,
-            [action.chatId]: [...page, ...(state.data.messages[action.chatId] ?? [])],
+            // Sorted, so an older seeded or synced message never lands out of order.
+            [action.chatId]: [...page, ...(state.data.messages[action.chatId] ?? [])].sort((a, b) => a.createdAt - b.createdAt),
           },
         },
       };
@@ -234,6 +244,8 @@ interface ChatContextValue {
   createGroup: (name: string, memberIds: string[]) => Chat;
   /** Replaces a card's state (votes, ticks, RSVPs…) and syncs it. */
   updateCard: (message: Message, update: (card: Card) => Card) => void;
+  /** Applies one change to a shared card (plans, bills, projects) here and in every tab. */
+  cardOp: (message: Message, op: CardOp) => void;
   retry: (message: Message) => void;
   toggleReaction: (message: Message, emoji: string) => void;
   editMessage: (message: Message, body: string) => void;
@@ -462,6 +474,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         case "card":
           dispatch({ type: "card", chatId: event.chatId, messageId: event.messageId, card: event.card });
           break;
+        case "card-op":
+          dispatch({ type: "card-op", chatId: event.chatId, messageId: event.messageId, op: event.op });
+          break;
         case "presence":
           if (event.clientId === CLIENT_ID) return;
           peerSeen.current.set(event.clientId, { clientId: event.clientId, userId: event.userId, at: event.at });
@@ -639,6 +654,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [publish],
   );
 
+  const cardOp = useCallback<ChatContextValue["cardOp"]>(
+    (message, op) => {
+      dispatch({ type: "card-op", chatId: message.chatId, messageId: message.id, op });
+      publish({ type: "card-op", chatId: message.chatId, messageId: message.id, op, by: meRef.current });
+    },
+    [publish],
+  );
+
   /** With nobody else online, the other members answer structured messages. */
   const simulateCard = useCallback(
     (sent: Message) => {
@@ -670,9 +693,30 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           : c));
       } else if (card.type === "checklist" && card.everyoneCanEdit && card.items.length) {
         act(2400, (c) => (c.type === "checklist" ? { ...c, items: c.items.map((it, j) => (j === 0 && !it.doneBy ? { ...it, doneBy: others[0] } : it)) } : c));
+      } else if (card.type === "plan") {
+        // Everyone says whether they're in, one by one.
+        const answers = ["going", "going", "maybe"] as const;
+        others.forEach((uid, i) => later(() => cardOp(sent, { kind: "plan.rsvp", userId: uid, value: answers[i % answers.length] }), 1500 + i * 1100));
+      } else if (card.type === "bill") {
+        // Each person claims an unclaimed item, then pays their share a little later.
+        const open = unclaimedItems(card);
+        others.forEach((uid, i) => {
+          const item = open[i];
+          if (item) later(() => cardOp(sent, { kind: "bill.claim", itemId: item.id, userId: uid, on: true }), 1600 + i * 1200);
+          if (item) later(() => cardOp(sent, { kind: "bill.pay", userId: uid }), 4200 + i * 1500);
+        });
+      } else if (card.type === "project") {
+        // Someone picks up the first task.
+        const first = card.columns[0] && card.columns[1] ? tasksIn(card, card.columns[0].id)[0] : undefined;
+        if (first) {
+          later(() => cardOp(sent, {
+            kind: "task.update", id: first.id, at: Date.now(),
+            patch: { column: card.columns[1].id, assignee: first.assignee ?? others[0] },
+          }), 3000);
+        }
       }
     },
-    [chatOf, later, updateCard],
+    [cardOp, chatOf, later, updateCard],
   );
 
   const createGroup = useCallback<ChatContextValue["createGroup"]>(
@@ -820,10 +864,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ChatContextValue>(
     () => ({
-      state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, createGroup, retry,
+      state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, retry,
       toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead,
     }),
-    [state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, createGroup, retry,
+    [state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, retry,
       toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead],
   );
 

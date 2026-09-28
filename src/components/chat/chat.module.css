@@ -960,6 +960,9 @@
   gap: 10px;
   z-index: 30;
 }
+/* Equal sides keep the name centred whatever sits on either side. */
+.headerSide { width: 98px; flex-shrink: 0; display: flex; gap: 10px; }
+.headerEnd { justify-content: flex-end; }
 .titleCapsule {
   flex: 1;
   min-width: 0;
@@ -968,6 +971,33 @@
   align-items: center;
   gap: 2px;
   padding: 2px 0;
+}
+.titleButton {
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.titleButton:active .tcName { transform: scale(.96); }
+.titleButton:focus-visible { outline: none; }
+.titleButton:focus-visible .tcName { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+/* Something in this chat is still open: pulses once when it appears, then rests. */
+.liveDot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--accent) 22%, transparent);
+  animation: liveDotIn var(--t-slow) var(--ease-out) both, liveDotPulse 1.4s var(--ease-out) var(--t-slow) 1;
+}
+@keyframes liveDotIn { from { transform: scale(0); } to { transform: scale(1); } }
+@keyframes liveDotPulse {
+  0% { box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--accent) 22%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 0%, transparent); }
+  100% { box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--accent) 22%, transparent); }
 }
 .titleCapsule .tcName {
   display: flex;
