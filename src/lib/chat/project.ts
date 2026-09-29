@@ -1,4 +1,6 @@
-import type { Message, ProjectCard, Task, User } from "./types";
+import type { Message, ProjectCard, Subtask, Task, User } from "./types";
+
+export const clampProgress = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
 
 export type BoardMessage = Message & { card: ProjectCard };
 
@@ -21,6 +23,7 @@ export function newProject(name: string): ProjectCard {
     type: "project",
     name: name.trim() || "Board",
     columns: [{ id: "todo", name: "To do" }, { id: "doing", name: "Doing" }, { id: "done", name: "Done" }],
+    categories: [],
     tasks: {},
   };
 }
@@ -28,7 +31,10 @@ export function newProject(name: string): ProjectCard {
 const rid = () => Math.random().toString(36).slice(2, 9);
 
 export function newTask(
-  fields: { title: string; column: string; order?: number; assignee?: string | null; due?: number | null; fromMessageId?: string },
+  fields: {
+    title: string; column: string; order?: number; assignee?: string | null; due?: number | null; fromMessageId?: string;
+    priority?: Task["priority"]; category?: string | null; progress?: number; subtasks?: Subtask[];
+  },
   createdBy: string,
 ): Task {
   const now = Date.now();
@@ -39,6 +45,10 @@ export function newTask(
     order: fields.order ?? now,
     assignee: fields.assignee ?? null,
     due: fields.due ?? null,
+    priority: fields.priority ?? "moderate",
+    category: fields.category ?? null,
+    progress: clampProgress(fields.progress ?? 0),
+    subtasks: fields.subtasks ?? [],
     fromMessageId: fields.fromMessageId,
     createdBy,
     createdAt: now,

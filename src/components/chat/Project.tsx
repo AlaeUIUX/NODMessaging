@@ -5,15 +5,24 @@ import { chatIdentity, initials } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { openState } from "@/lib/chat/open";
 import { doneColumn, tasksIn } from "@/lib/chat/ops";
-import { newProject, newTask, parseDue, parseTaskCommand, projectsOf, type BoardMessage } from "@/lib/chat/project";
+import { clampProgress, newProject, newTask, parseDue, parseTaskCommand, projectsOf, type BoardMessage } from "@/lib/chat/project";
 import { useChat, userById } from "@/lib/chat/store";
-import type { Card, Chat, Message, ProjectCard, Task, User } from "@/lib/chat/types";
+import type { Card, Chat, Message, Priority, ProjectCard, Subtask, Task, User } from "@/lib/chat/types";
 import Avatar from "./Avatar";
-import { IconBack, IconBoard, IconCheck, IconChevron, IconChevronDown, IconClock, IconEdit, IconLink, IconMore, IconPlus, IconTrash } from "./Icons";
+import { IconBack, IconBoard, IconCheck, IconChecklist, IconChevron, IconChevronDown, IconClock, IconClose, IconEdit, IconLink, IconMore, IconPlus, IconTrash } from "./Icons";
 import StatusBar from "./StatusBar";
 import { relative, Sheet, smooth, uid, useChatUi, useDialog, useNow } from "./ui";
 import styles from "./chat.module.css";
+import a from "./activity.module.css";
 import s from "./project.module.css";
+
+const PRIORITIES: { id: Priority; label: string }[] = [
+  { id: "urgent", label: "Urgent" },
+  { id: "moderate", label: "Moderate" },
+  { id: "low", label: "Low" },
+];
+const PRIORITY_LABEL: Record<Priority, string> = { urgent: "Urgent", moderate: "Moderate", low: "Low" };
+const PRIORITY_CLASS: Record<Priority, string> = { urgent: s.priorityUrgent, moderate: s.priorityModerate, low: s.priorityLow };
 
 type Send = (card: Card, summary: string) => void;
 
@@ -112,6 +121,140 @@ function DuePicker({ value, onChange }: { value: number | null; onChange: (due: 
           }}
         />
       </label>
+    </>
+  );
+}
+
+function PriorityPicker({ value, onChange }: { value: Priority; onChange: (p: Priority) => void }) {
+  return (
+    <div className={styles.chipGrid} role="radiogroup" aria-label="Priority">
+      {PRIORITIES.map((p) => (
+        <button
+          key={p.id}
+          role="radio"
+          aria-checked={value === p.id}
+          className={`${s.priorityChip} ${PRIORITY_CLASS[p.id]} ${value === p.id ? s.priorityChipOn : ""}`}
+          onClick={() => onChange(p.id)}
+        >
+          <i className={s.priorityDot} aria-hidden="true" />
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CategoryPicker({ categories, value, onChange, onAdd }: {
+  categories: { id: string; name: string }[];
+  value: string | null;
+  onChange: (id: string | null) => void;
+  onAdd: (name: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const discard = useRef(false);
+  const commit = () => {
+    if (discard.current) { discard.current = false; setDraft(""); setAdding(false); return; }
+    const name = draft.trim();
+    setDraft("");
+    setAdding(false);
+    if (name) onAdd(name);
+  };
+  return (
+    <div className={styles.chipGrid} role="radiogroup" aria-label="Category">
+      <button role="radio" aria-checked={value === null} className={`${styles.choice} ${value === null ? styles.choiceOn : ""}`} onClick={() => onChange(null)}>
+        None
+      </button>
+      {categories.map((c) => (
+        <button key={c.id} role="radio" aria-checked={value === c.id} className={`${styles.choice} ${value === c.id ? styles.choiceOn : ""}`} onClick={() => onChange(c.id)}>
+          {c.name}
+        </button>
+      ))}
+      {adding ? (
+        <input
+          className={s.colInput}
+          autoFocus
+          placeholder="Category"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") { e.preventDefault(); discard.current = true; (e.target as HTMLInputElement).blur(); }
+          }}
+          onBlur={commit}
+          aria-label="New category name"
+        />
+      ) : (
+        <button className={`${styles.choice} ${styles.mindAddTag}`} onClick={() => setAdding(true)}>
+          <IconPlus size={14} /> New
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ProgressSlider({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  return (
+    <div className={s.progressField}>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={value}
+        onChange={(e) => onChange(clampProgress(Number(e.target.value)))}
+        aria-label="Progress"
+      />
+      <span>{value}%</span>
+    </div>
+  );
+}
+
+/** A checklist on one task: check items off, add more, remove any. Shared by the task sheet and new-task sheet. */
+function SubtaskEditor({ subtasks, onChange }: { subtasks: Subtask[]; onChange: (next: Subtask[]) => void }) {
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const title = draft.trim();
+    if (!title) return;
+    onChange([...subtasks, { id: `st-${uid()}`, title, done: false }]);
+    setDraft("");
+  };
+  const done = subtasks.filter((st) => st.done).length;
+  return (
+    <>
+      <p className={styles.sheetLabel}>Subtasks{subtasks.length > 0 ? ` · ${done} of ${subtasks.length}` : ""}</p>
+      {subtasks.length > 0 && (
+        <div className={s.subtaskList}>
+          {subtasks.map((st) => (
+            <div key={st.id} className={s.subtaskRow}>
+              <button
+                className={`${s.subtaskCheck} ${st.done ? s.subtaskCheckOn : ""}`}
+                onClick={() => onChange(subtasks.map((x) => (x.id === st.id ? { ...x, done: !x.done } : x)))}
+                aria-pressed={st.done}
+                aria-label={st.done ? `Mark "${st.title}" not done` : `Mark "${st.title}" done`}
+              >
+                {st.done && <IconCheck size={11} />}
+              </button>
+              <span className={`${s.subtaskTitle} ${st.done ? s.subtaskDone : ""}`}>{st.title}</span>
+              <button className={s.subtaskRemove} onClick={() => onChange(subtasks.filter((x) => x.id !== st.id))} aria-label={`Remove "${st.title}"`}>
+                <IconClose size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className={s.addField}>
+        <input
+          value={draft}
+          placeholder="Add a subtask"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && draft.trim()) add(); }}
+          aria-label="New subtask"
+        />
+        <button className={s.addGo} disabled={!draft.trim()} onPointerDown={(e) => e.preventDefault()} onClick={add} aria-label="Add subtask">
+          <IconChevron size={16} />
+        </button>
+      </div>
     </>
   );
 }
@@ -291,7 +434,7 @@ function TaskSheet({ chatId, messageId, taskId, onClose, onShowInChat }: {
   const people = peopleOf(chat?.memberIds ?? [me], me);
   const gone = !board || !task || task.deleted;
 
-  const update = (patch: Partial<Pick<Task, "title" | "column" | "order" | "assignee" | "due">>) => {
+  const update = (patch: Partial<Pick<Task, "title" | "column" | "order" | "assignee" | "due" | "priority" | "category" | "progress" | "subtasks">>) => {
     if (!board || gone) return;
     cardOp(board, { kind: "task.update", id: taskId, patch, at: stamp() });
   };
@@ -303,6 +446,16 @@ function TaskSheet({ chatId, messageId, taskId, onClose, onShowInChat }: {
   const move = (column: string) => {
     if (!board || gone || column === task.column) return;
     update({ column, order: endOrder(tasksIn(board.card, column).filter((t) => t.id !== taskId)) });
+  };
+  const done = board ? doneColumn(board.card) : undefined;
+  // Checking the last box off moves the task to Done; nothing after that reopens it automatically.
+  const setSubtasks = (subtasks: Subtask[]) => {
+    const allDone = subtasks.length > 0 && subtasks.every((st) => st.done);
+    if (!gone && allDone && done && task.column !== done) {
+      update({ subtasks, column: done, order: endOrder(tasksIn(board!.card, done).filter((t) => t.id !== taskId)) });
+    } else {
+      update({ subtasks });
+    }
   };
 
   return (
@@ -329,6 +482,26 @@ function TaskSheet({ chatId, messageId, taskId, onClose, onShowInChat }: {
 
           <p className={styles.sheetLabel}>Due</p>
           <DuePicker value={task.due} onChange={(due) => update({ due })} />
+
+          <p className={styles.sheetLabel}>Priority</p>
+          <PriorityPicker value={task.priority} onChange={(priority) => update({ priority })} />
+
+          <p className={styles.sheetLabel}>Category</p>
+          <CategoryPicker
+            categories={board.card.categories}
+            value={task.category}
+            onChange={(category) => update({ category })}
+            onAdd={(name) => {
+              const id = `cat-${uid()}`;
+              cardOp(board, { kind: "category.add", category: { id, name } });
+              update({ category: id });
+            }}
+          />
+
+          <p className={styles.sheetLabel}>Progress</p>
+          <ProgressSlider value={task.progress} onChange={(progress) => update({ progress })} />
+
+          <SubtaskEditor subtasks={task.subtasks} onChange={setSubtasks} />
 
           <p className={styles.sheetLabel}>Move to</p>
           <div className={styles.chipGrid} role="radiogroup" aria-label="Column">
@@ -371,17 +544,34 @@ function TaskSheet({ chatId, messageId, taskId, onClose, onShowInChat }: {
    The board
 --------------------------------------------------------------------------- */
 
-function TaskBody({ task, now, done, onShow }: { task: Task; now: number; done: boolean; onShow?: (id: string) => void }) {
+function TaskBody({ task, now, done, categories, onShow }: {
+  task: Task; now: number; done: boolean; categories: { id: string; name: string }[]; onShow?: (id: string) => void;
+}) {
   const who = task.assignee ? userById(task.assignee) : null;
+  const category = task.category ? categories.find((c) => c.id === task.category) : null;
   return (
     <>
+      {category && <p className={s.taskCategory}>{category.name}</p>}
       <p className={`${s.taskTitle} ${done ? s.taskDone : ""}`}>
         {done && <span className={s.doneMark} aria-hidden="true"><IconCheck size={10} /></span>}
         {task.title}
       </p>
-      {(task.due !== null || task.fromMessageId || who) && (
+      <div className={s.taskBadges}>
+        <span className={`${s.priorityBadge} ${PRIORITY_CLASS[task.priority]}`}>{PRIORITY_LABEL[task.priority]}</span>
+      </div>
+      <div className={s.progressRow}>
+        <span className={s.progressBar}><span style={{ width: `${task.progress}%` }} /></span>
+        <em>{task.progress}%</em>
+      </div>
+      {(task.due !== null || task.fromMessageId || task.subtasks.length > 0 || who) && (
         <div className={s.taskMeta}>
           {task.due !== null && !done && <DueChip due={task.due} now={now} />}
+          {task.subtasks.length > 0 && (
+            <span className={s.subtaskChip}>
+              <IconChecklist size={12} />
+              {task.subtasks.filter((st) => st.done).length}/{task.subtasks.length}
+            </span>
+          )}
           {task.fromMessageId && (
             onShow ? (
               <button
@@ -519,52 +709,76 @@ function ColumnHead({ name, count, renameNow, canDelete, menuOpen, onMenu, onRen
   );
 }
 
-function AddTask({ open, onOpen, onClose, onAdd, first }: {
-  open: boolean;
-  onOpen: () => void;
-  onClose: () => void;
-  onAdd: (text: string) => boolean;
-  first: boolean;
+/** A new task, every field up front: title, assignee, due, priority, category, progress, subtasks and which column it lands in. */
+function NewTaskSheet({ chatId, messageId, column, onClose }: {
+  chatId: string; messageId: string; column: string; onClose: () => void;
 }) {
-  const [text, setText] = useState("");
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    ref.current?.focus({ preventScroll: true });
-    ref.current?.scrollIntoView({ block: "nearest", behavior: smooth() });
-  }, [open]);
-  if (!open) {
-    return (
-      <button className={s.addTask} onClick={onOpen}>
-        <IconPlus size={16} /> Add a task
-      </button>
-    );
-  }
+  const { state, me, cardOp } = useChat();
+  const board = useLiveBoard(chatId, messageId);
+  const chat = state.data.chats.find((c) => c.id === chatId);
+  const people = peopleOf(chat?.memberIds ?? [me], me);
+  const [title, setTitle] = useState("");
+  const [assignee, setAssignee] = useState<string | null>(null);
+  const [due, setDue] = useState<number | null>(null);
+  const [priority, setPriority] = useState<Priority>("moderate");
+  const [category, setCategory] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
+  const [col, setCol] = useState(column);
+  if (!board) return null;
+
+  const create = () => {
+    const task = newTask({ title, column: col, assignee, due, priority, category, progress, subtasks, order: endOrder(tasksIn(board.card, col)) }, me);
+    cardOp(board, { kind: "task.add", task });
+    onClose();
+  };
+
   return (
-    <div className={s.addField}>
+    <Sheet title="New task" onClose={onClose} action={{ label: "Add", disabled: !title.trim(), onClick: create }}>
       <input
-        ref={ref}
-        value={text}
-        placeholder={first ? "Hero copy @Reema fri" : "Add a task"}
-        enterKeyHint="done"
-        onChange={(e) => setText(e.target.value)}
-        onBlur={() => { if (!text.trim()) onClose(); }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && text.trim()) { if (onAdd(text)) setText(""); }
-          if (e.key === "Escape") { e.preventDefault(); setText(""); onClose(); }
-        }}
-        aria-label="New task. End with @name or a day to assign it or set a due date"
+        className={styles.bigInput}
+        data-autofocus
+        value={title}
+        placeholder="What needs doing?"
+        onChange={(e) => setTitle(e.target.value)}
+        aria-label="Task title"
       />
-      <button
-        className={s.addGo}
-        disabled={!text.trim()}
-        onPointerDown={(e) => e.preventDefault()}
-        onClick={() => { if (onAdd(text)) setText(""); ref.current?.focus({ preventScroll: true }); }}
-        aria-label="Add"
-      >
-        <IconChevron size={16} />
-      </button>
-    </div>
+
+      <p className={styles.sheetLabel}>Assignee</p>
+      <AssigneePicker people={people} me={me} value={assignee} onChange={setAssignee} />
+
+      <p className={styles.sheetLabel}>Due</p>
+      <DuePicker value={due} onChange={setDue} />
+
+      <p className={styles.sheetLabel}>Priority</p>
+      <PriorityPicker value={priority} onChange={setPriority} />
+
+      <p className={styles.sheetLabel}>Category</p>
+      <CategoryPicker
+        categories={board.card.categories}
+        value={category}
+        onChange={setCategory}
+        onAdd={(name) => {
+          const id = `cat-${uid()}`;
+          cardOp(board, { kind: "category.add", category: { id, name } });
+          setCategory(id);
+        }}
+      />
+
+      <p className={styles.sheetLabel}>Progress</p>
+      <ProgressSlider value={progress} onChange={setProgress} />
+
+      <SubtaskEditor subtasks={subtasks} onChange={setSubtasks} />
+
+      <p className={styles.sheetLabel}>Column</p>
+      <div className={styles.chipGrid} role="radiogroup" aria-label="Column">
+        {board.card.columns.map((c) => (
+          <button key={c.id} role="radio" aria-checked={col === c.id} className={`${styles.choice} ${col === c.id ? styles.choiceOn : ""}`} onClick={() => setCol(c.id)}>
+            {c.name}
+          </button>
+        ))}
+      </div>
+    </Sheet>
   );
 }
 
@@ -575,6 +789,54 @@ function boardCounts(card: ProjectCard) {
   const done = doneColumn(card);
   const live = Object.values(card.tasks).filter((t) => !t.deleted);
   return { open: live.filter((t) => t.column !== done).length, total: live.length };
+}
+
+type DueFilter = "overdue" | "week" | "none";
+const DUE_OPTIONS: { id: DueFilter; label: string }[] = [
+  { id: "overdue", label: "Overdue" },
+  { id: "week", label: "Due this week" },
+  { id: "none", label: "No due date" },
+];
+
+/** One dropdown in the filter bar: a label, a count of what's active, a checklist of options. */
+function FilterPopover<T extends string>({ label, options, active, onToggle }: {
+  label: string;
+  options: { id: T; label: string }[];
+  active: Set<T>;
+  onToggle: (id: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={a.pickerWrap}>
+      <button className={a.pickerBtn} onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open}>
+        {label}
+        {active.size > 0 && <em>{active.size}</em>}
+        <IconChevronDown size={14} />
+      </button>
+      {open && (
+        <>
+          <div className={a.scrim} onClick={() => setOpen(false)} />
+          <div className={`${a.menu} ${styles.glassStrong}`} role="menu" aria-label={`Filter by ${label.toLowerCase()}`}>
+            {options.map((o) => {
+              const checked = active.has(o.id);
+              return (
+                <button
+                  key={o.id}
+                  role="menuitemcheckbox"
+                  aria-checked={checked}
+                  className={`${a.menuItem} ${checked ? a.menuItemOn : ""}`}
+                  onClick={() => onToggle(o.id)}
+                >
+                  <span>{o.label}</span>
+                  {checked && <IconCheck size={13} />}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 /** The full-screen board for one project card; the title switches between the chat's boards. */
@@ -591,7 +853,6 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
   const now = useNow(60_000);
   const card = message.card;
   const done = doneColumn(card);
-  const people = useMemo(() => peopleOf(ui.chat.memberIds, me), [ui.chat.memberIds, me]);
   const live = Object.values(card.tasks).filter((t) => !t.deleted);
   const openCount = live.filter((t) => t.column !== done).length;
 
@@ -599,7 +860,6 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
   const scrollRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
   const [leaving, setLeaving] = useState(false);
-  const [adding, setAdding] = useState<string | null>(null);
   // Which menu is open: "boards" (the switcher), a column id, or none. Opening one closes the rest.
   const [menu, setMenu] = useState<string | null>(null);
   const picking = menu === "boards";
@@ -612,50 +872,9 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
   const [shown, setShown] = useState(message.id);
   if (shown !== message.id) {
     setShown(message.id);
-    setAdding(null);
     setMenu(null);
   }
-  useEffect(() => { scrollRef.current?.scrollTo({ left: 0 }); }, [message.id]);
-
-  // A mouse wheel scrolls up and down; over the board it moves between columns,
-  // unless a column's own list can still scroll that way.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const wheel = (e: WheelEvent) => {
-      if (e.ctrlKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
-      const body = (e.target as HTMLElement).closest<HTMLElement>("[data-col-body]");
-      if (body) {
-        const canUp = body.scrollTop > 0;
-        const canDown = body.scrollTop + body.clientHeight < body.scrollHeight - 1;
-        if ((e.deltaY < 0 && canUp) || (e.deltaY > 0 && canDown)) return;
-      }
-      e.preventDefault();
-      el.scrollBy({ left: e.deltaY, behavior: "auto" });
-    };
-    el.addEventListener("wheel", wheel, { passive: false });
-    return () => el.removeEventListener("wheel", wheel);
-  }, []);
-
-  // With a mouse, dragging the board's background pans it (touch already pans natively).
-  const pan = useRef<{ x: number; left: number; id: number } | null>(null);
-  const [panning, setPanning] = useState(false);
-  const onPanDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType !== "mouse" || e.button !== 0) return;
-    if ((e.target as HTMLElement).closest("[data-task], button, input, textarea, label")) return;
-    pan.current = { x: e.clientX, left: e.currentTarget.scrollLeft, id: e.pointerId };
-  };
-  const onPanMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const p = pan.current;
-    if (!p) return;
-    const dx = e.clientX - p.x;
-    if (Math.abs(dx) > 3 && !e.currentTarget.hasPointerCapture(p.id)) {
-      try { e.currentTarget.setPointerCapture(p.id); } catch { /* pointer gone */ }
-      setPanning(true);
-    }
-    e.currentTarget.scrollLeft = p.left - dx;
-  };
-  const onPanEnd = () => { pan.current = null; setPanning(false); };
+  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); }, [message.id]);
 
   const close = (after?: () => void) => {
     if (leaving) return;
@@ -678,7 +897,7 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
     cardOp(message, { kind: "column.add", column: { id, name: "New group" } });
     setRenaming(id);
     requestAnimationFrame(() => {
-      scrollRef.current?.querySelector<HTMLElement>(`[data-col="${id}"]`)?.scrollIntoView({ behavior: smooth(), inline: "start", block: "nearest" });
+      scrollRef.current?.querySelector<HTMLElement>(`[data-col="${id}"]`)?.scrollIntoView({ behavior: smooth(), block: "start" });
     });
   };
   const removeGroup = (id: string) => {
@@ -687,13 +906,23 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
     if (col) ui.toast(`Deleted “${col.name}”`);
   };
 
-  const addTo = (column: string, text: string) => {
-    const parsed = parseTaskCommand(`/task ${text}`, people);
-    if (!parsed) return false;
-    const task = newTask({ ...parsed, column, order: endOrder(tasksIn(card, column)) }, me);
-    cardOp(message, { kind: "task.add", task });
+  /* ---- filters: a view-only narrowing of what's shown, never what a drop targets ---- */
+  const [catFilter, setCatFilter] = useState<Set<string>>(new Set());
+  const [prioFilter, setPrioFilter] = useState<Set<Priority>>(new Set());
+  const [dueFilter, setDueFilter] = useState<Set<DueFilter>>(new Set());
+  const filtersActive = catFilter.size > 0 || prioFilter.size > 0 || dueFilter.size > 0;
+  const toggleCat = (id: string) => setCatFilter((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const togglePrio = (id: Priority) => setPrioFilter((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const toggleDue = (id: DueFilter) => setDueFilter((prev) => (prev.has(id) ? new Set() : new Set([id])));
+  const matchesFilter = (t: Task) => {
+    if (catFilter.size && !(t.category && catFilter.has(t.category))) return false;
+    if (prioFilter.size && !prioFilter.has(t.priority)) return false;
+    if (dueFilter.has("overdue") && !(t.due !== null && t.due < now)) return false;
+    if (dueFilter.has("week") && !(t.due !== null && t.due >= now && t.due < now + 7 * DAY)) return false;
+    if (dueFilter.has("none") && t.due !== null) return false;
     return true;
   };
+  const visibleTasksIn = (columnId: string) => tasksIn(card, columnId).filter(matchesFilter);
 
   /* ---- drag and drop ---- */
   const drag = useRef<{
@@ -758,16 +987,8 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
     if (!d?.active || !board) return;
     const r = board.getBoundingClientRect();
     const edge = 44;
-    let dx = 0;
-    if (d.x < r.left + edge) dx = -Math.ceil((r.left + edge - d.x) / 4);
-    else if (d.x > r.right - edge) dx = Math.ceil((d.x - (r.right - edge)) / 4);
-    if (dx) board.scrollLeft += dx;
-    const body = (document.elementFromPoint(d.x, d.y) as HTMLElement | null)?.closest<HTMLElement>("[data-col-body]");
-    if (body) {
-      const b = body.getBoundingClientRect();
-      if (d.y < b.top + edge) body.scrollTop -= Math.ceil((b.top + edge - d.y) / 4);
-      else if (d.y > b.bottom - edge) body.scrollTop += Math.ceil((d.y - (b.bottom - edge)) / 4);
-    }
+    if (d.y < r.top + edge) board.scrollTop -= Math.ceil((r.top + edge - d.y) / 4);
+    else if (d.y > r.bottom - edge) board.scrollTop += Math.ceil((d.y - (r.bottom - edge)) / 4);
     setTarget(findDrop(d.x, d.y));
     d.frame = requestAnimationFrame(tick);
   };
@@ -921,16 +1142,17 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
         </>
       )}
 
-      <div
-        className={`${s.columns} ${panning ? s.columnsPanning : ""}`}
-        ref={scrollRef}
-        onPointerDown={onPanDown}
-        onPointerMove={onPanMove}
-        onPointerUp={onPanEnd}
-        onPointerCancel={onPanEnd}
-      >
+      <div className={s.filterBar}>
+        {card.categories.length > 0 && (
+          <FilterPopover label="Category" options={card.categories.map((c) => ({ id: c.id, label: c.name }))} active={catFilter} onToggle={toggleCat} />
+        )}
+        <FilterPopover label="Priority" options={PRIORITIES.map((p) => ({ id: p.id, label: p.label }))} active={prioFilter} onToggle={togglePrio} />
+        <FilterPopover label="Due" options={DUE_OPTIONS} active={dueFilter} onToggle={toggleDue} />
+      </div>
+
+      <div className={s.columns} ref={scrollRef}>
         {card.columns.map((col, ci) => {
-          const list = tasksIn(card, col.id);
+          const list = visibleTasksIn(col.id);
           const isDone = col.id === done;
           const target = drop?.col === col.id ? drop : null;
           return (
@@ -972,21 +1194,24 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
                     onContextMenu={(e) => e.preventDefault()}
                   >
                     {/* No button inside the tile (it's a button itself); the task sheet has "Show in chat". */}
-                    <TaskBody task={t} now={now} done={isDone} />
+                    <TaskBody task={t} now={now} done={isDone} categories={card.categories} />
                   </div>
                 ))}
                 {target && target.before === null && <div className={s.dropEnd} aria-hidden="true" />}
                 {!list.length && !target && (
-                  <p className={s.empty}>{isDone ? "Finished tasks land here." : ci === 0 ? "Nothing here yet. Add the first task below." : "Hold a task and drag it here."}</p>
+                  <p className={s.empty}>
+                    {filtersActive && tasksIn(card, col.id).length > 0
+                      ? "No tasks match the filters."
+                      : isDone ? "Finished tasks land here." : ci === 0 ? "Nothing here yet. Add the first task below." : "Hold a task and drag it here."}
+                  </p>
                 )}
               </div>
-              <AddTask
-                open={adding === col.id}
-                first={ci === 0}
-                onOpen={() => setAdding(col.id)}
-                onClose={() => setAdding((a) => (a === col.id ? null : a))}
-                onAdd={(text) => addTo(col.id, text)}
-              />
+              <button
+                className={s.addTask}
+                onClick={() => ui.openSheet(<NewTaskSheet chatId={message.chatId} messageId={message.id} column={col.id} onClose={ui.closeSheet} />)}
+              >
+                <IconPlus size={16} /> Add a task
+              </button>
             </section>
           );
         })}
@@ -994,7 +1219,7 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
 
       {dragging && draggingTask && (
         <div ref={ghostRef} className={`${s.task} ${s.ghost}`} style={{ width: dragging.w, minHeight: dragging.h }} aria-hidden="true">
-          <TaskBody task={draggingTask} now={now} done={draggingTask.column === done} />
+          <TaskBody task={draggingTask} now={now} done={draggingTask.column === done} categories={card.categories} />
         </div>
       )}
     </div>

@@ -50,6 +50,21 @@ export interface Block {
   days?: string[];
   ref?: { chatId: string; messageId: string };
   note?: string;
+  /** Set once this item is shared to Explore; cleared again if it's unpublished. */
+  public?: PublicMeta;
+  /** Where a copy saved from Explore came from — hides the "already saved" duplicate and lets un-saving find it again. */
+  savedFrom?: { userId: string; blockId: string };
+}
+
+export interface PublicMeta {
+  /** The cover photo chosen when publishing — a sample/remote URL, or an uploaded attachment (resolved like any other, via `useMediaUrl`). Kept separate from the item's own `image`/`attachment` so publishing never changes how it looks anywhere else in Mind. */
+  image?: string;
+  attachment?: Attachment;
+  /** Chosen from the shared list on Explore (`exploreCategories`), or a new one added on the spot. */
+  category: string;
+  publishedAt: number;
+  /** Who has saved this into their own Mind (not counting the person who published it). */
+  savedBy: string[];
 }
 
 export interface Section { id: string; title: string; emoji: string; collapsed: boolean; blockIds: string[] }
@@ -79,15 +94,22 @@ export interface Collection {
   vault: string[];
   /** Chats whose saves usually land here; learned when you correct a save. */
   chatIds: string[];
+  /** Set once this whole folder is shared to Explore; cleared again if it's unpublished. */
+  public?: PublicMeta;
+  /** Where a copy saved from Explore came from — a whole-folder equivalent of `Block.savedFrom`. */
+  savedFrom?: { userId: string; collectionId: string };
 }
 
 export interface Mind {
-  version: 3;
+  version: number;
   collections: Collection[];
   /** The collection opened last; saves fall back to it. */
   current: string | null;
   blocks: Record<string, Block>;
 }
+
+/** Bump whenever the seed data itself changes, so anyone who already has a Mind picks up the new demo content (Reset-demo-data's automatic cousin — this only replaces stale seed content, per person, on their next load). */
+export const MIND_VERSION = 4;
 
 /* ---------------------------------------------------------------------------
    Dates
@@ -157,14 +179,14 @@ function build(collections: SeedCollection[], current: string | null): Mind {
     return [page, ...pages(sp.children ?? [], tone, id)];
   });
   return {
-    version: 3,
+    version: MIND_VERSION,
     current,
     blocks,
     collections: collections.map((c) => ({ ...c, pages: pages(c.pages, c.tone), vault: c.vault.map(add) })),
   };
 }
 
-const photo = (id: string, w = 700) => `https://images.unsplash.com/${id}?w=${w}&q=70&fm=jpg`;
+export const photo = (id: string, w = 700) => `https://images.unsplash.com/${id}?w=${w}&q=70&fm=jpg`;
 const card = (front: string, back: string, due = false, tags: string[] = []): Item => ({ kind: "flashcard", title: front, back, due, tags });
 const one = (items: Item[]) => [{ title: "", emoji: "", items }];
 
@@ -172,7 +194,10 @@ function alaeMind(): Mind {
   return build([
     {
       id: "c-german", name: "German", emoji: "🇩🇪", tone: "#C99432", chatIds: [],
-      vault: [{ kind: "link", title: "Tandem: find a language exchange partner", source: "tandem.net", url: "https://tandem.net" }],
+      vault: [{
+        kind: "link", title: "Tandem: find a language exchange partner", source: "tandem.net", url: "https://tandem.net",
+        public: { image: photo("photo-1618221195710-dd6b41faaea6"), category: "Learning", publishedAt: Date.now() - 6 * 60 * 60_000, savedBy: [] },
+      }],
       pages: [
         {
           title: "Vocab", emoji: "🃏", view: "grid", views: ["grid", "list", "shelf"], defaultKind: "flashcard",
@@ -206,13 +231,22 @@ function alaeMind(): Mind {
           title: "Grammar", emoji: "📚", view: "shelf", views: ["shelf", "list"], defaultKind: "link",
           sections: [
             { title: "Books", emoji: "📚", items: [
-              { kind: "book", title: "Hammer's German Grammar and Usage", source: "Martin Durrell", shelf: "reading" },
+              {
+                kind: "book", title: "Hammer's German Grammar and Usage", source: "Martin Durrell", shelf: "reading",
+                public: { image: photo("photo-1519682337058-a94d519337bc"), category: "Learning", publishedAt: Date.now() - 5 * 60 * 60_000, savedBy: ["reema"] },
+              },
               { kind: "book", title: "Grammatik aktiv A1–B1", source: "Cornelsen", shelf: "reading" },
               { kind: "book", title: "Schaum's Outline of German Grammar", source: "Elke Gschossmann-Hendershot", shelf: "want" },
             ] },
             { title: "Links", emoji: "🔗", items: [
-              { kind: "link", title: "Dative or accusative? The only chart you need", source: "learngerman.dw.com", url: "https://learngerman.dw.com", tags: ["cases"] },
-              { kind: "link", title: "Where the verb goes in a subordinate clause", source: "yourdailygerman.com", url: "https://yourdailygerman.com" },
+              {
+                kind: "link", title: "Dative or accusative? The only chart you need", source: "learngerman.dw.com", url: "https://learngerman.dw.com", tags: ["cases"],
+                public: { image: photo("photo-1618221195710-dd6b41faaea6"), category: "Learning", publishedAt: Date.now() - 9 * 60 * 60_000, savedBy: [] },
+              },
+              {
+                kind: "link", title: "Where the verb goes in a subordinate clause", source: "yourdailygerman.com", url: "https://yourdailygerman.com",
+                public: { image: photo("photo-1600210492486-724fe5c67fb0"), category: "Learning", publishedAt: Date.now() - 12 * 60 * 60_000, savedBy: ["charles"] },
+              },
             ] },
           ],
         },
@@ -246,9 +280,18 @@ function alaeMind(): Mind {
       vault: [],
       pages: [
         { title: "Vienna weekend", emoji: "🎡", view: "list", defaultKind: "note", sections: one([
-          { kind: "date", title: "Train to Vienna", at: Date.now() + 18 * DAY },
-          { kind: "link", title: "Café Sperl", source: "cafesperl.at", url: "https://cafesperl.at" },
-          { kind: "note", title: "To try", body: "Sachertorte, the Naschmarkt on Saturday morning, a Heuriger in Grinzing." },
+          {
+            kind: "date", title: "Train to Vienna", at: Date.now() + 18 * DAY,
+            public: { image: photo("photo-1600210492486-724fe5c67fb0"), category: "Travel", publishedAt: Date.now() - 4 * DAY, savedBy: ["charles"] },
+          },
+          {
+            kind: "link", title: "Café Sperl", source: "cafesperl.at", url: "https://cafesperl.at",
+            public: { image: photo("photo-1616486338812-3dadae4b4ace"), category: "Travel", publishedAt: Date.now() - 3 * DAY, savedBy: [] },
+          },
+          {
+            kind: "note", title: "To try", body: "Sachertorte, the Naschmarkt on Saturday morning, a Heuriger in Grinzing.",
+            public: { image: photo("photo-1600585154340-be6161a56a0c"), category: "Food", publishedAt: Date.now() - 2 * DAY, savedBy: ["reema"] },
+          },
         ]) },
       ],
     },
@@ -270,8 +313,14 @@ function charlesMind(): Mind {
           { title: "Dates", emoji: "📅", items: [{ kind: "date", title: "Acme launch", at: Date.now() + 5 * DAY }] },
         ] },
         { title: "References", emoji: "📎", view: "list", defaultKind: "link", sections: one([
-          { kind: "link", title: "Acme · Web v3", source: "figma.com", url: "https://figma.com" },
-          { kind: "link", title: "Competitor teardown: linear.app", source: "linear.app", url: "https://linear.app" },
+          {
+            kind: "link", title: "Acme · Web v3", source: "figma.com", url: "https://figma.com",
+            public: { image: photo("photo-1467232004584-a241de8bcf5d"), category: "Work", publishedAt: Date.now() - 30 * 60_000, savedBy: [] },
+          },
+          {
+            kind: "link", title: "Competitor teardown: linear.app", source: "linear.app", url: "https://linear.app",
+            public: { image: photo("photo-1615874959474-d609969a20ed"), category: "Work", publishedAt: Date.now() - 3 * 60 * 60_000, savedBy: ["me"] },
+          },
           { kind: "note", title: "Call · 12 Sep", body: "They want the hero calmer: less gradient, more product. Dana signs off copy." },
         ]) },
       ],
@@ -329,13 +378,24 @@ function reemaMind(): Mind {
   return build([
     {
       id: "c-home", name: "Home ideas", emoji: "🏡", tone: "#5B8A6B", chatIds: ["reema"],
-      vault: [img("photo-1586023492125-27b2c045efd7", "Green velvet chair")],
+      vault: [
+        {
+          ...img("photo-1586023492125-27b2c045efd7", "Green velvet chair"),
+          public: { image: photo("photo-1586023492125-27b2c045efd7"), category: "Home", publishedAt: Date.now() - 2 * 60 * 60_000, savedBy: ["me", "charles"] },
+        },
+      ],
       pages: [
         { title: "Living room", emoji: "🛋️", view: "grid", views: ["grid", "list"], defaultKind: "image", sections: one([
-          img("photo-1616046229478-9901c5536a45", "Sage walls and a round mirror"),
+          {
+            ...img("photo-1616046229478-9901c5536a45", "Sage walls and a round mirror"),
+            public: { image: photo("photo-1616046229478-9901c5536a45"), category: "Home", publishedAt: Date.now() - 8 * 60 * 60_000, savedBy: [] },
+          },
           { kind: "palette", title: "Sage & oak", colors: ["#8A9A7B", "#C9B79C", "#EDE6DA", "#5B4636", "#2F3A2F"] },
           img("photo-1493663284031-b7e3aefcae8e", "Teal cushions"),
-          { kind: "link", title: "Oak side table", source: "hay.com", url: "https://hay.com" },
+          {
+            kind: "link", title: "Oak side table", source: "hay.com", url: "https://hay.com",
+            public: { image: photo("photo-1493663284031-b7e3aefcae8e"), category: "Home", publishedAt: Date.now() - 26 * 60 * 60_000, savedBy: ["me"] },
+          },
           img("photo-1484101403633-562f891dc89a", "A soft grey sofa"),
           img("photo-1616137466211-f939a420be84", "All white, lots of light"),
         ]) },
@@ -365,7 +425,7 @@ export function seedMind(userId: string): Mind {
   if (userId === "me") return alaeMind();
   if (userId === "charles") return charlesMind();
   if (userId === "reema") return reemaMind();
-  return { version: 3, collections: [], current: null, blocks: {} };
+  return { version: MIND_VERSION, collections: [], current: null, blocks: {} };
 }
 
 /* ---------------------------------------------------------------------------
@@ -378,6 +438,8 @@ let cache: Record<string, Mind> | null = null;
 let raw: string | null = null;
 let watching = false;
 const listeners = new Set<() => void>();
+/** Bumped on every write, from any person's Mind — Explore reacts to publishes and saves across the whole cast. */
+let version = 0;
 
 /** `fresh` re-reads storage first, so a write never starts from another tab's stale copy. */
 function load(fresh = false): Record<string, Mind> {
@@ -394,7 +456,7 @@ function write() {
   // Only once it's stored; if it can't be, the next fresh read keeps the in-memory copy.
   try { localStorage.setItem(KEY, text); raw = text; } catch { /* storage full or blocked */ }
 }
-function notify() { listeners.forEach((l) => l()); }
+function notify() { version += 1; listeners.forEach((l) => l()); }
 function subscribe(listener: () => void) {
   listeners.add(listener);
   // Watch other tabs for the life of the page, not just while something is mounted.
@@ -404,13 +466,35 @@ function subscribe(listener: () => void) {
   }
   return () => { listeners.delete(listener); };
 }
+/**
+ * Self-heals Minds saved before `public.category` existed, so an old published
+ * item never crashes a reader — done here, once, rather than a version bump,
+ * since nothing else about the Mind shape changed.
+ */
+function normalizeMind(userId: string, m: Mind): Mind {
+  let changed = false;
+  const blocks = { ...m.blocks };
+  for (const [id, b] of Object.entries(blocks)) {
+    if (b.public && !b.public.category) { blocks[id] = { ...b, public: { ...b.public, category: "Uncategorised" } }; changed = true; }
+  }
+  const collections = m.collections.map((c) => {
+    if (c.public && !c.public.category) { changed = true; return { ...c, public: { ...c.public, category: "Uncategorised" } }; }
+    return c;
+  });
+  if (!changed) return m;
+  const next = { ...m, blocks, collections };
+  cache = { ...cache!, [userId]: next };
+  write();
+  return next;
+}
+
 export function mindOf(userId: string): Mind {
   const all = load();
-  if (!all[userId] || all[userId].version !== 3) {
+  if (!all[userId] || all[userId].version !== MIND_VERSION) {
     all[userId] = seedMind(userId);
     write();
   }
-  return all[userId];
+  return normalizeMind(userId, all[userId]);
 }
 export function updateMind(userId: string, fn: (m: Mind) => Mind) {
   // Read, change and write in one go, from what's stored right now.
@@ -424,6 +508,11 @@ export function useMind(userId: string) {
   const mind = useSyncExternalStore(subscribe, () => mindOf(userId), () => null);
   const update = useCallback((fn: (m: Mind) => Mind) => updateMind(userId, fn), [userId]);
   return { mind, update };
+}
+
+/** For a screen that reads several people's Minds at once (Explore): re-renders on any write, by anyone. */
+export function useMindVersion() {
+  return useSyncExternalStore(subscribe, () => version, () => 0);
 }
 
 /* ---------------------------------------------------------------------------
@@ -573,4 +662,191 @@ export function learnChat(mind: Mind, collectionId: string, chatId: string): Min
       chatIds: c.id === collectionId ? [...new Set([...c.chatIds, chatId])] : c.chatIds.filter((x) => x !== chatId),
     })),
   };
+}
+
+/* ---------------------------------------------------------------------------
+   Explore categories — one shared list, so publishing tags things the same
+   way whoever does it; anyone can add one on the spot when publishing.
+--------------------------------------------------------------------------- */
+
+const CATEGORY_KEY = "nod.explore.categories";
+const DEFAULT_CATEGORIES = ["Home", "Work", "Learning", "Travel", "Food"];
+let categoryCache: string[] | null = null;
+
+function loadCategories(): string[] {
+  if (categoryCache) return categoryCache;
+  try {
+    const text = localStorage.getItem(CATEGORY_KEY);
+    categoryCache = text ? JSON.parse(text) : [...DEFAULT_CATEGORIES];
+  } catch { categoryCache = [...DEFAULT_CATEGORIES]; }
+  return categoryCache!;
+}
+
+export function exploreCategories(): string[] {
+  return loadCategories();
+}
+
+/** Adds a category if it's new (matched case-insensitively); either way, returns its canonical name. */
+export function addExploreCategory(name: string): string {
+  const clean = name.trim();
+  if (!clean) return clean;
+  const list = loadCategories();
+  const existing = list.find((c) => c.toLowerCase() === clean.toLowerCase());
+  if (existing) return existing;
+  categoryCache = [...list, clean];
+  try { localStorage.setItem(CATEGORY_KEY, JSON.stringify(categoryCache)); } catch { /* storage full or blocked */ }
+  notify();
+  return clean;
+}
+
+/* ---------------------------------------------------------------------------
+   Explore — anything published from any Mind, across the whole cast
+--------------------------------------------------------------------------- */
+
+export function publishBlock(userId: string, blockId: string, cover: { image?: string; attachment?: Attachment; category: string }) {
+  updateMind(userId, (m) => {
+    const b = m.blocks[blockId];
+    if (!b) return m;
+    return { ...m, blocks: { ...m.blocks, [blockId]: { ...b, public: { ...cover, publishedAt: Date.now(), savedBy: b.public?.savedBy ?? [] } } } };
+  });
+}
+
+export function unpublishBlock(userId: string, blockId: string) {
+  updateMind(userId, (m) => {
+    const b = m.blocks[blockId];
+    if (!b?.public) return m;
+    const { public: _dropped, ...rest } = b;
+    void _dropped;
+    return { ...m, blocks: { ...m.blocks, [blockId]: rest } };
+  });
+}
+
+/** Every published item across a set of people (Explore doesn't belong to one Mind). */
+export function publicBlocks(userIds: string[]): { userId: string; block: Block }[] {
+  const out: { userId: string; block: Block }[] = [];
+  for (const userId of userIds) {
+    const mind = mindOf(userId);
+    for (const block of Object.values(mind.blocks)) if (block.public) out.push({ userId, block });
+  }
+  return out.sort((a, b) => b.block.public!.publishedAt - a.block.public!.publishedAt);
+}
+
+/**
+ * Saves (or un-saves) someone else's published item into your own Mind: a
+ * plain copy, not a live reference — Explore has no "chat" to stay linked to.
+ * Also records the save on the source item, so its face-pile stays accurate.
+ */
+export function toggleSaveExploreItem(me: string, sourceUserId: string, blockId: string): "saved" | "removed" | "no-collection" {
+  if (sourceUserId !== me) {
+    updateMind(sourceUserId, (m) => {
+      const b = m.blocks[blockId];
+      if (!b?.public) return m;
+      const already = b.public.savedBy.includes(me);
+      const savedBy = already ? b.public.savedBy.filter((id) => id !== me) : [...b.public.savedBy, me];
+      return { ...m, blocks: { ...m.blocks, [blockId]: { ...b, public: { ...b.public, savedBy } } } };
+    });
+  }
+  let result: "saved" | "removed" | "no-collection" = "saved";
+  updateMind(me, (m) => {
+    const existing = Object.entries(m.blocks).find(([, b]) => b.savedFrom?.userId === sourceUserId && b.savedFrom?.blockId === blockId);
+    if (existing) { result = "removed"; return removeBlock(m, existing[0]); }
+    if (!m.collections.length) { result = "no-collection"; return m; }
+    const source = mindOf(sourceUserId).blocks[blockId];
+    if (!source) return m;
+    const id = newId();
+    const copy: Block = { ...source, id, createdAt: Date.now(), tags: [...source.tags], public: undefined, savedFrom: { userId: sourceUserId, blockId } };
+    return place({ ...m, blocks: { ...m.blocks, [id]: copy } }, id, { collectionId: m.current ?? m.collections[0].id });
+  });
+  return result;
+}
+
+/* ---------------------------------------------------------------------------
+   Explore — whole collections, not just single items
+--------------------------------------------------------------------------- */
+
+export function publishCollection(userId: string, collectionId: string, cover: { image?: string; attachment?: Attachment; category: string }) {
+  updateMind(userId, (m) => patchCollection(m, collectionId, (c) => ({
+    ...c, public: { ...cover, publishedAt: Date.now(), savedBy: c.public?.savedBy ?? [] },
+  })));
+}
+
+export function unpublishCollection(userId: string, collectionId: string) {
+  updateMind(userId, (m) => patchCollection(m, collectionId, (c) => {
+    if (!c.public) return c;
+    const { public: _dropped, ...rest } = c;
+    void _dropped;
+    return rest;
+  }));
+}
+
+/** Every published folder across a set of people. */
+export function publicCollections(userIds: string[]): { userId: string; collection: Collection }[] {
+  const out: { userId: string; collection: Collection }[] = [];
+  for (const userId of userIds) {
+    for (const c of mindOf(userId).collections) if (c.public) out.push({ userId, collection: c });
+  }
+  return out.sort((a, b) => b.collection.public!.publishedAt - a.collection.public!.publishedAt);
+}
+
+/** How many items a folder holds, across its pages and Vault — shown next to its cover on Explore. */
+export function collectionItemCount(mind: Mind, c: Collection): number {
+  return collectionItems(mind, c).length;
+}
+
+/**
+ * Saves (or un-saves) someone else's published folder into your own Mind: a
+ * full copy — every page, section and item gets a fresh id, so it's yours to
+ * edit without touching theirs. Also records the save on the source, so its
+ * face-pile stays accurate.
+ */
+export function toggleSaveExploreCollection(me: string, sourceUserId: string, collectionId: string): "saved" | "removed" {
+  if (sourceUserId !== me) {
+    updateMind(sourceUserId, (m) => patchCollection(m, collectionId, (c) => {
+      if (!c.public) return c;
+      const already = c.public.savedBy.includes(me);
+      const savedBy = already ? c.public.savedBy.filter((id) => id !== me) : [...c.public.savedBy, me];
+      return { ...c, public: { ...c.public, savedBy } };
+    }));
+  }
+  let result: "saved" | "removed" = "saved";
+  updateMind(me, (m) => {
+    const existing = m.collections.find((c) => c.savedFrom?.userId === sourceUserId && c.savedFrom?.collectionId === collectionId);
+    if (existing) {
+      result = "removed";
+      const ids = new Set(collectionItems(m, existing).map((b) => b.id));
+      const blocks = { ...m.blocks };
+      ids.forEach((id) => delete blocks[id]);
+      return { ...m, blocks, collections: m.collections.filter((c) => c.id !== existing.id) };
+    }
+    const source = mindOf(sourceUserId).collections.find((c) => c.id === collectionId);
+    if (!source) return m;
+
+    // Fresh ids throughout: the block map first (pages reference these by id)...
+    const blocks = { ...m.blocks };
+    const remapBlock = (oldId: string): string | null => {
+      const original = mindOf(sourceUserId).blocks[oldId];
+      if (!original) return null;
+      const id = newId();
+      blocks[id] = { ...original, id, createdAt: Date.now(), tags: [...original.tags], public: undefined, savedFrom: undefined };
+      return id;
+    };
+    // ...then the pages (and their parent links, since sub-pages point at their parent's old id).
+    const pageIdMap = new Map<string, string>();
+    const pages: Page[] = source.pages.map((p) => {
+      const id = newId("p");
+      pageIdMap.set(p.id, id);
+      return {
+        ...p, id,
+        sections: p.sections.map((s) => ({ ...s, id: newId("s"), blockIds: s.blockIds.map(remapBlock).filter((x): x is string => !!x) })),
+      };
+    });
+    pages.forEach((p) => { if (p.parentId) p.parentId = pageIdMap.get(p.parentId); });
+
+    const newCollection: Collection = {
+      ...source, id: newId("c"), pages, vault: [], chatIds: [], public: undefined,
+      savedFrom: { userId: sourceUserId, collectionId },
+    };
+    return { ...m, blocks, collections: [...m.collections, newCollection] };
+  });
+  return result;
 }

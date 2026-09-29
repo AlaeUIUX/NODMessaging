@@ -13,6 +13,40 @@ const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 
 type LegacyMessage = Partial<Message> & Record<string, unknown>;
 
+const PRIORITIES = new Set(["urgent", "moderate", "low"]);
+
+/** A project board from before categories/priority/progress existed on tasks. */
+function normalizeCard(card: unknown): Message["card"] {
+  if (!isRecord(card) || card.type !== "project") return card as Message["card"];
+  const tasks: Record<string, unknown> = {};
+  for (const [id, t] of Object.entries(isRecord(card.tasks) ? card.tasks : {})) {
+    if (!isRecord(t)) continue;
+    tasks[id] = {
+      ...t,
+      priority: PRIORITIES.has(t.priority as string) ? t.priority : "moderate",
+      category: typeof t.category === "string" ? t.category : null,
+      progress: typeof t.progress === "number" ? t.progress : 0,
+      subtasks: Array.isArray(t.subtasks) ? t.subtasks : [],
+    };
+  }
+  return { ...card, categories: Array.isArray(card.categories) ? card.categories : [], tasks } as Message["card"];
+}
+
+/**
+ * Defaults a project board's newer fields, no matter how it got here — even
+ * through the fast path below, whose shape check only ever looked at the
+ * envelope (chats/messages/archive/lastReadAt), never at what's inside a
+ * card. A version bump alone doesn't help data that was already saved back
+ * out stamped with the new version number before this existed.
+ */
+function normalizeCardsIn(messages: Record<string, Message[]>): Record<string, Message[]> {
+  const out: Record<string, Message[]> = {};
+  for (const [chatId, list] of Object.entries(messages)) {
+    out[chatId] = list.map((m) => (m.card ? { ...m, card: normalizeCard(m.card) } : m));
+  }
+  return out;
+}
+
 /**
  * Backfills a message from any earlier shape. Pre-v2 records came from the
  * prototype and carry no delivery/reaction/reply metadata.
@@ -50,7 +84,7 @@ function backfillMessage(raw: LegacyMessage, chatId: string, index: number): Mes
     attachments: Array.isArray(raw.attachments) ? (raw.attachments as Message["attachments"]) : [],
     durationMs: typeof raw.durationMs === "number" ? raw.durationMs : undefined,
     waveform: Array.isArray(raw.waveform) ? (raw.waveform as number[]) : undefined,
-    card: raw.card as Message["card"],
+    card: normalizeCard(raw.card),
   };
 }
 
@@ -94,7 +128,13 @@ export function migrate(stored: unknown): ChatState {
   if (
     raw.version === CURRENT_VERSION && Array.isArray(raw.chats) && isRecord(raw.messages)
     && isRecord(raw.archive) && isRecord(raw.lastReadAt)
-  ) return raw as ChatState;
+  ) {
+    return {
+      ...raw,
+      messages: normalizeCardsIn(raw.messages as Record<string, Message[]>),
+      archive: normalizeCardsIn(raw.archive as Record<string, Message[]>),
+    } as ChatState;
+  }
 
   const messages: Record<string, Message[]> = {};
   for (const [chatId, list] of Object.entries(isRecord(raw.messages) ? raw.messages : {})) {

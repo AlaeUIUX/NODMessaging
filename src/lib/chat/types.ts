@@ -92,6 +92,10 @@ export interface BillCard {
   paid: string[];
 }
 
+export type Priority = "urgent" | "moderate" | "low";
+
+export interface Subtask { id: string; title: string; done: boolean }
+
 export interface Task {
   id: string;
   title: string;
@@ -100,18 +104,26 @@ export interface Task {
   order: number;
   assignee: string | null;
   due: number | null;
+  priority: Priority;
+  /** A categories[].id on the same board, or null when uncategorised. */
+  category: string | null;
+  /** 0-100. */
+  progress: number;
+  /** Checking the last one off moves the task to the board's done column. */
+  subtasks: Subtask[];
   /** The message this task was made from, if any. */
   fromMessageId?: string;
   createdBy: string;
   createdAt: number;
   /** When each field last changed: concurrent edits merge per field, newest wins. */
-  updatedAt: Partial<Record<"title" | "column" | "order" | "assignee" | "due", number>>;
+  updatedAt: Partial<Record<"title" | "column" | "order" | "assignee" | "due" | "priority" | "category" | "progress" | "subtasks", number>>;
   deleted?: boolean;
 }
 export interface ProjectCard {
   type: "project";
   name: string;
   columns: { id: string; name: string }[];
+  categories: { id: string; name: string }[];
   tasks: Record<string, Task>;
 }
 
@@ -127,11 +139,14 @@ export type CardOp =
   | { kind: "bill.claimAll"; userIds: string[] }
   | { kind: "bill.pay"; userId: string }
   | { kind: "task.add"; task: Task }
-  | { kind: "task.update"; id: string; patch: Partial<Pick<Task, "title" | "column" | "order" | "assignee" | "due">>; at: number }
+  | { kind: "task.update"; id: string; patch: Partial<Pick<Task, "title" | "column" | "order" | "assignee" | "due" | "priority" | "category" | "progress" | "subtasks">>; at: number }
   | { kind: "task.remove"; id: string }
   | { kind: "column.rename"; id: string; name: string }
   | { kind: "column.add"; column: { id: string; name: string } }
-  | { kind: "column.remove"; id: string };
+  | { kind: "column.remove"; id: string }
+  | { kind: "category.rename"; id: string; name: string }
+  | { kind: "category.add"; category: { id: string; name: string } }
+  | { kind: "category.remove"; id: string };
 
 /** One pen stroke on a shared doodle; points are x,y pairs in a 300×220 space. */
 export interface SketchStroke { id: string; by: string; color: string; size: number; pts: number[] }

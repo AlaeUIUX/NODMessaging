@@ -10,6 +10,7 @@ import { IconBellOff, IconPin } from "./Icons";
 import Logo from "./Logo";
 import { emojify } from "@/lib/chat/emoji";
 import AnalyticsTab from "./Analytics";
+import ExploreTab from "./Explore";
 import MindTab from "./Mind";
 import NewChat from "./NewChat";
 import StatusBar from "./StatusBar";
@@ -268,14 +269,6 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
     { id: "spaces", label: "Groups", badge: spaceMention ? "@" : undefined },
   ];
 
-  const placeholder = (title: string, body: string) => (
-    <div className={styles.tabEmpty}>
-      <Logo size={40} />
-      <h2>{title}</h2>
-      <p>{body}</p>
-    </div>
-  );
-
   return (
     // Covered by an open chat: out of the tab order and the accessibility tree.
     <div className={`${styles.screen} ${styles.inboxScreen} ${pushed ? styles.pushed : ""}`} data-inbox-screen inert={pushed}>
@@ -283,7 +276,7 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
 
       {tab === "mind" ? <MindTab onOpenChat={onOpen} /> : tab === "analytics" ? (
         <AnalyticsTab onOpenChat={onOpen} mode={analyticsMode} onOpenWidget={onOpenWidget} />
-      ) : (
+      ) : tab === "explore" ? <ExploreTab /> : (
       <>
       <header className={styles.profile}>
         <div className={styles.profileRow}>
@@ -316,11 +309,8 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
       </header>
 
       <div className={styles.inboxBody}>
-        {tab === "explore" ? placeholder("Explore", "Discover public spaces and people on NOD.")
-        : (
           <div className={styles.inboxScroll}>
-            {tab === "chats" && (
-              <div className={styles.chips} role="tablist">
+            <div className={styles.chips} role="tablist">
                 {chips.map((c) => (
                   <button
                     key={c.id}
@@ -334,7 +324,6 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
                   </button>
                 ))}
               </div>
-            )}
 
             <div className={styles.rows} key={`${tab}-${effective}`}>
               {visible.map(({ chat, last, unread, mentioned }, i) => {
@@ -396,7 +385,6 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
               )}
             </div>
           </div>
-        )}
       </div>
 
       </>

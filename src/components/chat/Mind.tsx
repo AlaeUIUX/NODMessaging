@@ -5,8 +5,9 @@ import { initials, TONES } from "@/lib/chat/avatar";
 import { Emoji, emojify, firstEmoji } from "@/lib/chat/emoji";
 import { toAttachment } from "@/lib/chat/media";
 import {
-  blankPage, childrenOf, collectionItems, detach, learnChat, locate, makeCollection, newId, nowMs, pageItems, patchBlock,
-  patchCollection, patchPage, place, removeBlock, tagsOf, todayKey, useMind,
+  addExploreCategory, blankPage, childrenOf, collectionItems, detach, exploreCategories, learnChat, locate, makeCollection,
+  newId, nowMs, pageItems, patchBlock, patchCollection, patchPage, photo, place, publishBlock, publishCollection, removeBlock,
+  tagsOf, todayKey, unpublishBlock, unpublishCollection, useMind,
   type Block, type BlockKind, type Collection, type Mind, type MindView, type Page, type TaskStatus,
 } from "@/lib/chat/mind";
 import { useChat, userById } from "@/lib/chat/store";
@@ -15,7 +16,7 @@ import Avatar from "./Avatar";
 import { BlockView, KIND_LABEL } from "./MindBlocks";
 import {
   IconArrowUp, IconBack, IconBoard, IconCheck, IconChevron, IconChevronDown, IconClose, IconGrid, IconListView,
-  IconFolder, IconMore, IconOpen, IconPlus, IconShelf, IconSmile, IconTrash,
+  IconFolder, IconMore, IconOpen, IconPlus, IconShare, IconShelf, IconSmile, IconTrash,
 } from "./Icons";
 import Logo from "./Logo";
 import { Segmented, Sheet, Toggle } from "./ui";
@@ -502,6 +503,28 @@ function FolderSheet({ ctx, colId, onDeleted }: { ctx: Ctx; colId: string; onDel
           <div className={styles.mindSwatches}>
             {Object.values(TONES).map((c) => <button key={c} style={{ background: c }} className={col.tone === c ? styles.mindPickOn : undefined} onClick={() => set({ tone: c })} aria-label={`Colour ${c}`} />)}
           </div>
+
+          <div className={styles.mindSectionBar}>
+            <p className={styles.sheetLabel}>Explore</p>
+            {col.public ? (
+              <button
+                className={styles.mindPill}
+                onClick={() => { unpublishCollection(ctx.me, colId); ctx.flash("Removed from Explore"); }}
+              >
+                <IconShare size={14} /> Unpublish
+              </button>
+            ) : (
+              <button className={styles.mindPill} onClick={() => close(() => ctx.openSheet(<PublishSheet ctx={ctx} target={{ kind: "collection", id: colId }} />))}>
+                <IconShare size={14} /> Publish
+              </button>
+            )}
+          </div>
+          {col.public && (
+            <p className={styles.mindHint}>
+              The whole folder is public on Explore{col.public.savedBy.length ? ` · saved by ${col.public.savedBy.length}` : ""}.
+            </p>
+          )}
+
           <button
             className={styles.mindDanger}
             onClick={() => close(() => {
@@ -1401,8 +1424,153 @@ function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
             </nav>
           ) : <p className={styles.mindHint}>Not in a collection.</p>}
 
+          {/* A "chat" item is a reference to a private message — never publishable. */}
+          {b.kind !== "chat" && (
+            <>
+              <div className={styles.mindSectionBar}>
+                <p className={styles.sheetLabel}>Explore</p>
+                {b.public ? (
+                  <button
+                    className={styles.mindPill}
+                    onClick={() => { unpublishBlock(ctx.me, id); ctx.flash("Removed from Explore"); }}
+                  >
+                    <IconShare size={14} /> Unpublish
+                  </button>
+                ) : (
+                  <button className={styles.mindPill} onClick={() => close(() => ctx.openSheet(<PublishSheet ctx={ctx} target={{ kind: "block", id }} />))}>
+                    <IconShare size={14} /> Publish
+                  </button>
+                )}
+              </div>
+              {b.public && (
+                <p className={styles.mindHint}>
+                  Public on Explore{b.public.savedBy.length ? ` · saved by ${b.public.savedBy.length}` : ""}.
+                </p>
+              )}
+            </>
+          )}
+
           <button className={styles.mindDanger} onClick={() => close(() => removeItem(update, ctx.flash, id))}>Remove from Mind</button>
         </>
+      )}
+    </Sheet>
+  );
+}
+
+/** A handful of ready photos, so publishing never blocks on finding the perfect shot. */
+const PUBLISH_IMAGES = [
+  "photo-1618221195710-dd6b41faaea6", "photo-1600210492486-724fe5c67fb0", "photo-1616486338812-3dadae4b4ace",
+  "photo-1467232004584-a241de8bcf5d", "photo-1519682337058-a94d519337bc", "photo-1493663284031-b7e3aefcae8e",
+  "photo-1600585154340-be6161a56a0c", "photo-1615874959474-d609969a20ed",
+];
+
+type PublishTarget = { kind: "block"; id: string } | { kind: "collection"; id: string };
+
+/** The category chip picker on the publish sheet: a shared list across everyone, extendable on the spot. */
+function ExploreCategoryPicker({ value, onChange }: { value: string | null; onChange: (category: string) => void }) {
+  const [categories, setCategories] = useState(exploreCategories);
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const discard = useRef(false);
+  const commit = () => {
+    if (discard.current) { discard.current = false; setDraft(""); setAdding(false); return; }
+    const name = draft.trim();
+    setDraft("");
+    setAdding(false);
+    if (!name) return;
+    const category = addExploreCategory(name);
+    setCategories(exploreCategories());
+    onChange(category);
+  };
+  return (
+    <div className={styles.chipGrid} role="radiogroup" aria-label="Category">
+      {categories.map((c) => (
+        <button key={c} role="radio" aria-checked={value === c} className={`${styles.choice} ${value === c ? styles.choiceOn : ""}`} onClick={() => onChange(c)}>
+          {c}
+        </button>
+      ))}
+      {adding ? (
+        <input
+          className={styles.mindTagInput}
+          ref={(el) => el?.focus({ preventScroll: true })}
+          placeholder="Category"
+          value={draft}
+          size={Math.max(8, draft.length + 1)}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              e.nativeEvent.stopImmediatePropagation();
+              discard.current = true;
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+          onBlur={commit}
+          aria-label="New category name"
+        />
+      ) : (
+        <button className={`${styles.choice} ${styles.mindAddTag}`} onClick={() => { discard.current = false; setAdding(true); }}>
+          <IconPlus size={14} /> New
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Choosing a cover (and a category) is the whole point of this sheet: publishing never changes how the item (or folder) looks in Mind itself. */
+function PublishSheet({ ctx, target }: { ctx: Ctx; target: PublishTarget }) {
+  const b = target.kind === "block" ? ctx.mind.blocks[target.id] : undefined;
+  const col = target.kind === "collection" ? ctx.mind.collections.find((c) => c.id === target.id) : undefined;
+  const [image, setImage] = useState(PUBLISH_IMAGES[0]);
+  const [upload, setUpload] = useState<File | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  if (target.kind === "block" && !b) return null;
+  if (target.kind === "collection" && !col) return null;
+
+  const label = target.kind === "block" ? KIND_LABEL[b!.kind] : "Folder";
+
+  const publish = async () => {
+    if (!category) return;
+    const cover = upload ? { attachment: (await toAttachment(upload)) ?? undefined } : { image: photo(image) };
+    if (target.kind === "block") publishBlock(ctx.me, target.id, { ...cover, category });
+    else publishCollection(ctx.me, target.id, { ...cover, category });
+    ctx.flash(`${label} published to Explore`);
+  };
+
+  return (
+    <Sheet title="Publish to Explore" onClose={ctx.closeSheet} action={{ label: "Publish", disabled: !category, onClick: () => { void publish(); } }}>
+      {b ? (
+        <div className={styles.mindDetail}><BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} /></div>
+      ) : (
+        <div className={styles.actionRow}>
+          <span className={styles.mindEmoji} style={{ background: `color-mix(in srgb, ${col!.tone} 16%, transparent)` }}><Emoji char={col!.emoji} /></span>
+          <span className={styles.contactText}><b>{col!.name}</b><small>{collectionItems(ctx.mind, col!).length} items</small></span>
+        </div>
+      )}
+      <p className={styles.sheetNote}>
+        Anyone can find this on Explore, with the cover and category you pick below. It won&rsquo;t change how it{col ? " (or anything in it)" : ""} looks anywhere in your own Mind.
+      </p>
+
+      <p className={styles.sheetLabel}>Category</p>
+      <ExploreCategoryPicker value={category} onChange={setCategory} />
+
+      <p className={styles.sheetLabel}>Cover photo</p>
+      <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => setUpload(e.target.files?.[0] ?? null)} />
+      <button className={styles.secondaryWide} onClick={() => fileRef.current?.click()}>
+        {upload ? `✓ ${upload.name}` : "Upload a photo"}
+      </button>
+      {!upload && (
+        <div className={styles.mindPickImages}>
+          {PUBLISH_IMAGES.map((src) => (
+            <button key={src} className={image === src ? styles.mindPickOn : undefined} onClick={() => setImage(src)} aria-label="Choose cover photo">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={photo(src, 200)} alt="" />
+            </button>
+          ))}
+        </div>
       )}
     </Sheet>
   );

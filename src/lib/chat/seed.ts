@@ -176,4 +176,4 @@ export function buildSeedState(now = Date.now()): ChatState {
 
 // v7/v8 added the plan, bill and board demos; existing threads keep theirs and gain these
 // (v8 again, for anyone who loaded v7 before the demos were filled in).
-export const CURRENT_VERSION = 8;
+export const CURRENT_VERSION = 10;

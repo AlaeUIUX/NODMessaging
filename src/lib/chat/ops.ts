@@ -9,7 +9,7 @@ import type { BillCard, Card, CardOp, PlanCard, PlanDay, PlanStop, ProjectCard, 
 export function reduceCardOp(card: Card, op: CardOp): Card {
   if (card.type === "plan" && op.kind.startsWith("plan.")) return reducePlan(card, op);
   if (card.type === "bill" && op.kind.startsWith("bill.")) return reduceBill(card, op);
-  if (card.type === "project" && (op.kind.startsWith("task.") || op.kind.startsWith("column."))) return reduceProject(card, op);
+  if (card.type === "project" && (op.kind.startsWith("task.") || op.kind.startsWith("column.") || op.kind.startsWith("category."))) return reduceProject(card, op);
   return card;
 }
 
@@ -131,7 +131,7 @@ export function money(cents: number, currency = "EUR") {
    Projects
 --------------------------------------------------------------------------- */
 
-const TASK_FIELDS = ["title", "column", "order", "assignee", "due"] as const;
+const TASK_FIELDS = ["title", "column", "order", "assignee", "due", "priority", "category", "progress", "subtasks"] as const;
 
 function reduceProject(card: ProjectCard, op: CardOp): ProjectCard {
   switch (op.kind) {
@@ -171,6 +171,20 @@ function reduceProject(card: ProjectCard, op: CardOp): ProjectCard {
       const tasks: Record<string, Task> = {};
       for (const [id, t] of Object.entries(card.tasks)) tasks[id] = t.column === op.id && !t.deleted ? { ...t, deleted: true } : t;
       return { ...card, columns: card.columns.filter((c) => c.id !== op.id), tasks };
+    }
+    case "category.rename":
+      if (!card.categories.some((c) => c.id === op.id && c.name !== op.name)) return card;
+      return { ...card, categories: card.categories.map((c) => (c.id === op.id ? { ...c, name: op.name } : c)) };
+    case "category.add": {
+      if (card.categories.some((c) => c.id === op.category.id)) return card;
+      return { ...card, categories: [...card.categories, op.category] };
+    }
+    case "category.remove": {
+      // A tag, not a required grouping: no floor, and tasks just lose the tag instead of being deleted.
+      if (!card.categories.some((c) => c.id === op.id)) return card;
+      const tasks: Record<string, Task> = {};
+      for (const [id, t] of Object.entries(card.tasks)) tasks[id] = t.category === op.id ? { ...t, category: null } : t;
+      return { ...card, categories: card.categories.filter((c) => c.id !== op.id), tasks };
     }
     default:
       return card;

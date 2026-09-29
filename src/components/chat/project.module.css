@@ -173,45 +173,37 @@
 .pickNew { margin-top: 2px; box-shadow: 0 -1px 0 var(--line); border-radius: 0 0 var(--r-md) var(--r-md); }
 .pickNew b { color: var(--accent); }
 
+.filterBar {
+  flex-shrink: 0;
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 8px;
+  flex-wrap: wrap;
+}
+
 .columns {
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
   gap: 12px;
   padding: 6px 16px calc(var(--inset-bottom) + 8px);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  scroll-padding-inline: 16px;
-  overscroll-behavior-x: contain;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   scrollbar-width: none;
 }
 .columns::-webkit-scrollbar { display: none; }
-/* With a mouse there's no swipe: show a slim scrollbar and let the background be grabbed. */
-@media (hover: hover) and (pointer: fine) {
-  .columns { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--ink) 22%, transparent) transparent; cursor: grab; }
-  .columns::-webkit-scrollbar { display: block; height: 6px; }
-  .columns::-webkit-scrollbar-thumb { border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 22%, transparent); }
-  .column { cursor: default; }
-}
-.columnsPanning, .columnsPanning * { cursor: grabbing !important; user-select: none; }
-/* Snap only when not being dragged by hand, or the drag fights it. */
-.columnsPanning { scroll-snap-type: none; }
-/* Snapping fights the edge auto-scroll while a task is held. */
-.boardDragging .columns { scroll-snap-type: none; }
 .boardDragging, .boardDragging * { cursor: grabbing; }
 
 .column {
-  flex: 0 0 min(84%, 320px);
-  max-height: 100%;
-  min-height: 0;
+  flex: none;
+  width: 100%;
   display: flex;
   flex-direction: column;
   padding-bottom: 8px;
   border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--ink) 4%, transparent);
-  scroll-snap-align: start;
   transition: background var(--t-mid) var(--ease-out), box-shadow var(--t-mid) var(--ease-out);
 }
 .column.columnInto {
@@ -316,18 +308,11 @@
 }
 
 .colBody {
-  flex: 0 1 auto;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  /* Room so the cards' shadows aren't clipped by the scroller. */
-  padding: 4px 10px var(--e2-room);
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  scrollbar-width: none;
+  padding: 4px 10px 2px;
 }
-.colBody::-webkit-scrollbar { display: none; }
 
 .task {
   position: relative;
@@ -369,6 +354,8 @@
 }
 @keyframes ghostIn { from { opacity: .7; } to { opacity: 1; } }
 
+.taskCategory { margin: 0 0 3px; font: var(--t-caption1); font-weight: var(--w-control); color: var(--ink-3); }
+
 .taskTitle {
   display: flex;
   align-items: baseline;
@@ -379,6 +366,75 @@
   overflow-wrap: anywhere;
 }
 .taskTitle.taskDone { color: var(--ink-2); }
+
+.taskBadges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.priorityBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 9px;
+  border-radius: var(--r-pill);
+  font: var(--t-caption1);
+  font-weight: var(--w-control);
+  white-space: nowrap;
+}
+.priorityUrgent { background: var(--bad-soft); color: var(--bad); }
+.priorityModerate { background: var(--warn-soft); color: var(--warn); }
+.priorityLow { background: var(--ok-soft); color: var(--ok); }
+
+/* The sheet's priority chips: always tinted, never inverted by .choiceOn. */
+.priorityChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--r-pill);
+  font: var(--t-subhead);
+  font-weight: var(--w-control);
+  cursor: pointer;
+  transition: box-shadow var(--t-fast) var(--ease-out);
+}
+.priorityChip:active { transform: scale(.95); }
+.priorityChipOn { box-shadow: inset 0 0 0 1.5px currentColor; }
+.priorityDot { width: 8px; height: 8px; border-radius: var(--r-pill); background: currentColor; flex-shrink: 0; }
+
+.progressRow { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.progressBar {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  overflow: hidden;
+}
+.progressBar span { display: block; height: 100%; border-radius: var(--r-pill); background: var(--accent); transition: width var(--t-mid) var(--ease-out); }
+.progressRow em { flex-shrink: 0; font-style: normal; font: var(--t-caption1); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* The sheet's progress slider. */
+.progressField { display: flex; align-items: center; gap: 12px; height: 44px; }
+.progressField span { flex-shrink: 0; min-width: 34px; font: var(--t-subhead); color: var(--ink-2); font-variant-numeric: tabular-nums; text-align: right; }
+.progressField input[type="range"] {
+  flex: 1;
+  height: 20px;
+  margin: 0;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.progressField input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 10%, transparent); }
+.progressField input[type="range"]::-moz-range-track { height: 6px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 10%, transparent); }
+.progressField input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -7px;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  box-shadow: var(--e1);
+  cursor: pointer;
+}
+.progressField input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border: none; border-radius: var(--r-pill); background: var(--ink); box-shadow: var(--e1); cursor: pointer; }
 .doneMark {
   width: 16px;
   height: 16px;
@@ -411,6 +467,56 @@
 }
 /* A small chip with a finger-sized hit area. */
 button.fromChat::after { content: ""; position: absolute; inset: -10px -4px; }
+
+.subtaskChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--fill);
+  color: var(--ink-2);
+  font: var(--t-caption1);
+  font-weight: var(--w-control);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- subtask checklist (task sheet, new-task sheet) ---- */
+.subtaskList { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.subtaskRow { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+.subtaskCheck {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: transparent;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+.subtaskCheckOn { background: var(--accent); color: var(--bg); }
+.subtaskTitle { flex: 1; min-width: 0; font: var(--t-subhead); overflow-wrap: anywhere; }
+.subtaskTitle.subtaskDone { color: var(--ink-3); text-decoration: line-through; }
+.subtaskRemove {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.subtaskRemove:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
 
 .empty {
   margin: 0;
