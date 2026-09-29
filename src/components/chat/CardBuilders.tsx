@@ -28,7 +28,10 @@ type Send = (card: Card, summary: string) => void;
    Add to message — the launcher
 --------------------------------------------------------------------------- */
 
-const GROUPS: { title: string; tone: AvatarTone; items: { kind: AddKind; label: string; icon: React.ReactNode }[] }[] = [
+/** Artifacts (Doodle, Tic-tac-toe, Wheel) are hidden for now; flip this to bring the group back. */
+const SHOW_ARTIFACTS = false;
+
+const ALL_GROUPS: { title: string; tone: AvatarTone; items: { kind: AddKind; label: string; icon: React.ReactNode }[] }[] = [
   {
     title: "Media",
     tone: "denim",
@@ -71,6 +74,8 @@ const GROUPS: { title: string; tone: AvatarTone; items: { kind: AddKind; label: 
     ],
   },
 ];
+
+const GROUPS = ALL_GROUPS.filter((g) => SHOW_ARTIFACTS || g.title !== "Artifacts");
 
 export function AddSheet({ onPick, onClose }: { onPick: (k: AddKind) => void; onClose: () => void }) {
   return (

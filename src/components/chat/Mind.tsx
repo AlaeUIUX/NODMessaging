@@ -14,15 +14,18 @@ import type { Chat } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { BlockView, KIND_LABEL } from "./MindBlocks";
 import {
-  IconArrowUp, IconBack, IconBoard, IconCheck, IconChevron, IconChevronDown, IconClose, IconGrid, IconListView,
-  IconFolder, IconMore, IconOpen, IconPlus, IconShelf, IconSmile, IconTrash,
+  IconArrowRight, IconArrowUp, IconBack, IconBoard, IconCheck, IconChevron, IconChevronDown, IconClose, IconEdit, IconGrid,
+  IconFolder, IconInbox, IconListView, IconMessage, IconMore, IconOpen, IconPalette, IconPlus, IconShelf, IconSmile, IconTrash,
 } from "./Icons";
+import { HoldMenu, useHold, type HoldAction, type HoldBind, type HoldSrc } from "./MindHold";
 import Logo from "./Logo";
 import { Segmented, Sheet, Toggle } from "./ui";
 import styles from "./chat.module.css";
 
 /**
- * Mind: collections of pages, built one + at a time. The same parts as the
+ * Mind: collections of stacks, built one + at a time. A stack holds items and
+ * other stacks side by side (it's called a stack, not a page or a folder: it's
+ * one of the things in a collection, not a document or a Drive folder). The same parts as the
  * messaging app: pages push in like chats, sheets rise like the Add sheet,
  * the quick-add field works like the composer, and anything held for a
  * moment can be picked up and dropped somewhere else.
@@ -34,12 +37,26 @@ const VIEW_META: Record<MindView, { label: string; icon: React.ReactNode }> = {
   grid: { label: "Grid", icon: <IconGrid size={15} /> },
   board: { label: "Board", icon: <IconBoard size={15} /> },
 };
+/** A collection's top level has no board: that needs to-dos, which live in stacks. */
+const COLLECTION_VIEWS: MindView[] = ["list", "grid", "shelf"];
+
+function ViewSwitch({ views, value, onPick }: { views: MindView[]; value: MindView; onPick: (v: MindView) => void }) {
+  return (
+    <div className={styles.mindViews} role="tablist" aria-label="View">
+      {views.map((v) => (
+        <button key={v} role="tab" aria-selected={value === v} className={value === v ? styles.mindViewOn : undefined} onClick={() => onPick(v)}>
+          {VIEW_META[v].icon}{VIEW_META[v].label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const COLUMNS: { id: TaskStatus; label: string }[] = [
   { id: "todo", label: "To do" },
   { id: "doing", label: "Doing" },
   { id: "done", label: "Done" },
 ];
-const HOLD_MS = 380;
 
 /** Everything the + button can make, with the emoji it wears in sheets. */
 const KINDS: { kind: BlockKind; label: string; emoji: string; group: "Capture" | "Track" }[] = [
@@ -196,35 +213,79 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
    =========================================================================== */
 
 function FolderGrid({ ctx }: { ctx: Ctx }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const cols = ctx.mind.collections;
+  // Hold a collection for its menu; hold and move to put it somewhere else in the grid.
+  const hold = useHold<Drop>({
+    root: rootRef,
+    menu: (src, el) => openHoldMenu(ctx, null, src, el),
+    closeMenu: ctx.closeSheet,
+    find: (x, y, src) => {
+      const el = hitAt(x, y)?.closest<HTMLElement>('[data-hold^="collection:"]');
+      const id = el?.dataset.hold?.slice("collection:".length);
+      if (!el || !id || id === src.id) return null;
+      const list = cols.map((c) => c.id).filter((c) => c !== src.id);
+      return { t: "collectionBefore", before: afterHalf(el, x, y) ? list[list.indexOf(id) + 1] ?? null : id };
+    },
+    drop: (src, t) => {
+      if (t.t !== "collectionBefore") return;
+      ctx.update((m) => {
+        const moving = m.collections.find((c) => c.id === src.id);
+        if (!moving) return m;
+        const list = m.collections.filter((c) => c.id !== src.id);
+        const at = t.before ? list.findIndex((c) => c.id === t.before) : -1;
+        list.splice(at >= 0 ? at : list.length, 0, moving);
+        return { ...m, collections: list };
+      });
+    },
+  });
+  const target = hold.target;
   return (
-    <div className={styles.mindStack}>
+    <div className={styles.mindStack} ref={rootRef} style={{ position: "relative" }} {...hold.rootHandlers}>
       <div className={styles.mindSectionBar}>
         <p className={styles.sheetLabel}>Collections</p>
         <button className={styles.mindIconBtn} onClick={() => ctx.openSheet(<NewFolderSheet ctx={ctx} />)} aria-label="New collection" title="New collection"><IconPlus size={16} /></button>
       </div>
       <div className={styles.folderGrid}>
-        {ctx.mind.collections.map((c, i) => <FolderCard key={c.id} ctx={ctx} col={c} i={i} />)}
+        {cols.map((c, i) => (
+          <FolderCard
+            key={c.id}
+            ctx={ctx}
+            col={c}
+            i={i}
+            hold={hold.bind({ kind: "collection", id: c.id })}
+            before={target?.t === "collectionBefore" && target.before === c.id}
+            lifted={hold.isDragging("collection", c.id)}
+          />
+        ))}
         <button className={styles.folderNew} onClick={() => ctx.openSheet(<NewFolderSheet ctx={ctx} />)}>
           <IconPlus size={18} />
           <span>New collection</span>
         </button>
       </div>
+      {hold.ghost}
     </div>
   );
 }
 
-function FolderCard({ ctx, col, i }: { ctx: Ctx; col: Collection; i: number }) {
+function FolderCard({ ctx, col, i, hold, before, lifted }: { ctx: Ctx; col: Collection; i: number; hold?: HoldBind; before?: boolean; lifted?: boolean }) {
   const items = collectionItems(ctx.mind, col);
   const peek = [...items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3);
   return (
-    <button className={`${styles.folderCard} ${styles.rowEnter}`} style={{ ["--tone" as string]: col.tone, ["--i" as string]: i }} onClick={() => ctx.openFolder(col.id)}>
+    <button
+      className={[styles.folderCard, styles.rowEnter, before ? styles.mindStackBeforeX : "", lifted ? styles.mindDragSource : ""].filter(Boolean).join(" ")}
+      style={{ ["--tone" as string]: col.tone, ["--i" as string]: i }}
+      data-axis="x"
+      {...hold}
+      onClick={() => ctx.openFolder(col.id)}
+    >
       <span className={styles.folderTop}>
         <span className={styles.folderIcon}><Emoji char={col.emoji} /></span>
         {col.vault.length > 0 && <em className={styles.folderBadge}>{col.vault.length} to sort</em>}
       </span>
       <span className={styles.folderText}>
         <b>{col.name}</b>
-        <small>{col.pages.length} page{col.pages.length === 1 ? "" : "s"} · {items.length} item{items.length === 1 ? "" : "s"}</small>
+        <small>{col.pages.length} stack{col.pages.length === 1 ? "" : "s"} · {items.length} item{items.length === 1 ? "" : "s"}</small>
       </span>
       <span className={styles.folderPeek} aria-hidden="true">
         {peek.map((b) => (b.kind === "image" && b.image
@@ -242,7 +303,7 @@ function EmptyMind({ ctx }: { ctx: Ctx }) {
       <div className={styles.mindStarter}>
         <Logo size={36} />
         <h2>Your Mind is empty</h2>
-        <p>Make a collection for anything: a project, a trip, a room. Then fill it with pages, checklists, links and saves from your chats.</p>
+        <p>Make a collection for anything: a project, a trip, a room. Then fill it with stacks, checklists, links and saves from your chats.</p>
         <button className={styles.mindPrimary} onClick={() => ctx.openSheet(<NewFolderSheet ctx={ctx} />)}>
           <IconPlus size={14} /> New collection
         </button>
@@ -252,34 +313,110 @@ function EmptyMind({ ctx }: { ctx: Ctx }) {
 }
 
 /**
- * Inside a collection: anything waiting to be sorted first, then its pages
- * and items side by side, the way a folder holds sub-folders and files.
+ * Inside a collection: anything waiting to be sorted first, then its stacks
+ * and items side by side, laid out by the view picked at the top (the same
+ * switch a stack has). One + adds either. Everything can be held for its
+ * menu, or held and moved: onto a stack to put it inside, or between things
+ * to reorder.
  */
 function FolderScreen({ ctx, col, leaving, onBack }: { ctx: Ctx; col: Collection; leaving: boolean; onBack: () => void }) {
   const [tag, setTag] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const all = collectionItems(ctx.mind, col);
   const tags = tagsOf(all);
   const has = (b: Block) => !tag || b.tags.includes(tag);
-  // A page stays in view while filtering if anything in it (or under it) has the tag.
+  // A stack stays in view while filtering if anything in it (or under it) has the tag.
   const holds = (p: Page): boolean => pageItems(ctx.mind, p).some(has) || childrenOf(col, p.id).some(holds);
-  const folders = col.pages.filter((p) => !p.parentId && (!tag || holds(p)));
+  const stacks = col.pages.filter((p) => !p.parentId && (!tag || holds(p)));
   const loose = rootItems(ctx.mind, col).filter(has);
   const toSort = col.vault.map((id) => ctx.mind.blocks[id]).filter((b) => b && has(b));
-  const add = () => ctx.openSheet(<FolderAddSheet ctx={ctx} col={col} />);
+  const view = col.view && COLLECTION_VIEWS.includes(col.view) ? col.view : "list";
+  const setView = (v: MindView) => ctx.update((m) => patchCollection(m, col.id, (c) => ({ ...c, view: v })));
+  const add = () => ctx.openSheet(<MindAddSheet ctx={ctx} col={col} />);
+  const open = (b: Block) => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />);
+
+  const hold = useHold<Drop>({
+    root: rootRef,
+    scroll: scrollRef,
+    menu: (src, el) => openHoldMenu(ctx, col, src, el),
+    closeMenu: ctx.closeSheet,
+    find: (x, y, src) => {
+      const hit = hitAt(x, y);
+      const onStack = stackDrop(hit, x, y, src, col);
+      if (onStack) return onStack;
+      if (src.kind !== "item") return null;
+      const it = hit?.closest<HTMLElement>("[data-root-item]");
+      if (it && it.dataset.rootItem !== src.id) {
+        const list = col.items.filter((id) => id !== src.id);
+        const id = it.dataset.rootItem!;
+        return { t: "rootBefore", before: afterHalf(it, x, y) ? list[list.indexOf(id) + 1] ?? null : id };
+      }
+      if (hit?.closest("[data-drop-root]")) return { t: "rootBefore", before: null };
+      return null;
+    },
+    drop: (src, t) => {
+      if (t.t === "rootBefore") {
+        const sorting = col.vault.includes(src.id);
+        ctx.update((m) => place(m, src.id, { collectionId: col.id, root: true, beforeId: t.before }));
+        if (sorting) ctx.flash(`Sorted into ${col.emoji} ${col.name}`);
+      } else dropOnStack(ctx, col, src, t);
+    },
+  });
+  const target = hold.target;
+
+  const cards = stacks.map((p, i) => (
+    <StackCard key={p.id} ctx={ctx} col={col} page={p} i={i} view={view} onOpen={() => ctx.openPage(p.id)} hold={hold.bind({ kind: "stack", id: p.id })} mark={markFor(target, p.id)} lifted={hold.isDragging("stack", p.id)} />
+  ));
+  const axis = view === "list" ? "y" : "x";
+  const item = (b: Block, body: React.ReactNode) => (
+    <div
+      key={b.id}
+      data-root-item={b.id}
+      data-axis={axis}
+      className={[
+        styles.mindBlockWrap,
+        hold.isDragging("item", b.id) ? styles.mindDragSource : "",
+        target?.t === "rootBefore" && target.before === b.id ? (axis === "x" ? styles.mindDropLeft : styles.mindDropAbove) : "",
+      ].filter(Boolean).join(" ")}
+      {...hold.bind({ kind: "item", id: b.id })}
+    >
+      {body}
+    </div>
+  );
+  const tile = (b: Block) => item(b, <Tile onOpen={() => open(b)}><BlockView block={b} shape="tile" onToggle={() => toggleItem(ctx.update, b)} /></Tile>);
+  const row = (b: Block) => item(b, (
+    <SwipeItem actions={itemActions(ctx, b)}>
+      <Tile onOpen={() => open(b)}>
+        <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
+      </Tile>
+    </SwipeItem>
+  ));
+  const endDrop = target?.t === "rootBefore" && target.before === null;
+
   return (
-    <div className={`${styles.screen} ${styles.chatScreen} ${styles.mindPageScreen} ${styles.mindFolderScreen} ${leaving ? styles.leaving : ""}`} style={{ ["--tone" as string]: col.tone }}>
+    <div
+      ref={rootRef}
+      className={`${styles.screen} ${styles.chatScreen} ${styles.mindPageScreen} ${styles.mindFolderScreen} ${leaving ? styles.leaving : ""}`}
+      style={{ ["--tone" as string]: col.tone }}
+      {...hold.rootHandlers}
+    >
       <div className={styles.edgeTop} />
       <header className={styles.chatHeader}>
         <button className={`${styles.circleBtn} ${styles.glass}`} onClick={onBack} aria-label="Back to Mind"><IconBack /></button>
         <div className={styles.titleCapsule}>
           <span className={styles.mindPageBadge}><Emoji char={col.emoji} /></span>
           <div className={`${styles.tcName} ${styles.glass}`}><span>{col.name}</span></div>
-          <span className={styles.tcPresence}>{col.pages.length} pages · {all.length} items</span>
+          <span className={styles.tcPresence}>{col.pages.length} {col.pages.length === 1 ? "stack" : "stacks"} · {all.length} items</span>
         </div>
         <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => ctx.openSheet(<FolderSheet ctx={ctx} colId={col.id} onDeleted={onBack} />)} aria-label="Collection settings"><IconMore /></button>
       </header>
 
-      <div className={styles.mindPageScroll}>
+      <div className={styles.mindPageScroll} ref={scrollRef}>
+        <div className={styles.mindToolbar}>
+          <ViewSwitch views={COLLECTION_VIEWS} value={view} onPick={setView} />
+        </div>
+
         {tags.length > 0 && (
           <div className={styles.chips}>
             <button className={`${styles.chip} ${!tag ? styles.chipOn : ""}`} onClick={() => setTag(null)}>All</button>
@@ -289,64 +426,104 @@ function FolderScreen({ ctx, col, leaving, onBack }: { ctx: Ctx; col: Collection
           </div>
         )}
 
-        {toSort.length > 0 && <ToSort ctx={ctx} items={toSort} />}
+        {toSort.length > 0 && <ToSort ctx={ctx} items={toSort} hold={hold} />}
 
-        <div className={styles.mindSectionBar}>
+        <div className={`${styles.mindSectionBar} ${endDrop ? styles.mindDropInto : ""}`} data-drop-root>
           <p className={styles.sheetLabel}>In {col.name}</p>
           <button className={styles.mindIconBtn} onClick={add} aria-label={`Add to ${col.name}`} title="Add"><IconPlus size={16} /></button>
         </div>
-        <div className={styles.mindRows}>
-          {folders.map((p, i) => <FolderRow key={p.id} ctx={ctx} col={col} page={p} i={i} onOpen={() => ctx.openPage(p.id)} />)}
-          {loose.map((b) => (
-            <SwipeItem key={b.id} actions={itemActions(ctx, b)}>
-              <Tile onOpen={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
-                <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
-              </Tile>
-            </SwipeItem>
-          ))}
-          {!folders.length && !loose.length && (
+        <div data-drop-root>
+          {!stacks.length && !loose.length ? (
             tag ? <p className={styles.emptyInbox}>Nothing here is tagged #{tag}.</p> : (
               <button className={styles.mindEmptySection} onClick={add}>
-                <IconPlus size={14} /> Add a page or an item
+                <IconPlus size={14} /> Add a stack or an item
               </button>
             )
+          ) : view === "shelf" ? (
+            // One shelf: stacks first, then the loose items, all on the same level.
+            <div className={styles.mindShelf}>
+              {cards}
+              {loose.map(tile)}
+            </div>
+          ) : view === "grid" ? (
+            <>
+              {cards.length > 0 && <div className={styles.mindStackGrid}>{cards}</div>}
+              {loose.length > 0 && <div className={styles.mindGridView}>{loose.map(tile)}</div>}
+            </>
+          ) : (
+            <div className={styles.mindRows}>
+              {cards}
+              {loose.map(row)}
+            </div>
           )}
         </div>
       </div>
+      {hold.ghost}
     </div>
   );
 }
 
-/** A page shown as a folder: what's inside it, and how far its to-dos have got. */
-function FolderRow({ ctx, col, page, i, onOpen, drop }: { ctx: Ctx; col: Collection; page: Page; i: number; onOpen: () => void; drop?: boolean }) {
+/**
+ * A stack, drawn as a stack of cards so it never reads as a single item. Its
+ * shape follows the view: a row in List (and beside a Board), a card in Grid,
+ * a tall card on the Shelf. Drop something on it to put it inside.
+ */
+function StackCard({ ctx, col, page, i, view, onOpen, hold, mark, lifted }: { ctx: Ctx; col: Collection; page: Page; i: number; view: MindView; onOpen: () => void; hold?: HoldBind; mark?: "into" | "before" | null; lifted?: boolean }) {
   const kids = childrenOf(col, page.id);
   const list = pageItems(ctx.mind, page);
   const tasks = list.filter((b) => b.kind === "todo");
   const done = tasks.filter((b) => b.done).length;
   const inside = [
     `${list.length} ${list.length === 1 ? "item" : "items"}`,
-    kids.length ? `${kids.length} ${kids.length === 1 ? "page" : "pages"}` : "",
+    kids.length ? `${kids.length} ${kids.length === 1 ? "stack" : "stacks"}` : "",
   ].filter(Boolean).join(" · ");
+  const bar = tasks.length > 0 && <span className={styles.mindRowBar}><i style={{ width: `${(done / tasks.length) * 100}%`, background: page.tone }} /></span>;
+  const vars = { ["--i" as string]: i, ["--tone" as string]: page.tone };
+  const asRow = view === "list" || view === "board";
+  const state = [
+    mark === "into" ? styles.mindDropInto : "",
+    mark === "before" ? (asRow ? styles.mindStackBeforeY : styles.mindStackBeforeX) : "",
+    lifted ? styles.mindDragSource : "",
+  ];
+
+  if (asRow) {
+    return (
+      <button className={[styles.mindPageRow, styles.mindStackRow, styles.rowEnter, ...state].filter(Boolean).join(" ")} style={vars} data-drop-page={page.id} data-axis="y" {...hold} onClick={onOpen}>
+        <span className={styles.mindEmoji} style={{ background: `color-mix(in srgb, ${page.tone} 16%, transparent)` }}><Emoji char={page.emoji} /></span>
+        <span className={styles.mindPageText}>
+          <b>{page.title}</b>
+          <small>{inside}</small>
+          {bar}
+        </span>
+        <span className={styles.mindPageSide}><IconChevron size={14} /></span>
+      </button>
+    );
+  }
+
+  const peek = [...list].sort((a, b) => b.createdAt - a.createdAt).slice(0, 4);
   return (
-    <button
-      className={`${styles.mindPageRow} ${styles.rowEnter} ${drop ? styles.mindDropInto : ""}`}
-      style={{ ["--i" as string]: i }}
-      data-drop-page={page.id}
-      onClick={onOpen}
-    >
-      <span className={styles.mindEmoji} style={{ background: `color-mix(in srgb, ${page.tone} 16%, transparent)` }}><Emoji char={page.emoji} /></span>
-      <span className={styles.mindPageText}>
+    <button className={[styles.mindStackCard, view === "shelf" ? styles.mindStackShelf : "", styles.rowEnter, ...state].filter(Boolean).join(" ")} style={vars} data-drop-page={page.id} data-axis="x" {...hold} onClick={onOpen}>
+      <span className={styles.mindStackTop}>
+        <span className={styles.folderIcon}><Emoji char={page.emoji} /></span>
+        {kids.length > 0 && <em className={styles.mindStackBadge}>{kids.length} inside</em>}
+      </span>
+      <span className={styles.folderPeek} aria-hidden="true">
+        {peek.map((b) => (b.kind === "image" && b.image
+          // eslint-disable-next-line @next/next/no-img-element
+          ? <img key={b.id} src={b.image} alt="" />
+          : <span key={b.id}><Emoji char={KIND_EMOJI[b.kind] ?? "💬"} /></span>))}
+      </span>
+      <span className={styles.folderText}>
         <b>{page.title}</b>
         <small>{inside}</small>
-        {tasks.length > 0 && <span className={styles.mindRowBar}><i style={{ width: `${(done / tasks.length) * 100}%`, background: page.tone }} /></span>}
       </span>
-      <span className={styles.mindPageSide}><IconChevron size={14} /></span>
+      {bar}
     </button>
   );
 }
 
-/** Saves from chats, waiting for a place. Sits at the top of the collection, not behind a tab. */
-function ToSort({ ctx, items }: { ctx: Ctx; items: Block[] }) {
+/** Saves from chats, waiting for a place. Sits at the top of the collection, not behind a tab. Drag one onto a stack to sort it. */
+function ToSort({ ctx, items, hold }: { ctx: Ctx; items: Block[]; hold: { bind: (s: HoldSrc) => HoldBind; isDragging: (k: HoldSrc["kind"], id: string) => boolean } }) {
   return (
     <section className={styles.mindToSort} aria-labelledby="to-sort-title">
       <div className={styles.mindSectionBar}>
@@ -354,12 +531,14 @@ function ToSort({ ctx, items }: { ctx: Ctx; items: Block[] }) {
       </div>
       <div className={styles.mindRows}>
         {items.map((b) => (
-          <div key={b.id} className={styles.mindInboxItem}>
-            <SwipeItem actions={itemActions(ctx, b)}>
-              <Tile onOpen={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
-                <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
-              </Tile>
-            </SwipeItem>
+          <div key={b.id} className={`${styles.mindInboxItem} ${hold.isDragging("item", b.id) ? styles.mindDragSource : ""}`}>
+            <div className={styles.mindBlockWrap} {...hold.bind({ kind: "item", id: b.id })}>
+              <SwipeItem actions={itemActions(ctx, b)}>
+                <Tile onOpen={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
+                  <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
+                </Tile>
+              </SwipeItem>
+            </div>
             <button className={styles.mindSort} onClick={() => ctx.openSheet(<MoveSheet me={ctx.me} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} title="Sort into" />)}>Sort</button>
           </div>
         ))}
@@ -447,20 +626,57 @@ function pathTo(col: Collection, page: Page | null) {
    Collection sheets
    =========================================================================== */
 
-/** + inside a collection: a page, a sub-page, or any item, right beside the pages. */
-function FolderAddSheet({ ctx, col }: { ctx: Ctx; col: Collection }) {
+/**
+ * The one + in Mind, wherever it's tapped: in a collection, in a stack, or on
+ * a section. Structure (a stack, a section) and every kind of item sit in the
+ * same grid, so there's never a second menu to find.
+ */
+function MindAddSheet({ ctx, col, page, sectionId }: { ctx: Ctx; col: Collection; page?: Page; sectionId?: string }) {
+  const here = page ? page.title : col.name;
+  const to = page
+    ? { collectionId: col.id, pageId: page.id, sectionId: sectionId ?? page.sections[page.sections.length - 1]?.id }
+    : { collectionId: col.id, root: true };
+  const organise: { id: string; emoji: string; label: string; run: () => void }[] = [
+    { id: "stack", emoji: "🗂️", label: "Stack", run: () => ctx.openSheet(<NewPageSheet ctx={ctx} col={col} parentId={page?.id} />) },
+    ...(page ? [{ id: "section", emoji: "🔖", label: "Section", run: () => ctx.openSheet(<NewSectionSheet ctx={ctx} page={page} />) }] : []),
+  ];
   return (
-    <Sheet title={`Add to ${col.name}`} onClose={ctx.closeSheet}>
+    <Sheet title={`Add to ${here}`} onClose={ctx.closeSheet}>
       {(close) => (
         <>
-          <p className={styles.sheetLabel}>Structure</p>
-          <div className={`${styles.mindStructure} ${styles.mindStructureTwo}`}>
-            <button onClick={() => close(() => ctx.openSheet(<NewPageSheet ctx={ctx} col={col} />))}><Emoji char="📄" /><b>Page</b><small>One topic</small></button>
-            <button onClick={() => close(() => ctx.openSheet(<NewPageSheet ctx={ctx} col={col} sub />))} disabled={!col.pages.length}><Emoji char="📑" /><b>Sub-page</b><small>Inside a page</small></button>
+          <div className={styles.addGroup}>
+            <p className={styles.sheetLabel}>Organise</p>
+            <div className={styles.addGrid}>
+              {organise.map((o, i) => (
+                <button key={o.id} className={styles.addTile} style={{ ["--i" as string]: i }} onClick={() => close(o.run)}>
+                  <span className={`${styles.addIcon} ${styles.mindKindIcon} ${styles.mindKindStructure}`}><Emoji char={o.emoji} /></span>
+                  {o.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <KindGrid onPick={(k) => close(() => ctx.openSheet(<AddItemSheet ctx={ctx} to={{ collectionId: col.id, root: true }} kind={k} />))} />
+          <KindGrid first={page?.defaultKind} onPick={(k) => close(() => ctx.openSheet(<AddItemSheet ctx={ctx} to={to} kind={k} />))} />
         </>
       )}
+    </Sheet>
+  );
+}
+
+function NewSectionSheet({ ctx, page }: { ctx: Ctx; page: Page }) {
+  const [name, setName] = useState("");
+  const create = () => {
+    ctx.update((m) => patchPage(m, page.id, (p) => {
+      // A stack's first section stays untitled until there's a second one; name it now.
+      const sections = p.sections.length === 1 && !p.sections[0].title ? [{ ...p.sections[0], title: "General", emoji: "📁" }] : p.sections;
+      return { ...p, sections: [...sections, { id: newId("s"), title: name.trim(), emoji: "🔖", collapsed: false, blockIds: [] }] };
+    }));
+    ctx.closeSheet();
+    ctx.flash("Section added");
+  };
+  return (
+    <Sheet title={`New section · ${page.title}`} onClose={ctx.closeSheet} action={{ label: "Add", disabled: !name.trim(), onClick: create }}>
+      <input className={`${styles.plainInput} ${styles.mindTitleInput}`} data-autofocus placeholder="e.g. Everyday" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) create(); }} aria-label="Section name" />
+      <p className={styles.sheetNote}>Sections split a stack into groups you can fold away.</p>
     </Sheet>
   );
 }
@@ -517,29 +733,8 @@ function FolderSheet({ ctx, colId, onDeleted }: { ctx: Ctx; colId: string; onDel
           <button
             className={styles.mindDanger}
             onClick={() => close(() => {
-              // Keep what's deleted, so Undo can put it all back where it was.
-              let back: ((m: Mind) => Mind) | null = null;
-              update((m) => {
-                const at = m.collections.findIndex((c) => c.id === colId);
-                const gone = m.collections[at];
-                if (!gone) return m;
-                const ids = collectionItems(m, gone).map((b) => b.id);
-                const kept = Object.fromEntries(ids.map((id) => [id, m.blocks[id]]));
-                const wasCurrent = m.current === colId;
-                back = (n) => (n.collections.some((c) => c.id === colId) ? n : {
-                  ...n,
-                  blocks: { ...n.blocks, ...kept },
-                  collections: [...n.collections.slice(0, at), gone, ...n.collections.slice(at)],
-                  current: wasCurrent ? colId : n.current,
-                });
-                const blocks = { ...m.blocks };
-                ids.forEach((id) => delete blocks[id]);
-                const collections = m.collections.filter((c) => c.id !== colId);
-                return { ...m, blocks, collections, current: collections[0]?.id ?? null };
-              });
+              deleteCollection(ctx, colId);
               onDeleted();
-              const undo = back as ((m: Mind) => Mind) | null;
-              ctx.flash(`${col.name} deleted`, undo ? [{ label: "Undo", run: () => { update(undo); ctx.openFolder(colId); } }] : undefined);
             })}
           >
             Delete {col.name}
@@ -729,10 +924,284 @@ function SwipeItem({ actions, children }: { actions: SwipeAction[]; children: Re
 }
 
 /* ===========================================================================
-   A page — sections, views, sub-pages, quick add, drag and drop
+   Holding and moving: drop targets, the hold menus, and what they do
    =========================================================================== */
 
-type Target = { sid?: string; before?: string | null; col?: TaskStatus; page?: string } | null;
+/** Where a held thing would land if let go now. */
+type Drop =
+  | { t: "into"; page: string }
+  | { t: "stackBefore"; before: string | null; parent: string | null }
+  | { t: "section"; sid: string; before: string | null }
+  | { t: "sectionBefore"; before: string | null }
+  | { t: "column"; col: TaskStatus }
+  | { t: "rootBefore"; before: string | null }
+  | { t: "up" }
+  | { t: "collectionBefore"; before: string | null };
+
+const hitAt = (x: number, y: number) => document.elementFromPoint(x, y) as HTMLElement | null;
+
+/** Past the middle of an element (across for a row of cards, down for a list). */
+function afterHalf(el: HTMLElement, x: number, y: number) {
+  const r = el.getBoundingClientRect();
+  return el.dataset.axis === "x" ? x > r.left + r.width / 2 : y > r.top + r.height / 2;
+}
+
+/** A stack and every stack under it, however deep. */
+function subtree(c: Collection, id: string) {
+  const out = [id];
+  for (let i = 0; i < out.length; i++) out.push(...childrenOf(c, out[i]).map((p) => p.id).filter((k) => !out.includes(k)));
+  return out;
+}
+
+/**
+ * Over a stack: an item goes inside it. A stack goes inside it too, unless the
+ * finger is near an edge, which places it before or after (a reorder).
+ */
+function stackDrop(hit: HTMLElement | null, x: number, y: number, src: HoldSrc, col: Collection): Drop | null {
+  const el = hit?.closest<HTMLElement>("[data-drop-page]");
+  if (!el) return null;
+  const id = el.dataset.dropPage!;
+  if (src.kind === "item") return { t: "into", page: id };
+  if (src.kind !== "stack" || id === src.id) return null;
+  const r = el.getBoundingClientRect();
+  const f = el.dataset.axis === "x" ? (x - r.left) / r.width : (y - r.top) / r.height;
+  if (f < .25 || f > .75) {
+    const parent = col.pages.find((p) => p.id === id)?.parentId ?? null;
+    const sibs = col.pages.filter((p) => (p.parentId ?? null) === parent && p.id !== src.id);
+    const at = sibs.findIndex((p) => p.id === id);
+    return { t: "stackBefore", before: f < .25 ? id : sibs[at + 1]?.id ?? null, parent };
+  }
+  // Not inside itself, or inside one of its own stacks.
+  if (subtree(col, src.id).includes(id)) return null;
+  return { t: "into", page: id };
+}
+
+const markFor = (t: Drop | null, id: string): "into" | "before" | null =>
+  t?.t === "into" && t.page === id ? "into" : t?.t === "stackBefore" && t.before === id ? "before" : null;
+
+/**
+ * Move a stack (and everything under it) inside another stack, to the top of
+ * a collection, or before a sibling. Works across collections too.
+ */
+function moveStack(m: Mind, pageId: string, to: { collectionId: string; parentId: string | null; beforeId?: string | null }): Mind {
+  const from = m.collections.find((c) => c.pages.some((p) => p.id === pageId));
+  if (!from) return m;
+  const ids = subtree(from, pageId);
+  if (to.parentId && ids.includes(to.parentId)) return m;
+  const moving = from.pages.filter((p) => ids.includes(p.id)).map((p) => (p.id === pageId ? { ...p, parentId: to.parentId ?? undefined } : p));
+  const out = patchCollection(m, from.id, (c) => ({ ...c, pages: c.pages.filter((p) => !ids.includes(p.id)) }));
+  return patchCollection(out, to.collectionId, (c) => {
+    const list = [...c.pages];
+    const at = to.beforeId ? list.findIndex((p) => p.id === to.beforeId) : -1;
+    list.splice(at >= 0 ? at : list.length, 0, ...moving);
+    return { ...c, pages: list };
+  });
+}
+
+/** Dropped onto a stack (inside it), or beside one (a reorder). */
+function dropOnStack(ctx: Ctx, col: Collection, src: HoldSrc, t: Drop) {
+  if (t.t === "into") {
+    const to = col.pages.find((p) => p.id === t.page);
+    if (!to) return;
+    if (src.kind === "item") ctx.update((m) => place(m, src.id, { collectionId: col.id, pageId: to.id }));
+    else if (src.kind === "stack") ctx.update((m) => moveStack(m, src.id, { collectionId: col.id, parentId: to.id }));
+    else return;
+    ctx.flash(`Moved to ${to.emoji} ${to.title}`);
+  } else if (t.t === "stackBefore" && src.kind === "stack") {
+    ctx.update((m) => moveStack(m, src.id, { collectionId: col.id, parentId: t.parent, beforeId: t.before }));
+  }
+}
+
+/** Delete a stack; what was in it waits in To sort, and Undo puts it all back. */
+function deleteStack(ctx: Ctx, colId: string, pageId: string) {
+  let before: Collection | null = null;
+  ctx.update((m) => {
+    const c = m.collections.find((x) => x.id === colId);
+    if (!c) return m;
+    before = c;
+    const doomed = subtree(c, pageId);
+    const ids = c.pages.filter((p) => doomed.includes(p.id)).flatMap((p) => pageItems(m, p).map((b) => b.id));
+    let next = m;
+    ids.forEach((bid) => { next = detach(next, bid); });
+    return patchCollection(next, colId, (x) => ({ ...x, pages: x.pages.filter((p) => !doomed.includes(p.id)), vault: [...ids, ...x.vault] }));
+  });
+  const snap = before as Collection | null;
+  ctx.flash("Stack deleted · its items are in To sort", snap ? [{ label: "Undo", run: () => ctx.update((m) => patchCollection(m, colId, () => snap)) }] : undefined);
+}
+
+/** Delete a collection and everything in it, with an Undo that puts it back where it was. */
+function deleteCollection(ctx: Ctx, colId: string) {
+  let back: ((m: Mind) => Mind) | null = null;
+  let name = "";
+  ctx.update((m) => {
+    const at = m.collections.findIndex((c) => c.id === colId);
+    const gone = m.collections[at];
+    if (!gone) return m;
+    name = gone.name;
+    const ids = collectionItems(m, gone).map((b) => b.id);
+    const kept = Object.fromEntries(ids.map((id) => [id, m.blocks[id]]));
+    const wasCurrent = m.current === colId;
+    back = (n) => (n.collections.some((c) => c.id === colId) ? n : {
+      ...n,
+      blocks: { ...n.blocks, ...kept },
+      collections: [...n.collections.slice(0, at), gone, ...n.collections.slice(at)],
+      current: wasCurrent ? colId : n.current,
+    });
+    const blocks = { ...m.blocks };
+    ids.forEach((id) => delete blocks[id]);
+    const collections = m.collections.filter((c) => c.id !== colId);
+    return { ...m, blocks, collections, current: collections[0]?.id ?? null };
+  });
+  const undo = back as ((m: Mind) => Mind) | null;
+  ctx.flash(`${name} deleted`, undo ? [{ label: "Undo", run: () => ctx.update(undo) }] : undefined);
+}
+
+/** What holding something offers. Opens as a lifted copy with a menu under it, like a message. */
+function openHoldMenu(ctx: Ctx, col: Collection | null, src: HoldSrc, el: HTMLElement, opts: { openStack?: (id: string) => void; page?: Page } = {}) {
+  const show = (title: React.ReactNode, actions: HoldAction[]) => ctx.openSheet(<HoldMenu anchor={el} title={title} actions={actions} onClose={ctx.closeSheet} />);
+  const rename = (what: string, value: string, save: (v: string) => void) => () => ctx.openSheet(<RenameSheet ctx={ctx} what={what} value={value} onSave={save} />);
+
+  if (src.kind === "collection") {
+    const c = ctx.mind.collections.find((x) => x.id === src.id);
+    if (!c) return;
+    show(emojify(`${c.emoji} ${c.name}`), [
+      { id: "open", label: "Open", icon: <IconArrowRight />, run: () => ctx.openFolder(c.id) },
+      { id: "rename", label: "Rename", icon: <IconEdit />, run: rename("collection", c.name, (name) => ctx.update((m) => patchCollection(m, c.id, (x) => ({ ...x, name })))) },
+      { id: "style", label: "Icon & colour", icon: <IconPalette />, run: () => ctx.openSheet(<FolderSheet ctx={ctx} colId={c.id} onDeleted={() => {}} />) },
+      "sep",
+      { id: "delete", label: "Delete collection", icon: <IconTrash />, danger: true, run: () => deleteCollection(ctx, c.id) },
+    ]);
+    return;
+  }
+  if (!col) return;
+
+  if (src.kind === "stack") {
+    const p = col.pages.find((x) => x.id === src.id);
+    if (!p) return;
+    show(emojify(`${p.emoji} ${p.title}`), [
+      { id: "open", label: "Open", icon: <IconArrowRight />, run: () => (opts.openStack ?? ctx.openPage)(p.id) },
+      { id: "rename", label: "Rename", icon: <IconEdit />, run: rename("stack", p.title, (title) => ctx.update((m) => patchPage(m, p.id, (x) => ({ ...x, title })))) },
+      { id: "style", label: "Icon, colour & views", icon: <IconPalette />, run: () => ctx.openSheet(<PageSheet ctx={ctx} col={col} pageId={p.id} onDeleted={() => {}} />) },
+      { id: "move", label: "Move to…", icon: <IconFolder />, run: () => ctx.openSheet(<StackMoveSheet ctx={ctx} pageId={p.id} />) },
+      "sep",
+      { id: "delete", label: "Delete stack", icon: <IconTrash />, danger: true, run: () => deleteStack(ctx, col.id, p.id) },
+    ]);
+    return;
+  }
+
+  if (src.kind === "section") {
+    const page = opts.page;
+    const s = page?.sections.find((x) => x.id === src.id);
+    if (!page || !s) return;
+    const at = page.sections.indexOf(s);
+    const shift = (dir: -1 | 1) => () => ctx.update((m) => patchPage(m, page.id, (p) => {
+      const list = [...p.sections];
+      const i = list.findIndex((x) => x.id === s.id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= list.length) return p;
+      [list[i], list[j]] = [list[j], list[i]];
+      return { ...p, sections: list };
+    }));
+    show(emojify(`${s.emoji} ${s.title}`), [
+      { id: "rename", label: "Rename", icon: <IconEdit />, run: rename("section", s.title, (title) => ctx.update((m) => patchPage(m, page.id, (p) => ({ ...p, sections: p.sections.map((x) => (x.id === s.id ? { ...x, title } : x)) })))) },
+      ...(at > 0 ? [{ id: "up", label: "Move up", icon: <IconArrowUp />, run: shift(-1) }] : []),
+      ...(at < page.sections.length - 1 ? [{ id: "down", label: "Move down", icon: <IconChevronDown />, run: shift(1) }] : []),
+      ...(page.sections.length > 1 ? ["sep" as const, {
+        id: "delete", label: "Delete section", icon: <IconTrash />, danger: true,
+        // Its items join the section next to it; nothing is lost.
+        run: () => {
+          const into = page.sections[at === 0 ? 1 : at - 1];
+          ctx.update((m) => patchPage(m, page.id, (p) => ({
+            ...p,
+            sections: p.sections.filter((x) => x.id !== s.id).map((x) => (x.id === into.id ? { ...x, blockIds: [...x.blockIds, ...s.blockIds] } : x)),
+          })));
+          ctx.flash(s.blockIds.length ? `Section deleted · its items are in ${into.title || page.title}` : "Section deleted");
+        },
+      }] : []),
+    ]);
+    return;
+  }
+
+  const b = ctx.mind.blocks[src.id];
+  if (!b) return;
+  const where = locate(ctx.mind, b.id);
+  show(KIND_LABEL[b.kind] ?? "Item", [
+    { id: "open", label: "Open", icon: <IconArrowRight />, run: () => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />) },
+    ...(b.kind !== "chat" ? [{ id: "rename", label: "Rename", icon: <IconEdit />, run: rename(KIND_LABEL[b.kind]?.toLowerCase() ?? "item", b.title, (title) => ctx.update((m) => patchBlock(m, b.id, { title }))) }] : []),
+    {
+      id: "move", label: where?.toSort ? "Sort into…" : "Move to…", icon: where?.toSort ? <IconInbox /> : <IconFolder />,
+      run: () => ctx.openSheet(<MoveSheet me={ctx.me} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} title={where?.toSort ? "Sort into" : "Move to"} />),
+    },
+    ...(b.ref ? [{ id: "chat", label: "Show in chat", icon: <IconMessage />, run: () => ctx.openChat(b.ref!.chatId) }]
+      : b.url ? [{ id: "link", label: "Open link", icon: <IconOpen />, run: () => window.open(b.url, "_blank", "noopener") }] : []),
+    "sep",
+    { id: "delete", label: "Delete", icon: <IconTrash />, danger: true, run: () => removeItem(ctx.update, ctx.flash, b.id) },
+  ]);
+}
+
+function RenameSheet({ ctx, what, value, onSave }: { ctx: Ctx; what: string; value: string; onSave: (v: string) => void }) {
+  const [v, setV] = useState(value);
+  const save = () => { onSave(v.trim()); ctx.closeSheet(); };
+  return (
+    <Sheet title={`Rename ${what}`} onClose={ctx.closeSheet} action={{ label: "Save", disabled: !v.trim() || v.trim() === value, onClick: save }}>
+      <input
+        className={`${styles.plainInput} ${styles.mindTitleInput}`}
+        data-autofocus
+        value={v}
+        onChange={(e) => setV(e.target.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onKeyDown={(e) => { if (e.key === "Enter" && v.trim() && v.trim() !== value) save(); }}
+        aria-label="Name"
+      />
+    </Sheet>
+  );
+}
+
+/** Where a stack should live: the top of any collection, or inside another stack. */
+function StackMoveSheet({ ctx, pageId }: { ctx: Ctx; pageId: string }) {
+  const { mind, update } = useMind(ctx.me);
+  const from = mind?.collections.find((c) => c.pages.some((p) => p.id === pageId));
+  const [colId, setColId] = useState(from?.id ?? "");
+  if (!mind || !from) return null;
+  const page = from.pages.find((p) => p.id === pageId)!;
+  const col = mind.collections.find((c) => c.id === colId) ?? from;
+  const blocked = col.id === from.id ? subtree(from, pageId) : [];
+  const go = (parentId: string | null, label: string | null) => {
+    update((m) => moveStack(m, pageId, { collectionId: col.id, parentId }));
+    ctx.flash(`Moved to ${col.emoji} ${col.name}${label ? ` › ${label}` : ""}`);
+  };
+  return (
+    <Sheet title={`Move ${page.title}`} onClose={ctx.closeSheet}>
+      {(close) => {
+        const rows = (parentId: string | undefined, depth: number): React.ReactNode[] => col.pages
+          .filter((p) => p.parentId === parentId && !blocked.includes(p.id))
+          .flatMap((p) => [
+            <WhereRow key={p.id} depth={depth} emoji={p.emoji} title={p.title} count={pageItems(mind, p).length} on={col.id === from.id && page.parentId === p.id} onPick={() => close(() => go(p.id, p.title))} />,
+            ...rows(p.id, depth + 1),
+          ]);
+        return (
+          <>
+            {mind.collections.length > 1 && (
+              <div className={styles.chipGrid}>
+                {mind.collections.map((c) => (
+                  <button key={c.id} className={`${styles.choice} ${c.id === col.id ? styles.choiceOn : ""}`} onClick={() => setColId(c.id)}><Emoji char={c.emoji} /> {c.name}</button>
+                ))}
+              </div>
+            )}
+            <div className={styles.listGroup}>
+              <WhereRow depth={0} emoji={col.emoji} title={`${col.name} · top level`} count={col.items.length} on={col.id === from.id && !page.parentId} onPick={() => close(() => go(null, null))} />
+              {rows(undefined, 1)}
+            </div>
+          </>
+        );
+      }}
+    </Sheet>
+  );
+}
+
+/* ===========================================================================
+   A stack — sections, views, stacks inside, quick add, drag and drop
+   =========================================================================== */
 
 const PLACEHOLDER: Partial<Record<BlockKind, string>> = {
   flashcard: "New card: word = meaning",
@@ -753,23 +1222,6 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
   const [draft, setDraft] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const ghostRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ id: string; x0: number; y0: number; offX: number; offY: number; active: boolean; timer: ReturnType<typeof setTimeout> } | null>(null);
-  const [dragging, setDragging] = useState<{ id: string; w: number; h: number } | null>(null);
-  const [target, setTarget] = useState<Target>(null);
-  const targetRef = useRef<Target>(null);
-  const suppressClick = useRef(false);
-
-  // Items allow vertical panning (pan-y), and React's touch listeners are
-  // passive, so once a hold picks an item up a native listener stops the
-  // page scrolling under the finger (which would also cancel the drag).
-  useEffect(() => {
-    const el = rootRef.current;
-    if (!el) return;
-    const hold = (e: TouchEvent) => { if (drag.current?.active && e.cancelable) e.preventDefault(); };
-    el.addEventListener("touchmove", hold, { passive: false });
-    return () => el.removeEventListener("touchmove", hold);
-  }, []);
 
   const all = pageItems(ctx.mind, page);
   const pageTags = tagsOf(all);
@@ -809,107 +1261,71 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
     setDraft("");
   };
 
-  /* ---- drag and drop ---- */
-  const moveGhost = (x: number, y: number) => {
-    const root = rootRef.current?.getBoundingClientRect();
-    const d = drag.current;
-    if (!root || !d || !ghostRef.current) return;
-    ghostRef.current.style.transform = `translate(${x - root.left - d.offX}px, ${y - root.top - d.offY}px) rotate(-1.5deg) scale(1.04)`;
-  };
-  const onBlockDown = (e: React.PointerEvent<HTMLElement>, id: string) => {
-    if (e.button !== 0) return;
-    const el = e.currentTarget;
-    const r = el.getBoundingClientRect();
-    const pointerId = e.pointerId;
-    drag.current = {
-      id, x0: e.clientX, y0: e.clientY, offX: e.clientX - r.left, offY: e.clientY - r.top, active: false,
-      timer: setTimeout(() => {
-        const d = drag.current;
-        if (!d) return;
-        d.active = true;
-        suppressClick.current = true;
-        try { el.setPointerCapture(pointerId); } catch { /* pointer gone */ }
-        navigator.vibrate?.(8);
-        setDragging({ id, w: r.width, h: r.height });
-        requestAnimationFrame(() => moveGhost(d.x0, d.y0));
-      }, HOLD_MS),
-    };
-  };
-  const findTarget = (x: number, y: number): Target => {
-    const d = drag.current!;
-    const hit = document.elementFromPoint(x, y) as HTMLElement | null;
-    const colEl = hit?.closest<HTMLElement>("[data-col]");
-    if (colEl) return { col: colEl.dataset.col as TaskStatus };
-    // Onto a sub-page, like dropping a file on a folder.
-    const folderEl = hit?.closest<HTMLElement>("[data-drop-page]");
-    if (folderEl) return { page: folderEl.dataset.dropPage! };
-    const over = hit?.closest<HTMLElement>("[data-bid]");
-    if (over && over.dataset.bid !== d.id) {
-      const sid = over.dataset.sid!;
-      const r = over.getBoundingClientRect();
-      const after = over.dataset.axis === "x" ? x > r.left + r.width / 2 : y > r.top + r.height / 2;
-      const list = (page.sections.find((s) => s.id === sid)?.blockIds ?? []).filter((id) => id !== d.id);
-      const at = list.indexOf(over.dataset.bid!);
-      return { sid, before: after ? list[at + 1] ?? null : over.dataset.bid! };
-    }
-    const zone = hit?.closest<HTMLElement>("[data-drop-sid]");
-    if (zone) return { sid: zone.dataset.dropSid!, before: null };
-    return null;
-  };
-  const onRootMove = (e: React.PointerEvent) => {
-    const d = drag.current;
-    if (!d) return;
-    if (!d.active) {
-      if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) > 8) { clearTimeout(d.timer); drag.current = null; }
-      return;
-    }
-    e.preventDefault();
-    moveGhost(e.clientX, e.clientY);
-    const t = findTarget(e.clientX, e.clientY);
-    if (JSON.stringify(t) !== JSON.stringify(targetRef.current)) { targetRef.current = t; setTarget(t); }
-    const s = scrollRef.current?.getBoundingClientRect();
-    if (s) {
-      if (e.clientY < s.top + 70) scrollRef.current!.scrollTop -= 10;
-      else if (e.clientY > s.bottom - 70) scrollRef.current!.scrollTop += 10;
-    }
-  };
-  /** The browser took the pointer (a scroll, a system gesture): put the item down where it was. */
-  const onRootCancel = () => {
-    const d = drag.current;
-    drag.current = null;
-    if (!d) return;
-    clearTimeout(d.timer);
-    if (!d.active) return;
-    suppressClick.current = false;
-    targetRef.current = null;
-    setTarget(null);
-    setDragging(null);
-  };
-  const onRootUp = () => {
-    const d = drag.current;
-    drag.current = null;
-    if (!d) return;
-    clearTimeout(d.timer);
-    if (!d.active) return;
-    const t = targetRef.current;
-    targetRef.current = null;
-    setTarget(null);
-    setDragging(null);
-    if (!t) return;
-    if (t.page) {
-      const to = col.pages.find((p) => p.id === t.page);
-      ctx.update((m) => place(m, d.id, { collectionId: col.id, pageId: t.page }));
-      if (to) ctx.flash(`Moved to ${to.emoji} ${to.title}`);
-    } else if (t.col) {
-      ctx.update((m) => patchBlock(m, d.id, { status: t.col, done: t.col === "done" }));
-      ctx.flash(`Moved to ${COLUMNS.find((c) => c.id === t.col)!.label}`);
-    } else if (t.sid) {
-      const from = locate(ctx.mind, d.id);
-      ctx.update((m) => place(m, d.id, { collectionId: col.id, pageId: page.id, sectionId: t.sid, beforeId: t.before }));
-      const to = page.sections.find((s) => s.id === t.sid);
-      if (from?.section?.id !== t.sid && to) ctx.flash(`Moved to ${to.title || page.title}`);
-    }
-  };
+  /* ---- hold for the menu, or hold and move to drag ---- */
+  const hold = useHold<Drop>({
+    root: rootRef,
+    scroll: scrollRef,
+    menu: (src, el) => openHoldMenu(ctx, col, src, el, { openStack: onOpen, page }),
+    closeMenu: ctx.closeSheet,
+    find: (x, y, src) => {
+      const hit = hitAt(x, y);
+      // Onto the back button: out one level.
+      if (src.kind !== "section" && hit?.closest("[data-drop-up]")) return { t: "up" };
+      if (src.kind === "section") {
+        const el = hit?.closest<HTMLElement>("[data-sec]");
+        if (!el || el.dataset.sec === src.id) return null;
+        const list = page.sections.map((s) => s.id).filter((id) => id !== src.id);
+        const id = el.dataset.sec!;
+        return { t: "sectionBefore", before: afterHalf(el, x, y) ? list[list.indexOf(id) + 1] ?? null : id };
+      }
+      const onStack = stackDrop(hit, x, y, src, col);
+      if (onStack) return onStack;
+      if (src.kind !== "item") return null;
+      const colEl = hit?.closest<HTMLElement>("[data-col]");
+      if (colEl) return { t: "column", col: colEl.dataset.col as TaskStatus };
+      const over = hit?.closest<HTMLElement>("[data-bid]");
+      if (over && over.dataset.bid !== src.id) {
+        const sid = over.dataset.sid!;
+        const list = (page.sections.find((s) => s.id === sid)?.blockIds ?? []).filter((id) => id !== src.id);
+        const at = list.indexOf(over.dataset.bid!);
+        return { t: "section", sid, before: afterHalf(over, x, y) ? list[at + 1] ?? null : over.dataset.bid! };
+      }
+      const zone = hit?.closest<HTMLElement>("[data-drop-sid]");
+      if (zone) return { t: "section", sid: zone.dataset.dropSid!, before: null };
+      return null;
+    },
+    drop: (src, t) => {
+      if (t.t === "up") {
+        if (src.kind === "stack") {
+          ctx.update((m) => moveStack(m, src.id, { collectionId: col.id, parentId: page.parentId ?? null }));
+          ctx.flash(`Moved to ${parent ? `${parent.emoji} ${parent.title}` : `${col.emoji} ${col.name}`}`);
+        } else if (src.kind === "item") {
+          ctx.update((m) => place(m, src.id, parent ? { collectionId: col.id, pageId: parent.id } : { collectionId: col.id, root: true }));
+          ctx.flash(`Moved to ${parent ? `${parent.emoji} ${parent.title}` : `${col.emoji} ${col.name}`}`);
+        }
+      } else if (t.t === "sectionBefore") {
+        ctx.update((m) => patchPage(m, page.id, (p) => {
+          const moving = p.sections.find((s) => s.id === src.id);
+          if (!moving) return p;
+          const list = p.sections.filter((s) => s.id !== src.id);
+          const at = t.before ? list.findIndex((s) => s.id === t.before) : -1;
+          list.splice(at >= 0 ? at : list.length, 0, moving);
+          return { ...p, sections: list };
+        }));
+      } else if (t.t === "column") {
+        ctx.update((m) => patchBlock(m, src.id, { status: t.col, done: t.col === "done" }));
+        ctx.flash(`Moved to ${COLUMNS.find((c) => c.id === t.col)!.label}`);
+      } else if (t.t === "section") {
+        const from = locate(ctx.mind, src.id);
+        ctx.update((m) => place(m, src.id, { collectionId: col.id, pageId: page.id, sectionId: t.sid, beforeId: t.before }));
+        const to = page.sections.find((s) => s.id === t.sid);
+        if (from?.section?.id !== t.sid && to) ctx.flash(`Moved to ${to.title || page.title}`);
+      } else {
+        dropOnStack(ctx, col, src, t);
+      }
+    },
+  });
+  const target = hold.target;
 
   const wrap = (b: Block, sid: string, preferred: "tile" | "row", axis: "x" | "y") => {
     const shape = b.kind === "chat" ? "tile" : preferred;
@@ -921,23 +1337,19 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
         data-axis={axis}
         className={[
           styles.mindBlockWrap,
-          dragging?.id === b.id ? styles.mindDragSource : "",
-          target?.before === b.id ? (axis === "x" ? styles.mindDropLeft : styles.mindDropAbove) : "",
+          hold.isDragging("item", b.id) ? styles.mindDragSource : "",
+          target?.t === "section" && target.before === b.id ? (axis === "x" ? styles.mindDropLeft : styles.mindDropAbove) : "",
         ].filter(Boolean).join(" ")}
         role="button"
         tabIndex={0}
-        onPointerDown={(e) => onBlockDown(e, b.id)}
-        onClick={() => {
-          if (suppressClick.current) { suppressClick.current = false; return; }
-          ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />);
-        }}
+        {...hold.bind({ kind: "item", id: b.id })}
+        onClick={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}
         onKeyDown={(e) => {
           // Only the item itself; its own controls (a checkbox, a link) keep their keys.
           if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
           e.preventDefault();
           ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />);
         }}
-        onContextMenu={(e) => e.preventDefault()}
       >
         {axis === "y" && preferred === "row" ? (
           <SwipeItem actions={itemActions(ctx, b)}>
@@ -953,10 +1365,19 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
     if (tag && !ids.length) return null;
     const blocks = ids.map((id) => ctx.mind.blocks[id]);
     const headless = !s.title;
+    const into = target?.t === "section" && target.sid === s.id && target.before === null;
     return (
-      <section key={s.id} className={styles.mindSection}>
+      <section
+        key={s.id}
+        data-sec={s.id}
+        className={[
+          styles.mindSection,
+          hold.isDragging("section", s.id) ? styles.mindDragSource : "",
+          target?.t === "sectionBefore" && target.before === s.id ? styles.mindSectionBefore : "",
+        ].filter(Boolean).join(" ")}
+      >
         {!headless && (
-          <div className={`${styles.mindSectionHead} ${target?.sid === s.id && target.before === null ? styles.mindDropInto : ""}`} data-drop-sid={s.id}>
+          <div className={`${styles.mindSectionHead} ${into ? styles.mindDropInto : ""}`} data-drop-sid={s.id} {...hold.bind({ kind: "section", id: s.id })}>
             <button
               className={styles.mindSectionToggle}
               aria-expanded={!s.collapsed}
@@ -967,7 +1388,7 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
               <b>{s.title}</b>
               <em>{ids.length}</em>
             </button>
-            <button className={styles.mindAdd} onClick={() => ctx.openSheet(<AddItemSheet ctx={ctx} to={{ collectionId: col.id, pageId: page.id, sectionId: s.id }} kind={page.defaultKind} />)} aria-label={`Add to ${s.title}`}>
+            <button className={styles.mindAdd} onClick={() => ctx.openSheet(<MindAddSheet ctx={ctx} col={col} page={page} sectionId={s.id} />)} aria-label={`Add to ${s.title}`}>
               <IconPlus size={14} />
             </button>
           </div>
@@ -977,7 +1398,7 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
             data-drop-sid={s.id}
             className={[
               view === "shelf" ? styles.mindShelf : view === "grid" ? styles.mindGridView : styles.mindListView,
-              target?.sid === s.id && target.before === null && headless ? styles.mindDropInto : "",
+              into && headless ? styles.mindDropInto : "",
             ].join(" ")}
           >
             {blocks.map((b) => wrap(b, s.id, view === "list" ? "row" : "tile", view === "list" || view === "board" ? "y" : "x"))}
@@ -989,40 +1410,39 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
   };
 
   const boardTasks = all.filter((b) => b.kind === "todo" && b.status && visible(b.id));
-  const draggingBlock = dragging ? ctx.mind.blocks[dragging.id] : null;
+  const upLabel = parent ? parent.title : col.name;
 
   return (
     <div
       ref={rootRef}
       className={`${styles.screen} ${styles.chatScreen} ${styles.mindPageScreen} ${leaving ? styles.leaving : ""}`}
-      onPointerMove={onRootMove}
-      onPointerUp={onRootUp}
-      onPointerCancel={onRootCancel}
+      {...hold.rootHandlers}
       style={{ ["--tone" as string]: page.tone }}
     >
       <div className={styles.edgeTop} />
       <header className={styles.chatHeader}>
-        {/* Back steps up one level, like leaving a folder. */}
-        <button className={`${styles.circleBtn} ${styles.glass}`} onClick={parent ? () => onOpen(parent.id) : onBack} aria-label={`Back to ${parent ? parent.title : col.name}`}><IconBack /></button>
+        {/* Back steps up one level, like leaving a folder. Dropping something on it moves it up a level. */}
+        <button
+          className={`${styles.circleBtn} ${styles.glass} ${target?.t === "up" ? styles.mindDropUp : ""}`}
+          data-drop-up
+          onClick={parent ? () => onOpen(parent.id) : onBack}
+          aria-label={`Back to ${upLabel}`}
+        >
+          <IconBack />
+        </button>
         <div className={styles.titleCapsule}>
           <span className={styles.mindPageBadge}><Emoji char={page.emoji} /></span>
           <div className={`${styles.tcName} ${styles.glass}`}><span>{page.title}</span></div>
-          <span className={styles.tcPresence}>{col.name}{parent ? ` › ${parent.title}` : ""} · {all.length} items</span>
+          <span className={styles.tcPresence}>
+            {hold.dragging && hold.dragging.src.kind !== "section" ? `Drop on ← to move it to ${upLabel}` : `${col.name}${parent ? ` › ${parent.title}` : ""} · ${all.length} items`}
+          </span>
         </div>
-        <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => ctx.openSheet(<PageSheet ctx={ctx} col={col} pageId={page.id} onDeleted={onBack} />)} aria-label="Page settings"><IconMore /></button>
+        <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => ctx.openSheet(<PageSheet ctx={ctx} col={col} pageId={page.id} onDeleted={onBack} />)} aria-label="Stack settings"><IconMore /></button>
       </header>
 
       <div className={styles.mindPageScroll} ref={scrollRef}>
         <div className={styles.mindToolbar}>
-          {page.views.length > 1 ? (
-            <div className={styles.mindViews} role="tablist" aria-label="View">
-              {page.views.map((v) => (
-                <button key={v} role="tab" aria-selected={page.view === v} className={page.view === v ? styles.mindViewOn : undefined} onClick={() => setView(v)}>
-                  {VIEW_META[v].icon}{VIEW_META[v].label}
-                </button>
-              ))}
-            </div>
-          ) : <span />}
+          {page.views.length > 1 ? <ViewSwitch views={page.views} value={page.view} onPick={setView} /> : <span />}
         </div>
 
         {pageTags.length > 0 && (
@@ -1034,10 +1454,12 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
           </div>
         )}
 
-        {/* Sub-pages sit beside the items, like folders among files. Drop an item on one to move it in. */}
+        {/* Stacks inside sit beside the items, drawn for the current view. Drop an item on one to move it in. */}
         {kidsShown.length > 0 && (
-          <div className={`${styles.mindRows} ${styles.mindFolders}`}>
-            {kidsShown.map((k, i) => <FolderRow key={k.id} ctx={ctx} col={col} page={k} i={i} onOpen={() => onOpen(k.id)} drop={target?.page === k.id} />)}
+          <div className={`${page.view === "grid" ? styles.mindStackGrid : page.view === "shelf" ? styles.mindShelf : styles.mindRows} ${styles.mindFolders}`}>
+            {kidsShown.map((k, i) => (
+              <StackCard key={k.id} ctx={ctx} col={col} page={k} i={i} view={page.view} onOpen={() => onOpen(k.id)} hold={hold.bind({ kind: "stack", id: k.id })} mark={markFor(target, k.id)} lifted={hold.isDragging("stack", k.id)} />
+            ))}
           </div>
         )}
 
@@ -1047,7 +1469,7 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
               {COLUMNS.map((c) => {
                 const list = boardTasks.filter((b) => b.status === c.id);
                 return (
-                  <div key={c.id} className={`${styles.mindColumn} ${target?.col === c.id ? styles.mindDropInto : ""}`} data-col={c.id}>
+                  <div key={c.id} className={`${styles.mindColumn} ${target?.t === "column" && target.col === c.id ? styles.mindDropInto : ""}`} data-col={c.id}>
                     <p className={styles.mindColumnHead}><span className={styles[`mindCol_${c.id}`]} />{c.label}<em>{list.length}</em></p>
                     {list.map((b) => wrap(b, locate(ctx.mind, b.id)?.section?.id ?? "", "tile", "y"))}
                     {!list.length && <p className={styles.mindColumnEmpty}>Drop a task here</p>}
@@ -1066,7 +1488,7 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
 
       <div className={styles.mindCompose}>
         <div className={`${styles.mindComposeField} ${styles.glassStrong}`}>
-          <button className={styles.mindComposePlus} onClick={() => ctx.openSheet(<PageAddSheet ctx={ctx} col={col} page={page} />)} aria-label={`Add to ${page.title}`}>
+          <button className={styles.mindComposePlus} onClick={() => ctx.openSheet(<MindAddSheet ctx={ctx} col={col} page={page} />)} aria-label={`Add to ${page.title}`}>
             <IconPlus size={18} />
           </button>
           <input
@@ -1082,11 +1504,7 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
         </div>
       </div>
 
-      {draggingBlock && dragging && (
-        <div ref={ghostRef} className={styles.mindGhost} style={{ width: dragging.w, height: dragging.h }} aria-hidden="true">
-          <BlockView block={draggingBlock} shape={page.view === "list" ? "row" : "tile"} />
-        </div>
-      )}
+      {hold.ghost}
     </div>
   );
 }
@@ -1113,41 +1531,6 @@ function KindGrid({ onPick, first }: { onPick: (k: BlockKind) => void; first?: B
         </div>
       ))}
     </>
-  );
-}
-
-/** + inside a page: items first (this page's kind leads), then structure. */
-function PageAddSheet({ ctx, col, page }: { ctx: Ctx; col: Collection; page: Page }) {
-  const [sectionName, setSectionName] = useState("");
-  return (
-    <Sheet title={`Add to ${page.title}`} onClose={ctx.closeSheet}>
-      {(close) => (
-        <>
-          <KindGrid first={page.defaultKind} onPick={(k) => close(() => ctx.openSheet(<AddItemSheet ctx={ctx} to={{ collectionId: col.id, pageId: page.id, sectionId: page.sections[page.sections.length - 1]?.id }} kind={k} />))} />
-          <p className={styles.sheetLabel}>Structure</p>
-          <div className={styles.mindStructure}>
-            <button onClick={() => close(() => ctx.openSheet(<NewPageSheet ctx={ctx} col={col} parentId={page.id} />))}><Emoji char="📑" /><b>Sub-page</b><small>Inside {page.title}</small></button>
-          </div>
-          <div className={styles.mindAddRow}>
-            <input className={styles.plainInput} placeholder="New section, e.g. Everyday" value={sectionName} onChange={(e) => setSectionName(e.target.value)} />
-            <button
-              className={styles.mindPrimary}
-              disabled={!sectionName.trim()}
-              onClick={() => close(() => {
-                ctx.update((m) => patchPage(m, page.id, (p) => {
-                  // A page's first section stays untitled until there's a second one; name it now.
-                  const sections = p.sections.length === 1 && !p.sections[0].title ? [{ ...p.sections[0], title: "General", emoji: "📁" }] : p.sections;
-                  return { ...p, sections: [...sections, { id: newId("s"), title: sectionName.trim(), emoji: "📁", collapsed: false, blockIds: [] }] };
-                }));
-                ctx.flash("Section added");
-              })}
-            >
-              Add section
-            </button>
-          </div>
-        </>
-      )}
-    </Sheet>
   );
 }
 
@@ -1278,11 +1661,14 @@ const viewFor = (k: BlockKind): { view: MindView; views: MindView[] } =>
   : k === "book" || k === "video" ? { view: "shelf", views: ["shelf", "list"] }
   : { view: "list", views: ["list", "grid", "shelf"] };
 
-function NewPageSheet({ ctx, col, parentId, sub = false }: { ctx: Ctx; col: Collection; parentId?: string; sub?: boolean }) {
+/** A new stack: at the top of the collection, or inside another stack. */
+function NewPageSheet({ ctx, col, parentId }: { ctx: Ctx; col: Collection; parentId?: string }) {
   const [title, setTitle] = useState("");
-  const [emoji, setEmoji] = useState("📄");
+  const [emoji, setEmoji] = useState("🗂️");
   const [kind, setKind] = useState<BlockKind>("note");
-  const [parent, setParent] = useState<string | undefined>(parentId ?? (sub ? col.pages.find((p) => !p.parentId)?.id : undefined));
+  const [parent, setParent] = useState<string | undefined>(parentId);
+  // Where it can go: the top level, the collection's top stacks, and the stack the + was tapped in.
+  const homes = col.pages.filter((p) => !p.parentId || p.id === parentId);
   const create = () => {
     const page = { ...blankPage(title.trim() || "Untitled", emoji, col.tone, kind, parent), ...viewFor(kind) };
     ctx.update((m) => patchCollection(m, col.id, (c) => ({ ...c, pages: [...c.pages, page] })));
@@ -1290,13 +1676,14 @@ function NewPageSheet({ ctx, col, parentId, sub = false }: { ctx: Ctx; col: Coll
     ctx.openPage(page.id);
   };
   return (
-    <Sheet title={parent ? "New sub-page" : "New page"} onClose={ctx.closeSheet} action={{ label: "Create", disabled: !title.trim(), onClick: create }}>
-      <input className={`${styles.plainInput} ${styles.mindTitleInput}`} data-autofocus placeholder={parent ? "e.g. Separable verbs" : "e.g. Vocab"} value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && title.trim()) create(); }} />
-      {(sub || parentId) && (
+    <Sheet title="New stack" onClose={ctx.closeSheet} action={{ label: "Create", disabled: !title.trim(), onClick: create }}>
+      <input className={`${styles.plainInput} ${styles.mindTitleInput}`} data-autofocus placeholder={parent ? "e.g. Separable verbs" : "e.g. Vocab"} value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && title.trim()) create(); }} aria-label="Stack name" />
+      {homes.length > 0 && (
         <>
-          <p className={styles.sheetLabel}>Inside</p>
+          <p className={styles.sheetLabel}>Goes in</p>
           <div className={styles.chipGrid}>
-            {col.pages.filter((p) => !p.parentId).map((p) => (
+            <button className={`${styles.choice} ${!parent ? styles.choiceOn : ""}`} onClick={() => setParent(undefined)}><Emoji char={col.emoji} /> {col.name}</button>
+            {homes.map((p) => (
               <button key={p.id} className={`${styles.choice} ${parent === p.id ? styles.choiceOn : ""}`} onClick={() => setParent(p.id)}><Emoji char={p.emoji} /> {p.title}</button>
             ))}
           </div>
@@ -1308,7 +1695,7 @@ function NewPageSheet({ ctx, col, parentId, sub = false }: { ctx: Ctx; col: Coll
           <button key={k} className={`${styles.choice} ${kind === k ? styles.choiceOn : ""}`} onClick={() => setKind(k)}><Emoji char={KIND_EMOJI[k]} /> {KIND_LABEL[k]}s</button>
         ))}
       </div>
-      <p className={styles.sheetNote}>This sets the quick-add field and the first view ({VIEW_META[viewFor(kind).view].label}). Any page can hold anything.</p>
+      <p className={styles.sheetNote}>This sets the quick-add field and the first view ({VIEW_META[viewFor(kind).view].label}). A stack can hold anything, including other stacks.</p>
       <p className={styles.sheetLabel}>Icon</p>
       <EmojiPicker value={emoji} options={PAGE_EMOJIS} onPick={setEmoji} />
     </Sheet>
@@ -1316,7 +1703,7 @@ function NewPageSheet({ ctx, col, parentId, sub = false }: { ctx: Ctx; col: Coll
 }
 
 /* ===========================================================================
-   Item, page and move sheets
+   Item, stack and move sheets
    =========================================================================== */
 
 function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
@@ -1505,7 +1892,7 @@ export function MoveSheet({ me, id, onClose, onMoved, title = "Move to" }: { me:
             </div>
           )}
           <div className={styles.listGroup}>
-            {/* The collection itself: the item sits beside its pages. */}
+            {/* The collection itself: the item sits beside its stacks. */}
             <WhereRow depth={0} emoji={col.emoji} title={`${col.name} · top level`} count={col.items.length} on={!!current && current.collection.id === col.id && !current.page && !current.toSort} onPick={() => close(() => move(null, null, null))} />
             {roots.flatMap((p) => rows(p, 1, close))}
           </div>
@@ -1529,10 +1916,10 @@ function PageSheet({ ctx, col, pageId, onDeleted }: { ctx: Ctx; col: Collection;
   });
 
   return (
-    <Sheet title="Customise page" onClose={ctx.closeSheet}>
+    <Sheet title="Customise stack" onClose={ctx.closeSheet}>
       {(close) => (
         <>
-          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} value={page.title} onChange={(e) => set((p) => ({ ...p, title: e.target.value }))} aria-label="Page name" />
+          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} value={page.title} onChange={(e) => set((p) => ({ ...p, title: e.target.value }))} aria-label="Stack name" />
           <div className={styles.mindField}><span>Pin to home</span><Toggle on={!!page.pinned} onChange={(v) => set((p) => ({ ...p, pinned: v }))} label="Pin to home" /></div>
           <p className={styles.sheetLabel}>Icon</p>
           <EmojiPicker value={page.emoji} options={PAGE_EMOJIS} onPick={(e) => set((p) => ({ ...p, emoji: e }))} />
@@ -1576,21 +1963,11 @@ function PageSheet({ ctx, col, pageId, onDeleted }: { ctx: Ctx; col: Collection;
           <button
             className={styles.mindDanger}
             onClick={() => close(() => {
-              update((m) => {
-                const c = m.collections.find((x) => x.id === col.id)!;
-                // The page and everything under it, however deep.
-                const doomed = [pageId];
-                for (let i = 0; i < doomed.length; i++) doomed.push(...childrenOf(c, doomed[i]).map((p) => p.id).filter((id) => !doomed.includes(id)));
-                const ids = c.pages.filter((p) => doomed.includes(p.id)).flatMap((p) => pageItems(m, p).map((b) => b.id));
-                let next = m;
-                ids.forEach((bid) => { next = detach(next, bid); });
-                return patchCollection(next, col.id, (x) => ({ ...x, pages: x.pages.filter((p) => !doomed.includes(p.id)), vault: [...ids, ...x.vault] }));
-              });
+              deleteStack(ctx, col.id, pageId);
               onDeleted();
-              ctx.flash("Page deleted · its items are in To sort");
             })}
           >
-            Delete page
+            Delete stack
           </button>
         </>
       )}

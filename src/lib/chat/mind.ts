@@ -82,6 +82,8 @@ export interface Collection {
   vault: string[];
   /** Chats whose saves usually land here; learned when you correct a save. */
   chatIds: string[];
+  /** How the top level is laid out: stacks and items share it, like inside a stack. */
+  view?: MindView;
 }
 
 export interface Mind {

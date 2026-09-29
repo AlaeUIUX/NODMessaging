@@ -29,7 +29,7 @@ type Step = "welcome" | "phone" | "code" | "profile" | "contacts";
 const SLIDES = [
   { title: "Talk it through", body: "Chat one to one, or start a Space for a team, a trip or a project.", art: <ArtChat /> },
   { title: "Decide in the thread", body: "Polls, checklists, plans, boards and payments live right in the conversation.", art: <ArtPoll /> },
-  { title: "Keep what matters", body: "Save anything from a chat into Mind: your own collections of pages, notes and links.", art: <ArtMind /> },
+  { title: "Keep what matters", body: "Save anything from a chat into Mind: your own collections of stacks, notes and links.", art: <ArtMind /> },
   { title: "See what needs you", body: "Your Dashboard gathers votes, tasks, payments and what’s coming up this week.", art: <ArtDash /> },
 ];
 
@@ -429,8 +429,8 @@ function ArtPoll() {
 function ArtMind() {
   return (
     <div className={s.scene}>
-      <div className={`${s.artFolder} ${s.artFolderBack}`} style={{ ["--tone" as string]: "#3E67A6" }}><Emoji char="💼" /><b>Work</b><small>1 page</small></div>
-      <div className={s.artFolder} style={{ ["--tone" as string]: "#C99432" }}><Emoji char="🇩🇪" /><b>German</b><small>6 pages · 27 items</small><em>1 to sort</em></div>
+      <div className={`${s.artFolder} ${s.artFolderBack}`} style={{ ["--tone" as string]: "#3E67A6" }}><Emoji char="💼" /><b>Work</b><small>1 stack</small></div>
+      <div className={s.artFolder} style={{ ["--tone" as string]: "#C99432" }}><Emoji char="🇩🇪" /><b>German</b><small>6 stacks · 27 items</small><em>1 to sort</em></div>
       <div className={s.artSaved}><IconCheck size={12} /> Saved to Mind</div>
     </div>
   );

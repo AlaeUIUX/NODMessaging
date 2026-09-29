@@ -376,7 +376,7 @@ export default function Dashboard({ onOpenChat, onSettings, onUnread, onMind }: 
                   <span className={d.rowIcon} style={{ background: `color-mix(in srgb, ${c.tone} 16%, transparent)` }}><Emoji char={c.emoji} /></span>
                   <span className={d.rowText}>
                     <b>{c.name}</b>
-                    <small>{c.pages.length} {c.pages.length === 1 ? "page" : "pages"}{c.vault.length ? ` · ${c.vault.length} to sort` : ""}</small>
+                    <small>{c.pages.length} {c.pages.length === 1 ? "stack" : "stacks"}{c.vault.length ? ` · ${c.vault.length} to sort` : ""}</small>
                     <span className={d.bar} role="img" aria-label={`${n} items`}><i style={{ width: `${(n / colMax) * 100}%`, background: c.tone }} /></span>
                   </span>
                   <span className={d.figure}>{n}</span>

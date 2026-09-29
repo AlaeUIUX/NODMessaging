@@ -4740,3 +4740,106 @@ a.bsheetAction { text-decoration: none !important; }
 .mindSwipeBody { position: relative; z-index: 1; touch-action: pan-y; }
 .mindSwipeBody.mindSwipeSettling { transition: transform var(--t-slow) var(--ease-spring); }
 .mindInboxItem > .mindSwipe { flex: 1; min-width: 0; }
+
+/* ==========================================================================
+   Mind — stacks: a stack of cards, so a stack never reads as one item
+   ========================================================================== */
+
+/* List (and beside a board): a row with the next card peeking above it */
+.mindPageRow.mindStackRow { position: relative; margin-top: 5px; }
+.mindPageRow.mindStackRow::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 100%;
+  height: 5px;
+  border-radius: 6px 6px 0 0;
+  background: color-mix(in srgb, var(--tone) 24%, var(--card-bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 14%, transparent);
+  clip-path: inset(-2px -2px 0 -2px);
+}
+
+/* Grid and Shelf: a card with two more behind it */
+.mindStackGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px 10px; padding-top: 4px; margin-bottom: 8px; }
+.mindStackCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 9px;
+  padding: 12px;
+  border: none;
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--tone) 9%, var(--card-bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 15%, transparent), var(--e1);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.mindStackCard::before, .mindStackCard::after {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 13%, transparent);
+  clip-path: inset(-2px -2px 0 -2px);
+}
+.mindStackCard::before { left: 9px; right: 9px; height: 5px; background: color-mix(in srgb, var(--tone) 18%, var(--card-bg)); }
+.mindStackCard::after { left: 18px; right: 18px; height: 4px; bottom: calc(100% + 5px); background: color-mix(in srgb, var(--tone) 28%, var(--card-bg)); }
+.mindStackCard:active { transform: scale(.97); }
+.mindStackTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.mindStackBadge { padding: 2px 8px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--tone) 18%, transparent); color: var(--ink-2); font-style: normal; font: var(--t-caption1); font-weight: var(--w-emph); white-space: nowrap; }
+.mindStackCard .folderPeek:empty { display: none; }
+/* On a shelf: a taller card, like a spine you can pull out */
+.mindStackCard.mindStackShelf { min-height: 172px; justify-content: space-between; }
+.mindShelf > .mindStackCard { flex: 0 0 150px; }
+.mindShelf:has(> .mindStackCard) { padding-top: 12px; }
+.mindFolders.mindShelf, .mindFolders.mindStackGrid { margin-bottom: 10px; }
+
+/* the structure tiles in the + sheet: dashed, since they hold things rather than being one */
+.addIcon.mindKindIcon.mindKindStructure { box-shadow: none; background: color-mix(in srgb, var(--accent) 7%, transparent); outline: 1.5px dashed color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: -1.5px; }
+
+/* ==========================================================================
+   Mind — hold for a menu, hold and move to drag
+   ========================================================================== */
+
+/* anything that can be held: no text selection or callout on a long press */
+.mindStackCard, .mindPageRow, .folderCard, .mindSectionHead, .mindBlockWrap {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* a shelf still scrolls sideways under a finger */
+.mindShelf > .mindBlockWrap, .mindShelf > .mindStackCard { touch-action: pan-x pan-y; }
+
+/* what's being dragged stays behind, faded */
+.mindStackCard.mindDragSource, .mindPageRow.mindDragSource, .folderCard.mindDragSource,
+.mindSection.mindDragSource, .mindInboxItem.mindDragSource { opacity: .3; transform: scale(.97); }
+
+/* "it goes here": a bar on the leading edge (cards already use ::before for their layers) */
+.mindStackBeforeX { box-shadow: -5px 0 0 -2px var(--accent), var(--e1) !important; }
+.mindStackBeforeY { box-shadow: 0 -5px 0 -2px var(--accent), var(--mb-shadow) !important; }
+.mindSection.mindSectionBefore { box-shadow: 0 -4px 0 -1px var(--accent); border-radius: 2px; }
+
+/* the back button takes a drop: out one level */
+.circleBtn.mindDropUp { background: var(--accent); color: #fff; transform: scale(1.12); box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent); }
+
+/* the lifted copy over the menu scrim */
+.focus.mindHoldFocus { display: block; pointer-events: auto; cursor: pointer; }
+.focus.mindHoldFocus > * { width: 100%; height: 100%; box-shadow: var(--e4); pointer-events: none; }
+.mindHoldTitle {
+  margin: 0;
+  padding: 6px 12px 8px;
+  font: var(--t-footnote);
+  font-weight: var(--w-emph);
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
