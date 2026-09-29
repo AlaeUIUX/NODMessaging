@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { initials, TONES } from "@/lib/chat/avatar";
 import { Emoji, emojify, firstEmoji } from "@/lib/chat/emoji";
 import { toAttachment } from "@/lib/chat/media";
 import {
   blankPage, childrenOf, collectionItems, detach, learnChat, locate, makeCollection, newId, nowMs, pageItems, patchBlock,
-  patchCollection, patchPage, place, removeBlock, tagsOf, todayKey, useMind,
+  patchCollection, patchPage, place, removeBlock, rootItems, tagsOf, todayKey, useMind,
   type Block, type BlockKind, type Collection, type Mind, type MindView, type Page, type TaskStatus,
 } from "@/lib/chat/mind";
 import { useChat, userById } from "@/lib/chat/store";
@@ -251,11 +251,21 @@ function EmptyMind({ ctx }: { ctx: Ctx }) {
   );
 }
 
-/** Inside a collection: its pages (and sub-pages), and its Vault. */
+/**
+ * Inside a collection: anything waiting to be sorted first, then its pages
+ * and items side by side, the way a folder holds sub-folders and files.
+ */
 function FolderScreen({ ctx, col, leaving, onBack }: { ctx: Ctx; col: Collection; leaving: boolean; onBack: () => void }) {
-  const [tab, setTab] = useState<"pages" | "vault">("pages");
-  const roots = col.pages.filter((p) => !p.parentId);
-  const count = collectionItems(ctx.mind, col).length;
+  const [tag, setTag] = useState<string | null>(null);
+  const all = collectionItems(ctx.mind, col);
+  const tags = tagsOf(all);
+  const has = (b: Block) => !tag || b.tags.includes(tag);
+  // A page stays in view while filtering if anything in it (or under it) has the tag.
+  const holds = (p: Page): boolean => pageItems(ctx.mind, p).some(has) || childrenOf(col, p.id).some(holds);
+  const folders = col.pages.filter((p) => !p.parentId && (!tag || holds(p)));
+  const loose = rootItems(ctx.mind, col).filter(has);
+  const toSort = col.vault.map((id) => ctx.mind.blocks[id]).filter((b) => b && has(b));
+  const add = () => ctx.openSheet(<FolderAddSheet ctx={ctx} col={col} />);
   return (
     <div className={`${styles.screen} ${styles.chatScreen} ${styles.mindPageScreen} ${styles.mindFolderScreen} ${leaving ? styles.leaving : ""}`} style={{ ["--tone" as string]: col.tone }}>
       <div className={styles.edgeTop} />
@@ -264,101 +274,97 @@ function FolderScreen({ ctx, col, leaving, onBack }: { ctx: Ctx; col: Collection
         <div className={styles.titleCapsule}>
           <span className={styles.mindPageBadge}><Emoji char={col.emoji} /></span>
           <div className={`${styles.tcName} ${styles.glass}`}><span>{col.name}</span></div>
-          <span className={styles.tcPresence}>{col.pages.length} pages · {count} items</span>
+          <span className={styles.tcPresence}>{col.pages.length} pages · {all.length} items</span>
         </div>
         <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => ctx.openSheet(<FolderSheet ctx={ctx} colId={col.id} onDeleted={onBack} />)} aria-label="Collection settings"><IconMore /></button>
       </header>
 
       <div className={styles.mindPageScroll}>
-        <div className={styles.chips} role="tablist">
-          <button role="tab" aria-selected={tab === "pages"} className={`${styles.chip} ${tab === "pages" ? styles.chipOn : ""}`} onClick={() => setTab("pages")}>Pages</button>
-          <button role="tab" aria-selected={tab === "vault"} className={`${styles.chip} ${tab === "vault" ? styles.chipOn : ""}`} onClick={() => setTab("vault")}>
-            Vault{col.vault.length > 0 && <span className={styles.chipBadge}>{col.vault.length}</span>}
-          </button>
-        </div>
+        {tags.length > 0 && (
+          <div className={styles.chips}>
+            <button className={`${styles.chip} ${!tag ? styles.chipOn : ""}`} onClick={() => setTag(null)}>All</button>
+            {tags.map((t) => (
+              <button key={t} className={`${styles.chip} ${tag === t ? styles.chipOn : ""}`} onClick={() => setTag(tag === t ? null : t)}>#{t}</button>
+            ))}
+          </div>
+        )}
 
-        {tab === "pages" ? (
-          <>
-            <div className={styles.mindSectionBar}>
-              <p className={styles.sheetLabel}>Pages</p>
-              <button className={styles.mindIconBtn} onClick={() => ctx.openSheet(<FolderAddSheet ctx={ctx} col={col} />)} aria-label={`Add to ${col.name}`} title="Add"><IconPlus size={16} /></button>
-            </div>
-            <div className={styles.mindRows}>
-              {roots.map((p, i) => <PageTree key={p.id} ctx={ctx} col={col} page={p} i={i} />)}
-              {!roots.length && (
-                <button className={styles.mindEmptySection} onClick={() => ctx.openSheet(<NewPageSheet ctx={ctx} col={col} />)}>
-                  <IconPlus size={14} /> Make the first page
-                </button>
-              )}
-            </div>
-          </>
-        ) : <VaultView ctx={ctx} col={col} />}
+        {toSort.length > 0 && <ToSort ctx={ctx} items={toSort} />}
+
+        <div className={styles.mindSectionBar}>
+          <p className={styles.sheetLabel}>In {col.name}</p>
+          <button className={styles.mindIconBtn} onClick={add} aria-label={`Add to ${col.name}`} title="Add"><IconPlus size={16} /></button>
+        </div>
+        <div className={styles.mindRows}>
+          {folders.map((p, i) => <FolderRow key={p.id} ctx={ctx} col={col} page={p} i={i} onOpen={() => ctx.openPage(p.id)} />)}
+          {loose.map((b) => (
+            <SwipeItem key={b.id} actions={itemActions(ctx, b)}>
+              <Tile onOpen={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
+                <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
+              </Tile>
+            </SwipeItem>
+          ))}
+          {!folders.length && !loose.length && (
+            tag ? <p className={styles.emptyInbox}>Nothing here is tagged #{tag}.</p> : (
+              <button className={styles.mindEmptySection} onClick={add}>
+                <IconPlus size={14} /> Add a page or an item
+              </button>
+            )
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function PageTree({ ctx, col, page, i, depth = 0 }: { ctx: Ctx; col: Collection; page: Page; i: number; depth?: number }) {
+/** A page shown as a folder: what's inside it, and how far its to-dos have got. */
+function FolderRow({ ctx, col, page, i, onOpen, drop }: { ctx: Ctx; col: Collection; page: Page; i: number; onOpen: () => void; drop?: boolean }) {
   const kids = childrenOf(col, page.id);
   const list = pageItems(ctx.mind, page);
   const tasks = list.filter((b) => b.kind === "todo");
   const done = tasks.filter((b) => b.done).length;
+  const inside = [
+    `${list.length} ${list.length === 1 ? "item" : "items"}`,
+    kids.length ? `${kids.length} ${kids.length === 1 ? "page" : "pages"}` : "",
+  ].filter(Boolean).join(" · ");
   return (
-    <>
-      <div className={`${styles.mindTreeRow} ${styles.rowEnter}`} style={{ ["--i" as string]: i, ["--depth" as string]: depth }}>
-        <button className={styles.mindPageRow} onClick={() => ctx.openPage(page.id)}>
-          <span className={styles.mindEmoji} style={{ background: `color-mix(in srgb, ${page.tone} 16%, transparent)` }}><Emoji char={page.emoji} /></span>
-          <span className={styles.mindPageText}>
-            <b>{page.title}</b>
-            <small>{list.length} {list.length === 1 ? "item" : "items"}{kids.length ? ` · ${kids.length} sub-page${kids.length > 1 ? "s" : ""}` : ""}</small>
-            {tasks.length > 0 && <span className={styles.mindRowBar}><i style={{ width: `${(done / tasks.length) * 100}%`, background: page.tone }} /></span>}
-          </span>
-          <span className={styles.mindPageSide}><IconChevron size={14} /></span>
-        </button>
-        {kids.length > 0 && (
-          <button
-            className={`${styles.mindTreeToggle} ${page.collapsed ? styles.mindChevronShut : ""}`}
-            onClick={() => ctx.update((m) => patchPage(m, page.id, (p) => ({ ...p, collapsed: !p.collapsed })))}
-            aria-label={page.collapsed ? "Show sub-pages" : "Hide sub-pages"}
-            aria-expanded={!page.collapsed}
-          >
-            <IconChevronDown size={14} />
-          </button>
-        )}
-      </div>
-      {kids.length > 0 && (
-        <div className={`${styles.mindFoldBody} ${page.collapsed ? styles.mindFolded : ""}`}>
-          <div className={styles.mindTreeKids}>
-            {kids.map((k, j) => <PageTree key={k.id} ctx={ctx} col={col} page={k} i={j} depth={depth + 1} />)}
-          </div>
-        </div>
-      )}
-    </>
+    <button
+      className={`${styles.mindPageRow} ${styles.rowEnter} ${drop ? styles.mindDropInto : ""}`}
+      style={{ ["--i" as string]: i }}
+      data-drop-page={page.id}
+      onClick={onOpen}
+    >
+      <span className={styles.mindEmoji} style={{ background: `color-mix(in srgb, ${page.tone} 16%, transparent)` }}><Emoji char={page.emoji} /></span>
+      <span className={styles.mindPageText}>
+        <b>{page.title}</b>
+        <small>{inside}</small>
+        {tasks.length > 0 && <span className={styles.mindRowBar}><i style={{ width: `${(done / tasks.length) * 100}%`, background: page.tone }} /></span>}
+      </span>
+      <span className={styles.mindPageSide}><IconChevron size={14} /></span>
+    </button>
   );
 }
 
-function VaultView({ ctx, col }: { ctx: Ctx; col: Collection }) {
-  const items = col.vault.map((id) => ctx.mind.blocks[id]).filter(Boolean);
+/** Saves from chats, waiting for a place. Sits at the top of the collection, not behind a tab. */
+function ToSort({ ctx, items }: { ctx: Ctx; items: Block[] }) {
   return (
-    <div className={styles.mindStack}>
-      <p className={styles.mindHint}>Saves from chats land here first. Sort them into a page when you have a minute.</p>
-      {items.length === 0 ? (
-        <p className={styles.emptyInbox}>All sorted. Hold any message in a chat and choose Save to Mind.</p>
-      ) : (
-        <div className={styles.mindRows}>
-          {items.map((b) => (
-            <div key={b.id} className={styles.mindInboxItem}>
-              <SwipeItem actions={itemActions(ctx, b)}>
-                <Tile onOpen={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
-                  <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
-                </Tile>
-              </SwipeItem>
-              <button className={styles.mindSort} onClick={() => ctx.openSheet(<MoveSheet me={ctx.me} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} title="Sort into" />)}>Sort</button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <section className={styles.mindToSort} aria-labelledby="to-sort-title">
+      <div className={styles.mindSectionBar}>
+        <p className={styles.sheetLabel} id="to-sort-title">To sort <em className={styles.mindToSortCount}>{items.length}</em></p>
+      </div>
+      <div className={styles.mindRows}>
+        {items.map((b) => (
+          <div key={b.id} className={styles.mindInboxItem}>
+            <SwipeItem actions={itemActions(ctx, b)}>
+              <Tile onOpen={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
+                <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
+              </Tile>
+            </SwipeItem>
+            <button className={styles.mindSort} onClick={() => ctx.openSheet(<MoveSheet me={ctx.me} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} title="Sort into" />)}>Sort</button>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -389,7 +395,7 @@ function SearchResults({ ctx, q }: { ctx: Ctx; q: string }) {
             return (
               <Tile key={b.id} onOpen={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
                 <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
-                <span className={styles.mindWhere}>{emojify(at ? `${at.collection.emoji} ${at.collection.name} › ${at.page ? at.page.title : "Vault"}` : "")}</span>
+                <span className={styles.mindWhere}>{emojify(at ? `${at.collection.emoji} ${at.collection.name}${at.page ? ` › ${at.page.title}` : at.toSort ? " › To sort" : ""}` : "")}</span>
               </Tile>
             );
           })}
@@ -430,11 +436,18 @@ function toggleItem(update: Ctx["update"], b: Block) {
   }
 }
 
+/** A page and the pages above it, outermost first. */
+function pathTo(col: Collection, page: Page | null) {
+  const out: Page[] = [];
+  for (let p = page; p && !out.includes(p); p = p.parentId ? col.pages.find((x) => x.id === p!.parentId) ?? null : null) out.unshift(p);
+  return out;
+}
+
 /* ===========================================================================
    Collection sheets
    =========================================================================== */
 
-/** + inside a collection: a page, a sub-page, or anything straight into the Vault. */
+/** + inside a collection: a page, a sub-page, or any item, right beside the pages. */
 function FolderAddSheet({ ctx, col }: { ctx: Ctx; col: Collection }) {
   return (
     <Sheet title={`Add to ${col.name}`} onClose={ctx.closeSheet}>
@@ -445,8 +458,7 @@ function FolderAddSheet({ ctx, col }: { ctx: Ctx; col: Collection }) {
             <button onClick={() => close(() => ctx.openSheet(<NewPageSheet ctx={ctx} col={col} />))}><Emoji char="📄" /><b>Page</b><small>One topic</small></button>
             <button onClick={() => close(() => ctx.openSheet(<NewPageSheet ctx={ctx} col={col} sub />))} disabled={!col.pages.length}><Emoji char="📑" /><b>Sub-page</b><small>Inside a page</small></button>
           </div>
-          <p className={styles.sheetLabel}>Or drop something in the Vault</p>
-          <KindGrid onPick={(k) => close(() => ctx.openSheet(<AddItemSheet ctx={ctx} to={{ collectionId: col.id }} kind={k} />))} />
+          <KindGrid onPick={(k) => close(() => ctx.openSheet(<AddItemSheet ctx={ctx} to={{ collectionId: col.id, root: true }} kind={k} />))} />
         </>
       )}
     </Sheet>
@@ -596,13 +608,14 @@ function removeItem(update: Ctx["update"], flash: Ctx["flash"], id: string) {
       if (!c) return n;
       if (at.section && at.page) {
         const s = c.pages.find((p) => p.id === at.page!.id)?.sections.find((x) => x.id === at.section!.id);
-        // Its page or section went meanwhile: the Vault keeps it instead.
+        // Its page or section went meanwhile: it waits to be sorted instead.
         if (!s) return place(next, id, { collectionId: c.id });
         const beforeId = at.section.blockIds.slice(at.section.blockIds.indexOf(id) + 1).find((x) => s.blockIds.includes(x)) ?? null;
         return place(next, id, { collectionId: c.id, pageId: at.page.id, sectionId: s.id, beforeId });
       }
-      const i = at.collection.vault.indexOf(id);
-      return patchCollection(next, c.id, (x) => ({ ...x, vault: [...x.vault.slice(0, i), id, ...x.vault.slice(i)] }));
+      const key = at.toSort ? "vault" : "items";
+      const i = at.collection[key].indexOf(id);
+      return patchCollection(next, c.id, (x) => ({ ...x, [key]: [...x[key].slice(0, i), id, ...x[key].slice(i)] }));
     };
     return removeBlock(m, id);
   });
@@ -719,7 +732,7 @@ function SwipeItem({ actions, children }: { actions: SwipeAction[]; children: Re
    A page — sections, views, sub-pages, quick add, drag and drop
    =========================================================================== */
 
-type Target = { sid?: string; before?: string | null; col?: TaskStatus } | null;
+type Target = { sid?: string; before?: string | null; col?: TaskStatus; page?: string } | null;
 
 const PLACEHOLDER: Partial<Record<BlockKind, string>> = {
   flashcard: "New card: word = meaning",
@@ -761,6 +774,8 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
   const all = pageItems(ctx.mind, page);
   const pageTags = tagsOf(all);
   const visible = (id: string) => { const b = ctx.mind.blocks[id]; return !!b && (!tag || b.tags.includes(tag)); };
+  const holds = (p: Page): boolean => p.sections.some((s) => s.blockIds.some(visible)) || childrenOf(col, p.id).some(holds);
+  const kidsShown = tag ? kids.filter(holds) : kids;
   const setView = (view: MindView) => ctx.update((m) => patchPage(m, page.id, (p) => ({ ...p, view })));
 
   /* ---- quick add, like the composer ---- */
@@ -825,6 +840,9 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
     const hit = document.elementFromPoint(x, y) as HTMLElement | null;
     const colEl = hit?.closest<HTMLElement>("[data-col]");
     if (colEl) return { col: colEl.dataset.col as TaskStatus };
+    // Onto a sub-page, like dropping a file on a folder.
+    const folderEl = hit?.closest<HTMLElement>("[data-drop-page]");
+    if (folderEl) return { page: folderEl.dataset.dropPage! };
     const over = hit?.closest<HTMLElement>("[data-bid]");
     if (over && over.dataset.bid !== d.id) {
       const sid = over.dataset.sid!;
@@ -878,7 +896,11 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
     setTarget(null);
     setDragging(null);
     if (!t) return;
-    if (t.col) {
+    if (t.page) {
+      const to = col.pages.find((p) => p.id === t.page);
+      ctx.update((m) => place(m, d.id, { collectionId: col.id, pageId: t.page }));
+      if (to) ctx.flash(`Moved to ${to.emoji} ${to.title}`);
+    } else if (t.col) {
       ctx.update((m) => patchBlock(m, d.id, { status: t.col, done: t.col === "done" }));
       ctx.flash(`Moved to ${COLUMNS.find((c) => c.id === t.col)!.label}`);
     } else if (t.sid) {
@@ -980,7 +1002,8 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
     >
       <div className={styles.edgeTop} />
       <header className={styles.chatHeader}>
-        <button className={`${styles.circleBtn} ${styles.glass}`} onClick={onBack} aria-label={`Back to ${col.name}`}><IconBack /></button>
+        {/* Back steps up one level, like leaving a folder. */}
+        <button className={`${styles.circleBtn} ${styles.glass}`} onClick={parent ? () => onOpen(parent.id) : onBack} aria-label={`Back to ${parent ? parent.title : col.name}`}><IconBack /></button>
         <div className={styles.titleCapsule}>
           <span className={styles.mindPageBadge}><Emoji char={page.emoji} /></span>
           <div className={`${styles.tcName} ${styles.glass}`}><span>{page.title}</span></div>
@@ -1002,19 +1025,19 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
           ) : <span />}
         </div>
 
-        {(kids.length > 0 || parent) && (
-          <div className={styles.mindSubpages}>
-            {parent && <button onClick={() => onOpen(parent.id)}><IconBack size={13} /> {parent.title}</button>}
-            {kids.map((k) => <button key={k.id} onClick={() => onOpen(k.id)}><Emoji char={k.emoji} /> {k.title} <em>{pageItems(ctx.mind, k).length}</em></button>)}
-          </div>
-        )}
-
         {pageTags.length > 0 && (
           <div className={styles.chips}>
             <button className={`${styles.chip} ${!tag ? styles.chipOn : ""}`} onClick={() => setTag(null)}>All</button>
             {pageTags.map((t) => (
               <button key={t} className={`${styles.chip} ${tag === t ? styles.chipOn : ""}`} onClick={() => setTag(tag === t ? null : t)}>#{t}</button>
             ))}
+          </div>
+        )}
+
+        {/* Sub-pages sit beside the items, like folders among files. Drop an item on one to move it in. */}
+        {kidsShown.length > 0 && (
+          <div className={`${styles.mindRows} ${styles.mindFolders}`}>
+            {kidsShown.map((k, i) => <FolderRow key={k.id} ctx={ctx} col={col} page={k} i={i} onOpen={() => onOpen(k.id)} drop={target?.page === k.id} />)}
           </div>
         )}
 
@@ -1136,7 +1159,7 @@ const PALETTES: { name: string; colors: string[] }[] = [
 ];
 const SAMPLE_IMAGES = ["photo-1586023492125-27b2c045efd7", "photo-1616137466211-f939a420be84", "photo-1519710164239-da123dc03ef4", "photo-1505693416388-ac5ce068fe85"];
 
-function AddItemSheet({ ctx, to, kind: initial }: { ctx: Ctx; to: { collectionId: string; pageId?: string; sectionId?: string }; kind: BlockKind }) {
+function AddItemSheet({ ctx, to, kind: initial }: { ctx: Ctx; to: { collectionId: string; pageId?: string; sectionId?: string; root?: boolean }; kind: BlockKind }) {
   const [kind, setKind] = useState<BlockKind>(initial === "chat" ? "note" : initial);
   const [a, setA] = useState("");
   const [b, setB] = useState("");
@@ -1149,7 +1172,7 @@ function AddItemSheet({ ctx, to, kind: initial }: { ctx: Ctx; to: { collectionId
   const fileRef = useRef<HTMLInputElement>(null);
   const col = ctx.mind.collections.find((x) => x.id === to.collectionId);
   const page = col?.pages.find((p) => p.id === to.pageId);
-  const where = page ? page.title : `${col?.name} Vault`;
+  const where = page ? page.title : to.root ? col?.name ?? "" : "To sort";
   const meta = KINDS.find((k) => k.kind === kind)!;
 
   const fields: Record<BlockKind, [string, string?, string?]> = {
@@ -1191,7 +1214,7 @@ function AddItemSheet({ ctx, to, kind: initial }: { ctx: Ctx; to: { collectionId
       const att = await toAttachment(upload);
       block = { ...base, title: t || upload.name, size: upload.size, attachment: att ?? undefined };
     }
-    ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: block } }, id, { collectionId: to.collectionId, pageId: to.pageId, sectionId: to.sectionId }));
+    ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: block } }, id, { collectionId: to.collectionId, pageId: to.pageId, sectionId: to.sectionId, root: to.root }));
     ctx.closeSheet();
     ctx.flash(`${meta.emoji} Added to ${where}`);
   };
@@ -1385,18 +1408,28 @@ function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
                 <li>
                   <button onClick={() => close(() => ctx.openFolder(at.collection.id))}><Emoji char={at.collection.emoji} /> {at.collection.name}</button>
                 </li>
-                <li className={styles.mindCrumbSep} aria-hidden="true"><IconChevron size={12} /></li>
-                {at.page ? (
+                {at.toSort && (
                   <>
-                    {at.section?.title ? (
-                      <>
-                        <li><button onClick={() => close(() => { ctx.openFolder(at.collection.id); ctx.openPage(at.page!.id); })}>{at.page.title}</button></li>
-                        <li className={styles.mindCrumbSep} aria-hidden="true"><IconChevron size={12} /></li>
-                        <li aria-current="location"><span>{at.section.title}</span></li>
-                      </>
-                    ) : <li aria-current="location"><button onClick={() => close(() => { ctx.openFolder(at.collection.id); ctx.openPage(at.page!.id); })}>{at.page.title}</button></li>}
+                    <li className={styles.mindCrumbSep} aria-hidden="true"><IconChevron size={12} /></li>
+                    <li aria-current="location"><span>To sort</span></li>
                   </>
-                ) : <li aria-current="location"><span>Vault</span></li>}
+                )}
+                {/* The page, and every page it sits inside, like a folder path. */}
+                {pathTo(at.collection, at.page).map((p, i, list) => {
+                  const last = i === list.length - 1 && !at.section?.title;
+                  return (
+                    <Fragment key={p.id}>
+                      <li className={styles.mindCrumbSep} aria-hidden="true"><IconChevron size={12} /></li>
+                      <li aria-current={last ? "location" : undefined}><button onClick={() => close(() => { ctx.openFolder(at.collection.id); ctx.openPage(p.id); })}>{p.title}</button></li>
+                    </Fragment>
+                  );
+                })}
+                {at.page && at.section?.title && (
+                  <>
+                    <li className={styles.mindCrumbSep} aria-hidden="true"><IconChevron size={12} /></li>
+                    <li aria-current="location"><span>{at.section.title}</span></li>
+                  </>
+                )}
               </ol>
             </nav>
           ) : <p className={styles.mindHint}>Not in a collection.</p>}
@@ -1419,7 +1452,7 @@ function WhereRow({ depth, emoji, title, count, on, onPick }: { depth: number; e
 }
 
 /**
- * Where should this go? Sorts the Vault, moves items, and backs the chat's
+ * Where should this go? Sorts what's waiting, moves items, and backs the chat's
  * "Edit location" after Save to Mind. Picking a different collection for a
  * chat item teaches Mind where that chat's saves belong.
  */
@@ -1450,13 +1483,13 @@ export function MoveSheet({ me, id, onClose, onMoved, title = "Move to" }: { me:
     }),
     ...childrenOf(col, p.id).flatMap((k) => rows(k, depth + 1, close)),
   ];
-  const move = (pageId: string | null, sectionId: string | null, label: string) => {
+  const move = (pageId: string | null, sectionId: string | null, label: string | null) => {
     update((m) => {
-      let next = place(m, id, { collectionId: col.id, pageId, sectionId });
+      let next = place(m, id, { collectionId: col.id, pageId, sectionId, root: !pageId });
       if (b.ref && current?.collection.id !== col.id) next = learnChat(next, col.id, b.ref.chatId);
       return next;
     });
-    onMoved?.(`Moved to ${col.emoji} ${col.name} › ${label}`);
+    onMoved?.(`Moved to ${col.emoji} ${col.name}${label ? ` › ${label}` : ""}`);
   };
 
   return (
@@ -1472,8 +1505,9 @@ export function MoveSheet({ me, id, onClose, onMoved, title = "Move to" }: { me:
             </div>
           )}
           <div className={styles.listGroup}>
-            <WhereRow depth={0} emoji="🗄️" title="Vault" count={col.vault.length} on={!!current && current.collection.id === col.id && !current.page} onPick={() => close(() => move(null, null, "Vault"))} />
-            {roots.flatMap((p) => rows(p, 0, close))}
+            {/* The collection itself: the item sits beside its pages. */}
+            <WhereRow depth={0} emoji={col.emoji} title={`${col.name} · top level`} count={col.items.length} on={!!current && current.collection.id === col.id && !current.page && !current.toSort} onPick={() => close(() => move(null, null, null))} />
+            {roots.flatMap((p) => rows(p, 1, close))}
           </div>
         </>
       )}
@@ -1553,7 +1587,7 @@ function PageSheet({ ctx, col, pageId, onDeleted }: { ctx: Ctx; col: Collection;
                 return patchCollection(next, col.id, (x) => ({ ...x, pages: x.pages.filter((p) => !doomed.includes(p.id)), vault: [...ids, ...x.vault] }));
               });
               onDeleted();
-              ctx.flash("Page deleted · its items went to the Vault");
+              ctx.flash("Page deleted · its items are in To sort");
             })}
           >
             Delete page

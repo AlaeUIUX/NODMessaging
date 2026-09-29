@@ -608,54 +608,15 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
   // A group just added from the header: it opens with its name ready to type.
   const [renaming, setRenaming] = useState<string | null>(null);
 
-  // A different board: start at its first column, with nothing half-added.
+  // A different board: start at its first group, with nothing half-added.
   const [shown, setShown] = useState(message.id);
   if (shown !== message.id) {
     setShown(message.id);
     setAdding(null);
     setMenu(null);
   }
-  useEffect(() => { scrollRef.current?.scrollTo({ left: 0 }); }, [message.id]);
+  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); }, [message.id]);
 
-  // A mouse wheel scrolls up and down; over the board it moves between columns,
-  // unless a column's own list can still scroll that way.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const wheel = (e: WheelEvent) => {
-      if (e.ctrlKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
-      const body = (e.target as HTMLElement).closest<HTMLElement>("[data-col-body]");
-      if (body) {
-        const canUp = body.scrollTop > 0;
-        const canDown = body.scrollTop + body.clientHeight < body.scrollHeight - 1;
-        if ((e.deltaY < 0 && canUp) || (e.deltaY > 0 && canDown)) return;
-      }
-      e.preventDefault();
-      el.scrollBy({ left: e.deltaY, behavior: "auto" });
-    };
-    el.addEventListener("wheel", wheel, { passive: false });
-    return () => el.removeEventListener("wheel", wheel);
-  }, []);
-
-  // With a mouse, dragging the board's background pans it (touch already pans natively).
-  const pan = useRef<{ x: number; left: number; id: number } | null>(null);
-  const [panning, setPanning] = useState(false);
-  const onPanDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType !== "mouse" || e.button !== 0) return;
-    if ((e.target as HTMLElement).closest("[data-task], button, input, textarea, label")) return;
-    pan.current = { x: e.clientX, left: e.currentTarget.scrollLeft, id: e.pointerId };
-  };
-  const onPanMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const p = pan.current;
-    if (!p) return;
-    const dx = e.clientX - p.x;
-    if (Math.abs(dx) > 3 && !e.currentTarget.hasPointerCapture(p.id)) {
-      try { e.currentTarget.setPointerCapture(p.id); } catch { /* pointer gone */ }
-      setPanning(true);
-    }
-    e.currentTarget.scrollLeft = p.left - dx;
-  };
-  const onPanEnd = () => { pan.current = null; setPanning(false); };
 
   const close = (after?: () => void) => {
     if (leaving) return;
@@ -678,7 +639,7 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
     cardOp(message, { kind: "column.add", column: { id, name: "New group" } });
     setRenaming(id);
     requestAnimationFrame(() => {
-      scrollRef.current?.querySelector<HTMLElement>(`[data-col="${id}"]`)?.scrollIntoView({ behavior: smooth(), inline: "start", block: "nearest" });
+      scrollRef.current?.querySelector<HTMLElement>(`[data-col="${id}"]`)?.scrollIntoView({ behavior: smooth(), block: "center" });
     });
   };
   const removeGroup = (id: string) => {
@@ -706,8 +667,8 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
   // A drop can be followed by a click on the same task (mouse), or not (touch): ignore clicks just after one.
   const droppedAt = useRef(0);
 
-  // Tasks let the board pan (React's touch listeners are passive), so once a
-  // hold lifts one a native listener keeps the columns still under the finger.
+  // Tasks let the board scroll (React's touch listeners are passive), so once a
+  // hold lifts one a native listener keeps the groups still under the finger.
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
@@ -751,23 +712,16 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
     setDrop(t);
   };
 
-  // Near an edge the board keeps scrolling while the finger rests there.
+  // Near the top or bottom the board keeps scrolling while the finger rests there,
+  // so a task can travel from To do down to Done in one hold.
   const tick = () => {
     const d = drag.current;
     const board = scrollRef.current;
     if (!d?.active || !board) return;
     const r = board.getBoundingClientRect();
-    const edge = 44;
-    let dx = 0;
-    if (d.x < r.left + edge) dx = -Math.ceil((r.left + edge - d.x) / 4);
-    else if (d.x > r.right - edge) dx = Math.ceil((d.x - (r.right - edge)) / 4);
-    if (dx) board.scrollLeft += dx;
-    const body = (document.elementFromPoint(d.x, d.y) as HTMLElement | null)?.closest<HTMLElement>("[data-col-body]");
-    if (body) {
-      const b = body.getBoundingClientRect();
-      if (d.y < b.top + edge) body.scrollTop -= Math.ceil((b.top + edge - d.y) / 4);
-      else if (d.y > b.bottom - edge) body.scrollTop += Math.ceil((d.y - (b.bottom - edge)) / 4);
-    }
+    const edge = 72;
+    if (d.y < r.top + edge) board.scrollTop -= Math.ceil((r.top + edge - d.y) / 5);
+    else if (d.y > r.bottom - edge) board.scrollTop += Math.ceil((d.y - (r.bottom - edge)) / 5);
     setTarget(findDrop(d.x, d.y));
     d.frame = requestAnimationFrame(tick);
   };
@@ -921,14 +875,8 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
         </>
       )}
 
-      <div
-        className={`${s.columns} ${panning ? s.columnsPanning : ""}`}
-        ref={scrollRef}
-        onPointerDown={onPanDown}
-        onPointerMove={onPanMove}
-        onPointerUp={onPanEnd}
-        onPointerCancel={onPanEnd}
-      >
+      {/* Groups stack top to bottom (To do, then Doing, then Done) and the board scrolls as one. */}
+      <div className={s.columns} ref={scrollRef}>
         {card.columns.map((col, ci) => {
           const list = tasksIn(card, col.id);
           const isDone = col.id === done;
@@ -946,7 +894,7 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
                 onRenamed={() => setRenaming(null)}
                 onDelete={() => removeGroup(col.id)}
               />
-              <div className={s.colBody} data-col-body>
+              <div className={s.colBody}>
                 {list.map((t) => (
                   <div
                     key={t.id}
@@ -1054,12 +1002,12 @@ export function TaskFromMessage({ message, chat, onClose }: { message: Message; 
 }
 
 /* ---------------------------------------------------------------------------
-   Your tasks, across every board (Spaces tab)
+   Your tasks, across every board (Dashboard)
 --------------------------------------------------------------------------- */
 
 const MINE_SHOWN = 4;
 
-/** Everything assigned to you, across every chat's board (Spaces tab). */
+/** Everything assigned to you, across every chat's board (on the Dashboard). */
 export function MyTasks({ onOpenChat }: { onOpenChat: (chat: Chat) => void }) {
   const { state, me } = useChat();
   const now = useNow(60_000);

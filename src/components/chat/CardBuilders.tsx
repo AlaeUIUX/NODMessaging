@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { initials, TONES } from "@/lib/chat/avatar";
-import type { AvatarTone, Card, User } from "@/lib/chat/types";
+import { invoiceTotals, nextInvoiceNumber } from "@/lib/chat/invoice";
+import { useChat } from "@/lib/chat/store";
+import type { AvatarTone, Card, Invoice, User } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import {
   IconAttachment, IconBell, IconCalendar, IconCamera, IconCheck, IconChecklist, IconClose, IconImage, IconLocation,
@@ -12,6 +14,7 @@ import {
 import MiniMap from "./MiniMap";
 import { Segmented, Sheet, Toggle, uid } from "./ui";
 import styles from "./chat.module.css";
+import iv from "./invoice.module.css";
 
 export type AddKind =
   | "photos" | "camera" | "file"
@@ -408,8 +411,21 @@ export function EventBuilder({ onSend, onClose }: { onSend: Send; onClose: () =>
 }
 
 /* ---------------------------------------------------------------------------
-   Pay / Request — with a confirmation step before any "money" moves
+   Pay / Request — with a confirmation step before any "money" moves.
+   A request can carry an invoice: its items set the amount, and it's billed
+   to the one person it's sent to.
 --------------------------------------------------------------------------- */
+
+type Line = { id: string; description: string; quantity: string; unit: string };
+const blankLine = (): Line => ({ id: uid(), description: "", quantity: "1", unit: "" });
+const toCents = (v: string) => Math.round((Number(v.replace(",", ".")) || 0) * 100);
+const TERMS = [
+  { id: "0", label: "On receipt" },
+  { id: "7", label: "7 days" },
+  { id: "14", label: "14 days" },
+  { id: "30", label: "30 days" },
+];
+const VAT_RATES = [{ id: "0", label: "No VAT" }, { id: "10", label: "10%" }, { id: "20", label: "20%" }];
 
 export function PaymentBuilder({ mode, members, onSend, onClose }: {
   mode: "pay" | "request";
@@ -417,27 +433,64 @@ export function PaymentBuilder({ mode, members, onSend, onClose }: {
   onSend: Send;
   onClose: () => void;
 }) {
+  const { state, me } = useChat();
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [who, setWho] = useState<string[]>(members.length === 1 ? [members[0].id] : []);
   const [confirming, setConfirming] = useState(false);
   // Cancel during the Face ID step wins, even in the last moments of the scan.
   const cancelled = useRef(false);
-  const value = Number(amount.replace(",", "."));
-  const valid = value > 0 && value < 10_000 && who.length > 0;
+
+  const [invoicing, setInvoicing] = useState(false);
+  const [lines, setLines] = useState<Line[]>(() => [blankLine()]);
+  const [vat, setVat] = useState("20");
+  const [terms, setTerms] = useState("14");
+  const [footnote, setFootnote] = useState("");
+  const [number] = useState(() => nextInvoiceNumber(state.data, me));
+
+  const filled = lines
+    .filter((l) => l.description.trim() && toCents(l.unit) > 0)
+    .map((l) => ({ id: l.id, description: l.description.trim(), quantity: Math.max(1, Number(l.quantity) || 1), unit: toCents(l.unit) }));
+  const totals = invoiceTotals({ lines: filled, taxRate: Number(vat) });
+  const value = invoicing ? totals.total / 100 : Number(amount.replace(",", "."));
+  // An invoice goes to one person; a plain request can go to several.
+  const valid = value > 0 && value < (invoicing ? 100_000 : 10_000) && (invoicing ? who.length === 1 && filled.length > 0 : who.length > 0);
   const fmt = (n: number) => n.toLocaleString(undefined, { style: "currency", currency: "EUR" });
-  const card = (): Card => ({ type: "payment", mode: mode === "pay" ? "sent" : "request", amount: value, note: note.trim(), from: who, paidBy: [] });
-  const toggle = (id: string) => setWho((prev) => (mode === "pay" ? [id] : prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const billTo = who.length === 1 ? members.find((m) => m.id === who[0]) : undefined;
+
+  const card = (): Card => {
+    const base = { type: "payment" as const, mode: mode === "pay" ? "sent" as const : "request" as const, amount: value, note: note.trim(), from: who, paidBy: [] };
+    if (!invoicing) return base;
+    const issuedAt = Date.now();
+    const invoice: Invoice = {
+      number,
+      issuedAt,
+      dueAt: issuedAt + Number(terms) * 86_400_000,
+      lines: filled,
+      taxRate: Number(vat),
+      note: footnote.trim() || undefined,
+    };
+    return { ...base, note: base.note || filled[0].description, invoice };
+  };
+  const toggle = (id: string) => setWho((prev) => (mode === "pay" || invoicing ? [id] : prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const setLine = (id: string, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  const startInvoice = (on: boolean) => {
+    setInvoicing(on);
+    // Billed to one person: keep the first pick if several were chosen.
+    if (on && who.length > 1) setWho([who[0]]);
+    // Carry a typed amount into the first item, so nothing's lost.
+    if (on && amount && !lines.some((l) => l.unit)) setLines((ls) => [{ ...ls[0], description: ls[0].description || note, unit: amount }, ...ls.slice(1)]);
+  };
 
   return (
     <Sheet
-      title={mode === "pay" ? "Pay" : "Request money"}
+      title={mode === "pay" ? "Pay" : invoicing ? "Send an invoice" : "Request money"}
       onClose={onClose}
       onClosing={() => { cancelled.current = true; }}
       action={mode === "request" ? {
-        label: "Request",
+        label: "Send",
         disabled: !valid,
-        onClick: () => onSend(card(), `Requested ${fmt(value)}${note.trim() ? ` · ${note.trim()}` : ""}`),
+        onClick: () => onSend(card(), invoicing ? `Invoice ${number} · ${fmt(value)}` : `Requested ${fmt(value)}${note.trim() ? ` · ${note.trim()}` : ""}`),
       } : undefined}
       footer={mode === "pay" ? (
         <div className={styles.sheetFooter}>
@@ -455,20 +508,27 @@ export function PaymentBuilder({ mode, members, onSend, onClose }: {
         </div>
       ) : undefined}
     >
-      <div className={styles.amountRow}>
-        <span>€</span>
-        <input
-          inputMode="decimal"
-          data-autofocus
-          placeholder="0"
-          disabled={confirming}
-          value={amount}
-          onChange={(e) => setAmount(e.target.value.replace(/[^0-9.,]/g, "").slice(0, 7))}
-          aria-label="Amount in euros"
-        />
-      </div>
-      <input className={styles.plainInput} placeholder="What’s it for?" value={note} disabled={confirming} onChange={(e) => setNote(e.target.value)} />
-      <p className={styles.sheetLabel}>{mode === "pay" ? "To" : "From"}</p>
+      {invoicing ? (
+        <div className={iv.total} aria-live="polite">
+          <b>{fmt(value)}</b>
+          <span>{totals.tax ? `Includes ${fmt(totals.tax / 100)} VAT` : "Total"}</span>
+        </div>
+      ) : (
+        <div className={styles.amountRow}>
+          <span>€</span>
+          <input
+            inputMode="decimal"
+            data-autofocus
+            placeholder="0"
+            disabled={confirming}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value.replace(/[^0-9.,]/g, "").slice(0, 7))}
+            aria-label="Amount in euros"
+          />
+        </div>
+      )}
+      <input className={styles.plainInput} placeholder={invoicing ? "What’s it for? e.g. Website, September" : "What’s it for?"} value={note} disabled={confirming} onChange={(e) => setNote(e.target.value)} />
+      <p className={styles.sheetLabel}>{mode === "pay" ? "To" : invoicing ? "Bill to" : "From"}</p>
       <div className={styles.memberPick}>
         {members.map((m) => (
           <button key={m.id} className={who.includes(m.id) ? styles.memberOn : undefined} disabled={confirming} onClick={() => toggle(m.id)}>
@@ -478,6 +538,67 @@ export function PaymentBuilder({ mode, members, onSend, onClose }: {
           </button>
         ))}
       </div>
+
+      {mode === "request" && (
+        <div className={iv.switchRow}>
+          <span className={iv.switchIcon}><IconReceipt size={18} /></span>
+          <span className={iv.switchText}>
+            <b>Add an invoice</b>
+            <small>{invoicing ? `${number} · ${billTo ? `billed to ${billTo.fullName}` : "pick who it’s for"}` : "Itemised, with VAT and a due date"}</small>
+          </span>
+          <Toggle on={invoicing} onChange={startInvoice} label="Add an invoice" />
+        </div>
+      )}
+
+      {invoicing && (
+        <div className={iv.builder}>
+          <p className={styles.sheetLabel}>Items</p>
+          <div className={iv.lines}>
+            {lines.map((l, i) => (
+              <div key={l.id} className={iv.line}>
+                <input
+                  className={iv.desc}
+                  placeholder={i === 0 ? "e.g. Logo design" : "Item"}
+                  value={l.description}
+                  onChange={(e) => setLine(l.id, { description: e.target.value })}
+                  aria-label={`Item ${i + 1}`}
+                />
+                <label className={iv.qty}>
+                  <input inputMode="numeric" value={l.quantity} onChange={(e) => setLine(l.id, { quantity: e.target.value.replace(/\D/g, "").slice(0, 3) })} aria-label={`Quantity, item ${i + 1}`} />
+                  <span aria-hidden="true">×</span>
+                </label>
+                <label className={iv.price}>
+                  <span aria-hidden="true">€</span>
+                  <input inputMode="decimal" placeholder="0" value={l.unit} onChange={(e) => setLine(l.id, { unit: e.target.value.replace(/[^0-9.,]/g, "").slice(0, 8) })} aria-label={`Price each, item ${i + 1}`} />
+                </label>
+                <button className={iv.remove} onClick={() => setLines((ls) => (ls.length > 1 ? ls.filter((x) => x.id !== l.id) : [blankLine()]))} aria-label={`Remove item ${i + 1}`}>
+                  <IconClose size={14} />
+                </button>
+              </div>
+            ))}
+            <button className={iv.addLine} onClick={() => setLines((ls) => [...ls, blankLine()])} disabled={lines.length >= 12}>
+              <IconPlus size={14} /> Add an item
+            </button>
+          </div>
+          <p className={styles.sheetLabel}>VAT</p>
+          <Segmented value={vat} options={VAT_RATES} onChange={setVat} />
+          <p className={styles.sheetLabel}>Due</p>
+          <Segmented value={terms} options={TERMS} onChange={setTerms} />
+          <textarea
+            className={`${styles.plainInput} ${iv.footnote}`}
+            rows={2}
+            placeholder="Payment details or a thank-you (optional)"
+            value={footnote}
+            onChange={(e) => setFootnote(e.target.value)}
+            aria-label="Note on the invoice"
+          />
+          <dl className={iv.sums}>
+            <div><dt>Subtotal</dt><dd>{fmt(totals.subtotal / 100)}</dd></div>
+            {totals.tax > 0 && <div><dt>VAT {vat}%</dt><dd>{fmt(totals.tax / 100)}</dd></div>}
+            <div className={iv.sumTotal}><dt>Total</dt><dd>{fmt(totals.total / 100)}</dd></div>
+          </dl>
+        </div>
+      )}
       <p className={styles.demoNote}>Demo payments — no real money moves.</p>
     </Sheet>
   );

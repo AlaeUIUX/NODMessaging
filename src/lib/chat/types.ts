@@ -36,6 +36,8 @@ export type Card =
       /** Request: who is asked to pay. Sent: the recipient. */
       from: string[];
       paidBy: string[];
+      /** Requests only: an itemised invoice, billed to the one person in `from`. */
+      invoice?: Invoice;
     }
   /* Artifacts: small, playful apps that live in the thread. */
   | { type: "sketch"; prompt: string; strokes: SketchStroke[] }
@@ -45,6 +47,20 @@ export type Card =
   | PlanCard
   | BillCard
   | ProjectCard;
+
+/** One line of an invoice. Money is integer cents. */
+export interface InvoiceLine { id: string; description: string; quantity: number; /** Cents per unit. */ unit: number }
+export interface Invoice {
+  /** "INV-0003": numbered per sender. */
+  number: string;
+  issuedAt: number;
+  dueAt: number;
+  lines: InvoiceLine[];
+  /** VAT, in percent, on top of the lines. */
+  taxRate: number;
+  /** Payment terms, bank details or a thank-you. */
+  note?: string;
+}
 
 /** A small itinerary: stops grouped by day, each with an optional time and place. */
 export interface PlanStop {

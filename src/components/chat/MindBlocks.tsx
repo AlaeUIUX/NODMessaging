@@ -303,6 +303,7 @@ function LivePreview({ message, shape, me }: { message: Message; shape: BlockSha
     return <span className={styles.mbLiveBody}><b>Tic-tac-toe</b><small>{res ? (res.winner === "draw" ? "A draw" : `${res.winner === me ? "You" : userById(res.winner).name} won`) : "Game in progress"}</small></span>;
   }
   if (card?.type === "payment") {
+    if (card.invoice) return <span className={styles.mbLiveBody}><b>Invoice {card.invoice.number} · {euro(card.amount)}</b><small>{card.paidBy.length ? "Paid" : `Billed to ${userById(card.from[0]).name} · unpaid`}</small></span>;
     return <span className={styles.mbLiveBody}><b>{euro(card.amount)} · {card.note}</b><small>{card.paidBy.length} of {card.from.length} paid</small></span>;
   }
   if (card?.type === "event") {

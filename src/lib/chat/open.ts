@@ -1,10 +1,11 @@
+import { dueLabel } from "./invoice";
 import { billShares, doneColumn, money, unclaimedItems } from "./ops";
 import type { Message } from "./types";
 
 /**
  * One answer, for every card, to "is this still open, what's left, and does
  * it need you". The header's blue dot, the contact page's Live tab and the
- * Spaces tab all read it, so a new card type only answers once, here.
+ * Dashboard all read it, so a new card type only answers once, here.
  */
 export interface OpenState {
   /** Still unfinished. */
@@ -60,11 +61,21 @@ export function openState(message: Message, me: string, now = Date.now()): OpenS
       if (c.mode !== "request") return null;
       const unpaid = c.from.filter((id) => !c.paidBy.includes(id));
       const mine = c.from.includes(me) && !c.paidBy.includes(me);
+      const owed = money(Math.round(c.amount * 100));
+      if (c.invoice) {
+        const due = dueLabel(c.invoice.dueAt, now);
+        return {
+          open: unpaid.length > 0,
+          needsMe: mine,
+          summary: unpaid.length === 0 ? "Paid" : mine ? `You owe ${owed} · ${due.toLowerCase()}` : `${owed} · ${due.toLowerCase()}`,
+          title: `Invoice ${c.invoice.number}${c.note ? ` · ${c.note}` : ""}`,
+        };
+      }
       return {
         open: unpaid.length > 0,
         needsMe: mine,
-        summary: mine ? `You owe ${money(Math.round(c.amount * 100))}` : `${c.paidBy.length} of ${c.from.length} paid`,
-        title: c.note || `Request · ${money(Math.round(c.amount * 100))}`,
+        summary: mine ? `You owe ${owed}` : `${c.paidBy.length} of ${c.from.length} paid`,
+        title: c.note || `Request · ${owed}`,
       };
     }
     case "reminder": {

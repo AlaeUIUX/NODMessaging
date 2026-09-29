@@ -11,12 +11,12 @@ import Logo from "./Logo";
 import { emojify } from "@/lib/chat/emoji";
 import MindTab from "./Mind";
 import NewChat from "./NewChat";
-import { MyTasks } from "./Project";
+import Dashboard from "./Dashboard";
 import StatusBar from "./StatusBar";
 import styles from "./chat.module.css";
 
 type Filter = "all" | "unread" | "dms" | "spaces";
-type Tab = "chats" | "mind" | "spaces" | "explore";
+type Tab = "chats" | "mind" | "dashboard" | "explore";
 
 const REVEAL = 124;
 
@@ -38,7 +38,7 @@ function writeList(kind: "pinned" | "muted", userId: string, ids: Set<string>) {
 const TABS: { id: Tab; label: string; icon: string; w: number; h: number }[] = [
   { id: "chats", label: "Chats", icon: "/nod/chats.svg", w: 18, h: 18 },
   { id: "mind", label: "Mind", icon: "/nod/mind.svg", w: 16, h: 16 },
-  { id: "spaces", label: "Spaces", icon: "/nod/spaces.svg", w: 30, h: 16 },
+  { id: "dashboard", label: "Dashboard", icon: "/nod/dashboard.svg", w: 16, h: 16 },
   { id: "explore", label: "Explore", icon: "/nod/explore.svg", w: 16, h: 16 },
 ];
 
@@ -237,13 +237,12 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
   // Muted chats keep their own count but stay out of the Unread badge.
   const unreadChats = ready ? rows.filter((r) => r.unread > 0 && !muted.has(r.chat.id)).length : 0;
   const spaceMention = ready && rows.some((r) => r.chat.kind === "group" && r.mentioned);
-  const effective: Filter = tab === "spaces" ? "spaces" : filter;
 
   const visible = (ready ? rows : [])
     .filter(({ chat, last, unread }) => {
-      if (effective === "unread" && unread === 0) return false;
-      if (effective === "dms" && chat.kind !== "dm") return false;
-      if (effective === "spaces" && chat.kind !== "group") return false;
+      if (filter === "unread" && unread === 0) return false;
+      if (filter === "dms" && chat.kind !== "dm") return false;
+      if (filter === "spaces" && chat.kind !== "group") return false;
       if (!query.trim()) return true;
       const q = query.toLowerCase();
       return chatIdentity(chat, me, userById).label.toLowerCase().includes(q) || preview(last, me).toLowerCase().includes(q);
@@ -276,7 +275,18 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
     <div className={`${styles.screen} ${styles.inboxScreen} ${pushed ? styles.pushed : ""}`} data-inbox-screen inert={pushed}>
       <StatusBar />
 
-      {tab === "mind" ? <MindTab onOpenChat={onOpen} /> : (
+      {tab === "mind" ? <MindTab onOpenChat={onOpen} /> : tab === "dashboard" ? (
+        <div className={`${styles.inboxBody} ${styles.dashBody}`}>
+          <div className={styles.edgeTop} />
+          <div className={styles.inboxScroll}>
+            <Dashboard
+              onOpenChat={onOpen}
+              onUnread={() => { setFilter("unread"); setTab("chats"); }}
+              onMind={() => setTab("mind")}
+            />
+          </div>
+        </div>
+      ) : (
       <>
       <header className={styles.profile}>
         <div className={styles.profileRow}>
@@ -329,9 +339,7 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
               </div>
             )}
 
-            {tab === "spaces" && ready && <MyTasks onOpenChat={onOpen} />}
-
-            <div className={styles.rows} key={`${tab}-${effective}`}>
+            <div className={styles.rows} key={`${tab}-${filter}`}>
               {visible.map(({ chat, last, unread, mentioned }, i) => {
                 const id = chatIdentity(chat, me, userById);
                 const other = chat.kind === "dm" ? chat.memberIds.find((m) => m !== me) : undefined;
@@ -386,7 +394,7 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
               ))}
               {ready && visible.length === 0 && (
                 <p className={styles.emptyInbox}>
-                  {query ? `Nothing matches “${query}”` : effective === "unread" ? "You're all caught up." : "No conversations yet."}
+                  {query ? `Nothing matches “${query}”` : filter === "unread" ? "You're all caught up." : "No conversations yet."}
                 </p>
               )}
             </div>

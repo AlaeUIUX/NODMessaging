@@ -1,0 +1,169 @@
+/* ==========================================================================
+   Invoices: the builder inside Request money, the card in the thread, and
+   the invoice itself. Money uses tabular numbers so columns line up.
+   ========================================================================== */
+
+.builder, .card, .paper {
+  --iv-ok: #1FA855;
+  --iv-late: var(--danger);
+}
+
+/* ---- builder ---- */
+.total { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 0 6px; }
+.total b { font: var(--t-large-title); font-size: 44px; line-height: 52px; font-weight: var(--w-emph); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.total span { font: var(--t-footnote); color: var(--ink-3); }
+
+.switchRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--r-lg);
+  background: var(--fill);
+}
+.switchIcon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--e1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+}
+.switchText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.switchText b { font: var(--t-subhead); font-weight: var(--w-emph); }
+.switchText small { font: var(--t-footnote); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.builder { display: flex; flex-direction: column; gap: 10px; }
+.lines { display: grid; gap: 8px; }
+.line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px 92px 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--e1);
+}
+.line input {
+  min-width: 0;
+  height: 40px;
+  border: none;
+  outline: none;
+  background: none;
+  font: var(--t-subhead);
+  color: var(--ink);
+}
+.line input::placeholder { color: var(--ink-3); }
+.qty, .price {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  background: var(--fill);
+  font: var(--t-subhead);
+  color: var(--ink-3);
+}
+.qty input, .price input { height: 36px; width: 100%; text-align: right; font-variant-numeric: tabular-nums; }
+.qty { flex-direction: row; }
+.price { flex-direction: row; }
+.remove {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.remove:active { background: var(--fill); }
+.addLine {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--ink-2);
+  font: var(--t-subhead);
+  font-weight: var(--w-control);
+  cursor: pointer;
+}
+.addLine:disabled { opacity: .4; cursor: default; }
+.footnote { height: auto !important; min-height: 64px; padding-block: 12px !important; resize: none; font: var(--t-subhead) !important; }
+
+.sums { margin: 4px 0 0; display: grid; gap: 6px; font-variant-numeric: tabular-nums; }
+.sums div { display: flex; justify-content: space-between; gap: 12px; }
+.sums dt { font: var(--t-subhead); color: var(--ink-2); }
+.sums dd { margin: 0; font: var(--t-subhead); color: var(--ink); }
+.sums .sumTotal { padding-top: 8px; border-top: 1px solid var(--line); }
+.sums .sumTotal dt, .sums .sumTotal dd { font: var(--t-headline); color: var(--ink); }
+
+/* ---- status colours ---- */
+.ok { color: var(--iv-ok); }
+.late { color: var(--iv-late); }
+.due { color: var(--ink-2); }
+
+/* ---- card in the thread ---- */
+/* `.card ul` outranks the thread's own list indent for rich-text bubbles. */
+.card ul.peek { list-style: none; margin: 12px 0 0; padding: 10px 0 0; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+.peek li { display: flex; justify-content: space-between; gap: 12px; font: var(--t-footnote); color: var(--ink-2); }
+.peek li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.peek li em { font-style: normal; color: var(--ink); font-variant-numeric: tabular-nums; }
+.peek .more { color: var(--ink-3); }
+.billed { display: flex; align-items: center; gap: 8px; margin: 12px 0 14px; font: var(--t-subhead); }
+.billedText { flex: 1; min-width: 0; }
+.billed em { font-style: normal; font: var(--t-footnote); color: var(--ink-3); }
+.actions { display: flex; gap: 8px; }
+.actions > * { flex: 1; }
+
+/* ---- the invoice itself ---- */
+.paper {
+  padding: 20px 18px 18px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--e2);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.paperHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.paperHead b { font: var(--t-title2); font-weight: var(--w-emph); letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.eyebrow { margin: 0 0 2px; font: var(--t-caption1); font-weight: var(--w-control); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  font: var(--t-footnote);
+  font-weight: var(--w-emph);
+  white-space: nowrap;
+}
+.parties { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.parties b, .parties span { font: var(--t-subhead); }
+.parties b { font-weight: var(--w-emph); }
+.subject { margin: 0; font: var(--t-subhead); color: var(--ink-2); }
+.table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.table th { padding: 0 0 8px; font: var(--t-caption1); font-weight: var(--w-control); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); text-align: right; }
+.table td { padding: 10px 0; border-top: 1px solid var(--line); font: var(--t-footnote); color: var(--ink); text-align: right; vertical-align: top; }
+.table th:first-child, .table td:first-child { text-align: left; padding-right: 8px; }
+.table td:first-child { font: var(--t-subhead); overflow-wrap: anywhere; }
+.table th:nth-child(2), .table td:nth-child(2) { width: 34px; }
+.table th:nth-child(3), .table td:nth-child(3) { width: 74px; color: var(--ink-2); }
+.table th:nth-child(4), .table td:nth-child(4) { width: 82px; }
+.paperNote { margin: 0; padding: 12px 14px; border-radius: var(--r-md); background: var(--fill); font: var(--t-footnote); color: var(--ink-2); white-space: pre-wrap; }

@@ -6,12 +6,13 @@ import type { Attachment } from "./types";
 /**
  * Mind — each person's own organising space.
  *
- *   Mind → Collections (folders) → Pages and sub-pages → Sections → Items
+ *   Mind → Collections → Pages and items, side by side → Sub-pages and items…
  *
- * A collection is a plain folder: a name, an icon, its pages, and a Vault
- * where saves from chats wait to be sorted. Everything inside is made with
- * the + button. Items saved from a chat keep a reference to the message and
- * stay live.
+ * A collection is a folder: a name, an icon, and whatever you put in it —
+ * pages (which work like folders too) and loose items, at the same level.
+ * Saves from chats land in its "To sort" pile until they're given a place.
+ * Everything inside is made with the + button. Items saved from a chat keep
+ * a reference to the message and stay live.
  */
 
 export type MindView = "shelf" | "list" | "grid" | "board";
@@ -75,14 +76,16 @@ export interface Collection {
   emoji: string;
   tone: string;
   pages: Page[];
-  /** Saves waiting to be sorted into a page. */
+  /** Items that sit at the top of the collection, next to its pages. */
+  items: string[];
+  /** Saves from chats waiting to be sorted ("To sort"). */
   vault: string[];
   /** Chats whose saves usually land here; learned when you correct a save. */
   chatIds: string[];
 }
 
 export interface Mind {
-  version: 3;
+  version: 4;
   collections: Collection[];
   /** The collection opened last; saves fall back to it. */
   current: string | null;
@@ -118,7 +121,7 @@ export const newId = (p = "b") => `${p}-${Date.now().toString(36)}${Math.random(
 
 /** A new collection is an empty folder. */
 export function makeCollection(name: string, emoji: string, tone: string): Collection {
-  return { id: newId("c"), name: name.trim() || "Untitled", emoji, tone, pages: [], vault: [], chatIds: [] };
+  return { id: newId("c"), name: name.trim() || "Untitled", emoji, tone, pages: [], items: [], vault: [], chatIds: [] };
 }
 
 export function blankPage(title: string, emoji: string, tone: string, defaultKind: BlockKind, parentId?: string): Page {
@@ -134,7 +137,7 @@ export function blankPage(title: string, emoji: string, tone: string, defaultKin
 
 type Item = Omit<Block, "id" | "createdAt" | "tags"> & { tags?: string[] };
 type SeedPage = Omit<Page, "id" | "sections" | "parentId" | "views" | "tone"> & { tone?: string; views?: MindView[]; sections: { title: string; emoji: string; collapsed?: boolean; items: Item[] }[]; children?: SeedPage[] };
-type SeedCollection = Omit<Collection, "id" | "pages" | "vault"> & { id: string; pages: SeedPage[]; vault: Item[] };
+type SeedCollection = Omit<Collection, "id" | "pages" | "items" | "vault"> & { id: string; pages: SeedPage[]; items?: Item[]; vault: Item[] };
 
 function build(collections: SeedCollection[], current: string | null): Mind {
   const blocks: Record<string, Block> = {};
@@ -157,10 +160,10 @@ function build(collections: SeedCollection[], current: string | null): Mind {
     return [page, ...pages(sp.children ?? [], tone, id)];
   });
   return {
-    version: 3,
+    version: 4,
     current,
     blocks,
-    collections: collections.map((c) => ({ ...c, pages: pages(c.pages, c.tone), vault: c.vault.map(add) })),
+    collections: collections.map((c) => ({ ...c, pages: pages(c.pages, c.tone), items: (c.items ?? []).map(add), vault: c.vault.map(add) })),
   };
 }
 
@@ -173,6 +176,10 @@ function alaeMind(): Mind {
     {
       id: "c-german", name: "German", emoji: "🇩🇪", tone: "#C99432", chatIds: [],
       vault: [{ kind: "link", title: "Tandem: find a language exchange partner", source: "tandem.net", url: "https://tandem.net" }],
+      items: [
+        { kind: "date", title: "Goethe B1 exam", at: Date.now() + 46 * DAY },
+        { kind: "habit", title: "Review cards for 10 minutes", days: [dayKey(Date.now() - DAY), dayKey(Date.now() - 2 * DAY), dayKey(Date.now() - 3 * DAY), dayKey(Date.now() - 5 * DAY)] },
+      ],
       pages: [
         {
           title: "Vocab", emoji: "🃏", view: "grid", views: ["grid", "list", "shelf"], defaultKind: "flashcard",
@@ -244,6 +251,7 @@ function alaeMind(): Mind {
     {
       id: "c-trip", name: "Trip ideas", emoji: "✈️", tone: "#5B8A6B", chatIds: [],
       vault: [],
+      items: [{ kind: "note", title: "Packing, every time", body: "Adapter, rail card, a book for the train." }],
       pages: [
         { title: "Vienna weekend", emoji: "🎡", view: "list", defaultKind: "note", sections: one([
           { kind: "date", title: "Train to Vienna", at: Date.now() + 18 * DAY },
@@ -330,6 +338,7 @@ function reemaMind(): Mind {
     {
       id: "c-home", name: "Home ideas", emoji: "🏡", tone: "#5B8A6B", chatIds: ["reema"],
       vault: [img("photo-1586023492125-27b2c045efd7", "Green velvet chair")],
+      items: [{ kind: "amount", title: "Furniture budget", source: "This year", amount: 2500, paid: false, at: Date.now() + 60 * DAY }],
       pages: [
         { title: "Living room", emoji: "🛋️", view: "grid", views: ["grid", "list"], defaultKind: "image", sections: one([
           img("photo-1616046229478-9901c5536a45", "Sage walls and a round mirror"),
@@ -365,7 +374,7 @@ export function seedMind(userId: string): Mind {
   if (userId === "me") return alaeMind();
   if (userId === "charles") return charlesMind();
   if (userId === "reema") return reemaMind();
-  return { version: 3, collections: [], current: null, blocks: {} };
+  return { version: 4, collections: [], current: null, blocks: {} };
 }
 
 /* ---------------------------------------------------------------------------
@@ -406,7 +415,13 @@ function subscribe(listener: () => void) {
 }
 export function mindOf(userId: string): Mind {
   const all = load();
-  if (!all[userId] || all[userId].version !== 3) {
+  const m = all[userId] as Mind | { version: number } | undefined;
+  if (m?.version === 3) {
+    // Collections gained top-level items; everything else carries over.
+    const old = m as unknown as Mind;
+    all[userId] = { ...old, version: 4, collections: old.collections.map((c) => ({ ...c, items: c.items ?? [] })) };
+    write();
+  } else if (!m || m.version !== 4) {
     all[userId] = seedMind(userId);
     write();
   }
@@ -436,7 +451,7 @@ export function pageItems(mind: Mind, page: Page) {
   return page.sections.flatMap((s) => s.blockIds.map((id) => mind.blocks[id]).filter(Boolean));
 }
 export function collectionItems(mind: Mind, c: Collection) {
-  return [...c.pages.flatMap((p) => pageItems(mind, p)), ...c.vault.map((id) => mind.blocks[id]).filter(Boolean)];
+  return [...c.pages.flatMap((p) => pageItems(mind, p)), ...[...c.items, ...c.vault].map((id) => mind.blocks[id]).filter(Boolean)];
 }
 export function childrenOf(c: Collection, pageId: string) {
   return c.pages.filter((p) => p.parentId === pageId);
@@ -447,16 +462,20 @@ export function tagsOf(items: Block[]) {
   return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
 }
 
-/** Where an item lives: collection, then page and section, or its Vault. */
+/** Where an item lives: a page and section, the top of a collection, or its "To sort" pile. */
 export function locate(mind: Mind, blockId: string) {
   for (const c of mind.collections) {
-    if (c.vault.includes(blockId)) return { collection: c, page: null, section: null };
+    if (c.vault.includes(blockId)) return { collection: c, page: null, section: null, toSort: true };
+    if (c.items.includes(blockId)) return { collection: c, page: null, section: null, toSort: false };
     for (const page of c.pages) for (const section of page.sections) {
-      if (section.blockIds.includes(blockId)) return { collection: c, page, section };
+      if (section.blockIds.includes(blockId)) return { collection: c, page, section, toSort: false };
     }
   }
   return null;
 }
+
+/** The items at the top level of a collection, beside its pages. */
+export const rootItems = (mind: Mind, c: Collection) => c.items.map((id) => mind.blocks[id]).filter(Boolean);
 
 export function patchCollection(mind: Mind, id: string, fn: (c: Collection) => Collection): Mind {
   return { ...mind, collections: mind.collections.map((c) => (c.id === id ? fn(c) : c)) };
@@ -475,15 +494,25 @@ export function detach(mind: Mind, blockId: string): Mind {
     collections: mind.collections.map((c) => ({
       ...c,
       vault: c.vault.filter((id) => id !== blockId),
+      items: c.items.filter((id) => id !== blockId),
       pages: c.pages.map((p) => ({ ...p, sections: p.sections.map((s) => ({ ...s, blockIds: s.blockIds.filter((id) => id !== blockId) })) })),
     })),
   };
 }
 
-/** Put an item into a section (before another item, or at the end), or into a collection's Vault. */
-export function place(mind: Mind, blockId: string, to: { collectionId: string; pageId?: string | null; sectionId?: string | null; beforeId?: string | null }): Mind {
+/**
+ * Put an item into a section (before another item, or at the end), at the top
+ * level of a collection (`root`), or on its "To sort" pile.
+ */
+export function place(mind: Mind, blockId: string, to: { collectionId: string; pageId?: string | null; sectionId?: string | null; beforeId?: string | null; root?: boolean }): Mind {
   const out = detach(mind, blockId);
   return patchCollection(out, to.collectionId, (c) => {
+    if (!to.pageId && to.root) {
+      const list = [...c.items];
+      const at = to.beforeId ? list.indexOf(to.beforeId) : -1;
+      list.splice(at >= 0 ? at : list.length, 0, blockId);
+      return { ...c, items: list };
+    }
     if (!to.pageId) return { ...c, vault: [blockId, ...c.vault] };
     return {
       ...c,
@@ -544,7 +573,7 @@ export function routeSave(mind: Mind, input: { text: string; chatId: string; cha
   return best ? { collectionId: best.c.id, reason: best.reason || "it's your main collection" } : null;
 }
 
-/** Chat → Mind: a live reference lands in a collection's Vault. */
+/** Chat → Mind: a live reference lands on a collection's "To sort" pile. */
 export function saveToMind(userId: string, save: { chatId: string; messageId: string; title: string; text: string; chatName: string; kind: "text" | "card" | "photos" | "file"; cardType?: string }) {
   load(true);
   const mind = mindOf(userId);

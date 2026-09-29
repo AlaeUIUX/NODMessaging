@@ -1,0 +1,194 @@
+/* ==========================================================================
+   Dashboard: what needs you, what's coming up, and how things are going,
+   across every chat and Mind. Grouped lists share the Your tasks look.
+   ========================================================================== */
+
+.wrap {
+  --dash-ok: #1FA855;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding-top: 4px;
+}
+
+.hello { display: grid; gap: 2px; padding: 0 4px; }
+.hello p { margin: 0; font: var(--t-footnote); color: var(--ink-3); }
+.hello h2 { margin: 0; font: var(--t-title2); font-weight: var(--w-emph); letter-spacing: -.02em; text-wrap: balance; }
+
+/* ---- the four headline numbers ---- */
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 84px;
+  padding: 12px 14px;
+  border: none;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), var(--e1);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out), background var(--t-fast);
+}
+.tile:active { transform: scale(.97); }
+.tile:hover { background: color-mix(in srgb, var(--ink) 2%, var(--surface)); }
+.tile b { font: var(--t-title1); font-weight: var(--w-emph); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.tile span { font: var(--t-footnote); color: var(--ink-2); }
+.tileAccent { background: var(--accent); box-shadow: var(--e1); color: var(--bg); }
+.tileAccent:hover { background: color-mix(in srgb, var(--ink) 8%, var(--accent)); }
+.tileAccent span { color: color-mix(in srgb, var(--bg) 82%, transparent); }
+
+/* ---- sections ---- */
+.section { display: flex; flex-direction: column; gap: 8px; scroll-margin-top: 12px; }
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 4px;
+  font: var(--t-footnote);
+  font-weight: var(--w-emph);
+  color: var(--ink-2);
+}
+.head em { font-style: normal; font-weight: var(--w-control); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.hint {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+  font: var(--t-footnote);
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+.note { margin: 0 4px; font: var(--t-footnote); color: var(--ink-3); }
+.note b { font-weight: var(--w-control); color: var(--ink-2); }
+
+.list {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), var(--e1);
+  overflow: hidden;
+}
+.row, .more {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+.row { min-height: 58px; padding: 9px 14px; }
+.row > svg { flex-shrink: 0; color: var(--ink-3); }
+.row:hover, .more:hover { background: var(--fill); }
+.row:active, .more:active { background: var(--fill-2); }
+.list > * + *::before, .dayGroup > .row + .row::before { content: ""; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: var(--line); }
+.dayGroup { position: relative; display: flex; flex-direction: column; }
+.rowIcon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  background: var(--fill);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+.rowText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.rowText b, .rowText small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rowText b { font: var(--t-subhead); font-weight: var(--w-control); }
+.rowText small { font: var(--t-caption1); color: var(--ink-3); }
+.more { justify-content: center; min-height: 44px; color: var(--accent); font: var(--t-footnote); font-weight: var(--w-emph); }
+.figure { flex-shrink: 0; font: var(--t-subhead); font-weight: var(--w-control); font-variant-numeric: tabular-nums; }
+.time { flex-shrink: 0; font: var(--t-footnote); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.day { margin: 0; padding: 10px 14px 0; font: var(--t-caption1); font-weight: var(--w-emph); letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+
+.ok { color: var(--dash-ok) !important; }
+.late { color: var(--danger) !important; }
+
+/* A thin progress track under a row's text. */
+.bar { display: block; height: 4px; margin-top: 6px; border-radius: var(--r-pill); background: var(--fill-2); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: var(--r-pill); background: var(--ink); transition: width var(--t-slow) var(--ease-out); }
+
+/* ---- money ---- */
+.money { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.money > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), var(--e1);
+}
+.money span { font: var(--t-footnote); color: var(--ink-2); }
+.money b { font: var(--t-title3); font-weight: var(--w-emph); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+
+/* ---- Mind ---- */
+.minis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.minis button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 10px 4px;
+  border: none;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.minis b { font: var(--t-headline); font-variant-numeric: tabular-nums; }
+.minis span { font: var(--t-caption2); color: var(--ink-3); text-align: center; }
+
+/* ---- this week: one series, one colour; today is the accent ---- */
+.chartCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), var(--e1);
+}
+.chart { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; height: 132px; }
+.col { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; outline: none; }
+.barCol { flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid var(--line); }
+.barCol i { display: block; width: min(22px, 70%); border-radius: 4px 4px 0 0; background: color-mix(in srgb, var(--ink) 22%, transparent); transition: height var(--t-slow) var(--ease-out), background var(--t-fast); }
+.barCol i.today { background: var(--accent); }
+.col small { font: var(--t-caption2); color: var(--ink-3); }
+.col:hover .barCol i:not(.today), .col:focus-visible .barCol i:not(.today) { background: color-mix(in srgb, var(--ink) 40%, transparent); }
+.tip {
+  position: absolute;
+  bottom: calc(100% - 4px);
+  left: 50%;
+  z-index: 2;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  background: var(--ink);
+  color: var(--bg);
+  font: var(--t-caption1);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t-fast);
+}
+.col:first-child .tip { left: 0; transform: none; }
+.col:last-child .tip { left: auto; right: 0; transform: none; }
+.col:hover .tip, .col:focus-visible .tip { opacity: 1; }
+
+.foot { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0 0; font: var(--t-caption1); color: var(--ink-3); }

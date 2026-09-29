@@ -635,6 +635,10 @@
   overscroll-behavior: contain;
 }
 .inboxScroll::-webkit-scrollbar { display: none; }
+/* The dashboard has no inbox header: its greeting starts under the status bar and scrolls beneath it. */
+.dashBody { margin-top: 0; }
+.dashBody .inboxScroll { padding-top: calc(var(--inset-top) + 12px); }
+.dashBody .edgeTop { height: calc(var(--inset-top) + 36px); }
 
 .chips {
   display: flex;
@@ -4396,45 +4400,14 @@ button.mindPickOn { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ink) !impor
 .wCovers .mbk_image img { height: 96px; min-height: 0; border-radius: var(--r-md); }
 
 /* page tree */
-.mindTreeRow { position: relative; display: flex; align-items: center; gap: 6px; padding-left: calc(var(--depth, 0) * 18px); }
-.mindTreeRow > .mindPageRow { flex: 1; min-width: 0; }
-.mindTreeKids { display: grid; gap: 8px; padding-top: 8px !important; }
-.mindTreeKids .mindTreeRow::before { content: ""; position: absolute; top: -8px; bottom: 50%; left: calc(var(--depth, 1) * 18px - 11px); width: 8px; border-left: 1.5px solid var(--line-2); border-bottom: 1.5px solid var(--line-2); border-bottom-left-radius: 6px; }
-.mindTreeToggle {
-  width: 30px;
-  height: 30px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--ink) 5%, transparent);
-  color: var(--ink-3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: transform var(--t-mid) var(--ease-out);
-}
 
-/* page: sub-page chips */
-.mindSubpages { display: flex; gap: 6px; margin: 0 -16px; padding: 2px 16px 4px; overflow-x: auto; scrollbar-width: none; }
-.mindSubpages::-webkit-scrollbar { display: none; }
-.mindSubpages button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  height: 32px;
-  padding: 0 12px;
-  border: none;
-  border-radius: var(--r-pill);
-  background: var(--card-bg);
-  box-shadow: var(--mb-shadow);
-  color: var(--ink);
-  font: var(--t-footnote);
-  font-weight: var(--w-control);
-  cursor: pointer;
-}
-.mindSubpages em { font-style: normal; color: var(--ink-3); }
+/* collection: saves waiting for a place, above everything else */
+.mindToSort { display: grid; gap: 8px; }
+.mindToSort .sheetLabel { display: inline-flex; align-items: center; gap: 6px; }
+.mindToSortCount { min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--accent); color: var(--bg); font: var(--t-caption1); font-weight: var(--w-emph); font-style: normal; letter-spacing: 0; display: inline-grid; place-items: center; }
+
+/* page: sub-pages listed like folders, above the page's items */
+.mindFolders { margin-bottom: 4px; }
 
 /* page: quick add, shaped like the chat composer */
 .mindPageScroll { padding-bottom: 116px; }
@@ -4509,7 +4482,7 @@ button.mindPickOn { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ink) !impor
 .toastBtn { height: 32px; padding: 0 12px; flex-shrink: 0; border: none; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); font: var(--t-footnote); font-weight: var(--w-emph); cursor: pointer; }
 .toastBtn:last-child { background: var(--ink); color: var(--bg); }
 .addIcon.mindKindIcon:not(.mindKindFirst) { box-shadow: inset 0 0 0 1px var(--line); }
-.mindStack, .mindRows, .mindTreeKids { grid-template-columns: minmax(0, 1fr); }
+.mindStack, .mindRows { grid-template-columns: minmax(0, 1fr); }
 .mindStructure, .mindPalettes, .mindField, .mindDetail, .mindAddRow, .mindPickImages, .mindEmojiGrid, .mindSwatches { flex-shrink: 0; }
 
 /* ==========================================================================
@@ -4556,9 +4529,7 @@ textarea.plainInput { height: auto; min-height: 96px; padding: 13px 16px; line-h
 .mindFoldBody > div { margin: -6px -16px -16px; padding: 6px 16px 16px; }
 .mindFolded > div { margin-block: 0; padding-block: 0; }
 .mindShelf, .mindBoardView { margin: -6px -16px -12px; padding: 6px 16px 18px; }
-.mindSubpages { margin: -6px -16px -10px; padding: 6px 16px 14px; }
 
-.mindTreeKids { padding-top: 8px !important; }
 .widget, .mindPageRow { isolation: isolate; }
 
 /* ---- actions: section bars carry the controls, weighted by importance ---- */
@@ -4589,7 +4560,6 @@ a.secondaryWide, a.primaryWide { display: flex; align-items: center; justify-con
 /* Elevation room for clipping containers that hold level-2 surfaces. */
 .mindFoldBody > div { margin: calc(var(--e2-room) * -.5) -16px calc(var(--e2-room) * -1 - 4px); padding: calc(var(--e2-room) * .5) 16px calc(var(--e2-room) + 4px); }
 .mindShelf, .mindBoardView { margin: calc(var(--e2-room) * -.5) -16px calc(var(--e2-room) * -1); padding: calc(var(--e2-room) * .5) 16px calc(var(--e2-room) + 6px); }
-.mindSubpages { padding-bottom: calc(var(--e2-room) + 2px); margin-bottom: calc(var(--e2-room) * -1 + 2px); }
 .memberPick { padding: var(--e1-room) 2px calc(var(--e2-room)); }
 
 /* ==========================================================================

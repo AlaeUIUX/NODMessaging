@@ -1,6 +1,6 @@
 /* ==========================================================================
    Boards: the card in the thread, the full-screen board, task sheets and
-   "Your tasks" on the Spaces tab. Built from the chat's tokens and parts.
+   "Your tasks" on the Dashboard. Built from the chat's tokens and parts.
    ========================================================================== */
 
 .srOnly {
@@ -177,41 +177,26 @@
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
   gap: 12px;
-  padding: 6px 16px calc(var(--inset-bottom) + 8px);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  scroll-padding-inline: 16px;
-  overscroll-behavior-x: contain;
+  padding: 6px 16px calc(var(--inset-bottom) + 24px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   scrollbar-width: none;
 }
 .columns::-webkit-scrollbar { display: none; }
-/* With a mouse there's no swipe: show a slim scrollbar and let the background be grabbed. */
-@media (hover: hover) and (pointer: fine) {
-  .columns { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--ink) 22%, transparent) transparent; cursor: grab; }
-  .columns::-webkit-scrollbar { display: block; height: 6px; }
-  .columns::-webkit-scrollbar-thumb { border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 22%, transparent); }
-  .column { cursor: default; }
-}
-.columnsPanning, .columnsPanning * { cursor: grabbing !important; user-select: none; }
-/* Snap only when not being dragged by hand, or the drag fights it. */
-.columnsPanning { scroll-snap-type: none; }
-/* Snapping fights the edge auto-scroll while a task is held. */
-.boardDragging .columns { scroll-snap-type: none; }
 .boardDragging, .boardDragging * { cursor: grabbing; }
 
+/* One group per row, full width; each grows with its tasks and the board scrolls. */
 .column {
-  flex: 0 0 min(84%, 320px);
-  max-height: 100%;
-  min-height: 0;
+  flex: none;
   display: flex;
   flex-direction: column;
   padding-bottom: 8px;
   border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--ink) 4%, transparent);
-  scroll-snap-align: start;
+  scroll-margin-block: 12px;
   transition: background var(--t-mid) var(--ease-out), box-shadow var(--t-mid) var(--ease-out);
 }
 .column.columnInto {
@@ -316,18 +301,12 @@
 }
 
 .colBody {
-  flex: 0 1 auto;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  /* Room so the cards' shadows aren't clipped by the scroller. */
+  /* Room so the cards' shadows aren't clipped by the column's edge. */
   padding: 4px 10px var(--e2-room);
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  scrollbar-width: none;
 }
-.colBody::-webkit-scrollbar { display: none; }
 
 .task {
   position: relative;
@@ -534,7 +513,7 @@ button.fromChat::after { content: ""; position: absolute; inset: -10px -4px; }
 .source b { margin-right: 4px; font-weight: var(--w-emph); color: var(--ink); }
 
 /* ==========================================================================
-   Your tasks — above the rows on the Spaces tab
+   Your tasks — on the Dashboard
    ========================================================================== */
 
 .mine { margin: 2px 0 4px; }

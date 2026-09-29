@@ -10,6 +10,7 @@ import { BillCardView } from "./Bill";
 import { PlanCardView } from "./Plans";
 import { ProjectCardView } from "./Project";
 import { ConfirmPay } from "./CardBuilders";
+import { InvoiceCardView } from "./Invoice";
 import { IconBell, IconCheck, IconChecklist, IconLock, IconMoneyReceive, IconPlus, IconPoll } from "./Icons";
 import MiniMap from "./MiniMap";
 import { getPermission, relative, Sheet, Toggle, uid, useChatUi, useNow } from "./ui";
@@ -479,6 +480,8 @@ function PaymentCard({ message, card, interactive }: { message: Message; card: O
       </div>
     );
   }
+
+  if (card.invoice) return <InvoiceCardView message={message} card={card} invoice={card.invoice} interactive={interactive} />;
 
   const owes = card.from.includes(me) && !card.paidBy.includes(me);
   const pay = () => ui.openSheet(
