@@ -2,6 +2,10 @@ import type { Message, ProjectCard, Subtask, Task, User } from "./types";
 
 export const clampProgress = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
 
+/** Never a manual number — done/total subtasks, or 0 before any exist. There's no other way to move it. */
+export const taskProgress = (task: Task) =>
+  task.subtasks.length ? clampProgress((task.subtasks.filter((st) => st.done).length / task.subtasks.length) * 100) : 0;
+
 export type BoardMessage = Message & { card: ProjectCard };
 
 /** Every board in the chat, oldest first (a chat can hold several). */

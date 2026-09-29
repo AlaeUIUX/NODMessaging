@@ -447,6 +447,37 @@
   color: var(--bg);
   transform: translateY(2px);
 }
+/* The tap target is 32px (finger-sized) but only the 16px dot inside is drawn — the extra
+   padding is clawed back with a negative margin so it doesn't widen the row's layout. */
+.doneToggle {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin: -8px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.doneToggleDot {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: none;
+  color: transparent;
+  transform: translateY(2px);
+  transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+}
+.doneToggle:active .doneToggleDot { transform: translateY(2px) scale(.9); }
+.doneToggleDot.doneToggleOn { border-color: var(--accent); background: var(--accent); color: var(--bg); }
 .taskMeta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px; min-height: 22px; }
 .assignee { margin-left: auto; display: inline-flex; }
 .fromChat {

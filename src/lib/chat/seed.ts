@@ -122,6 +122,50 @@ export function buildSeedState(now = Date.now()): ChatState {
         requests: [],
       },
     }),
+    msg({
+      id: "g-13", chatId: "general", authorId: "reema", kind: "card", body: "Event: Design crit", createdAt: now - 45 * 60 * 1000,
+      card: {
+        type: "event",
+        title: "Design crit",
+        startsAt: now + 2 * 24 * HOUR,
+        place: "Studio Loft",
+        rsvps: { reema: "going", jamshad: "going" },
+      },
+    }),
+    msg({
+      id: "g-14", chatId: "general", authorId: "charles", kind: "card", body: "Reminder: Send the investor update", createdAt: now - 44 * 60 * 1000,
+      card: { type: "reminder", text: "Send the investor update", at: now + 3 * HOUR, audience: "everyone", firedAt: null },
+    }),
+    msg({
+      id: "g-15", chatId: "general", authorId: "charles", kind: "card", body: "Poll: Which font pairing?", createdAt: now - 42 * 60 * 1000,
+      card: {
+        type: "poll",
+        question: "Which font pairing?",
+        options: [
+          { id: "fo1", label: "Geist / Geist Mono", votes: ["me", "reema"] },
+          { id: "fo2", label: "Inter / JetBrains Mono", votes: ["jamshad"] },
+        ],
+        multiple: false,
+        anonymous: false,
+        closesAt: now + 5 * HOUR,
+        closedAt: null,
+      },
+    }),
+    msg({
+      id: "g-16", chatId: "general", authorId: "jamshad", kind: "card", body: "Poll: Standup time?", createdAt: now - 41 * 60 * 1000,
+      card: {
+        type: "poll",
+        question: "Standup time?",
+        options: [
+          { id: "so1", label: "9:30am", votes: ["jamshad", "salman"] },
+          { id: "so2", label: "10:00am", votes: ["me", "charles", "reema"] },
+        ],
+        multiple: false,
+        anonymous: false,
+        closesAt: now - 2 * HOUR,
+        closedAt: now - 2 * HOUR,
+      },
+    }),
   );
 
   // A shared moodboard: several photos in one message, shown as a collection.
@@ -146,6 +190,22 @@ export function buildSeedState(now = Date.now()): ChatState {
     msg({ id: "r-1", chatId: "reema", authorId: "reema", body: "Moodboard for the new inbox is up. Leaning warm neutrals with one sharp accent.", createdAt: now - 30 * HOUR }),
     msg({ id: "r-2", chatId: "reema", authorId: "me", body: "Yes. Less chrome, more content.", createdAt: now - 29 * HOUR, status: "read" }),
     msg({ id: "r-3", chatId: "reema", authorId: "reema", body: "Exactly. Sending the type scale tonight ✨", createdAt: now - 29 * HOUR + 60_000, reactions: [{ emoji: "❤️", userIds: ["me"] }] }),
+    msg({
+      id: "r-4", chatId: "reema", authorId: "me", kind: "card", body: "Checklist: Inbox redesign", createdAt: now - 28 * HOUR,
+      card: {
+        type: "checklist",
+        title: "Inbox redesign",
+        items: [
+          { id: "ic1", label: "Warm neutral palette", doneBy: "reema" },
+          { id: "ic2", label: "One sharp accent colour", doneBy: "me" },
+          { id: "ic3", label: "Type scale", doneBy: null },
+          { id: "ic4", label: "Content audit", doneBy: null },
+        ],
+        everyoneCanEdit: false,
+        editors: ["reema"],
+        requests: ["jamshad"],
+      },
+    }),
   ];
 
   const jamshad: Message[] = [
@@ -176,4 +236,4 @@ export function buildSeedState(now = Date.now()): ChatState {
 
 // v7/v8 added the plan, bill and board demos; existing threads keep theirs and gain these
 // (v8 again, for anyone who loaded v7 before the demos were filled in).
-export const CURRENT_VERSION = 10;
+export const CURRENT_VERSION = 13;

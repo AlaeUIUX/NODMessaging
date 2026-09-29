@@ -44,10 +44,10 @@ export function projectSeed(now: number): Message[] {
         subtasks: [sub("Mock the placement", true), sub("Generate the code", false), sub("Wire it into the handoff screen", false)],
       }, "charles", made + 20_000),
       task("pj-g-store", { title: "App Store description", column: "todo", order: 2, assignee: "reema", due: dueIn(now, 3), priority: "low", category: "cat-copy", progress: 10 }, "charles", made + 40_000),
-      task("pj-g-investor", { title: "Send investor preview", column: "todo", order: 3, assignee: "charles", due: dueIn(now, 5) }, "charles", made + 60_000),
+      task("pj-g-investor", { title: "Send investor preview", column: "todo", order: 3, assignee: "charles", due: dueIn(now, 5), priority: "low" }, "charles", made + 60_000),
       task("pj-g-demo", { title: "Record the demo video", column: "todo", order: 4, assignee: "salman", category: "cat-design" }, "charles", made + 80_000),
       task("pj-g-pricing", {
-        title: "Finalise pricing page copy", column: "doing", order: 1, assignee: "me", due: dueIn(now, -1), priority: "urgent", category: "cat-copy", progress: 80,
+        title: "Finalise pricing page copy", column: "doing", order: 1, assignee: "me", due: dueIn(now, -1), priority: "moderate", category: "cat-copy", progress: 80,
         subtasks: [sub("First draft", true), sub("Dana's review", true), sub("Final polish", false)],
       }, "charles", made + 100_000, now - 2 * HOUR),
       task("pj-g-android", { title: "QA Spaces flow on Android", column: "doing", order: 2, assignee: "jamshad", due: dueIn(now, 0), priority: "urgent", category: "cat-eng", progress: 60 }, "reema", made + 30 * MINUTE, now - 70 * MINUTE),
@@ -65,7 +65,7 @@ export function projectSeed(now: number): Message[] {
     columns: [{ id: "todo", name: "To do" }, { id: "doing", name: "Doing" }, { id: "done", name: "Done" }],
     categories: [{ id: "cat-qa", name: "QA" }],
     tasks: tasks([
-      task("pj-dm-review", { title: "Review the latest implementation", column: "doing", order: 1, assignee: "me", due: dueIn(now, 0), fromMessageId: "dm-5", priority: "urgent", category: "cat-qa", progress: 50 }, "me", dmMade + 10_000, now - 70 * MINUTE),
+      task("pj-dm-review", { title: "Review the latest implementation", column: "doing", order: 1, assignee: "me", due: dueIn(now, 0), fromMessageId: "dm-5", priority: "low", category: "cat-qa", progress: 50 }, "me", dmMade + 10_000, now - 70 * MINUTE),
       task("pj-dm-edge", { title: "Share the edge-case list with QA", column: "todo", order: 1, assignee: "charles", due: dueIn(now, 2), category: "cat-qa" }, "me", dmMade + 30_000),
     ]),
   };

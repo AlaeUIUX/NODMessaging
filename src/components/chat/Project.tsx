@@ -5,7 +5,7 @@ import { chatIdentity, initials } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { openState } from "@/lib/chat/open";
 import { doneColumn, tasksIn } from "@/lib/chat/ops";
-import { clampProgress, newProject, newTask, parseDue, parseTaskCommand, projectsOf, type BoardMessage } from "@/lib/chat/project";
+import { newProject, newTask, parseDue, parseTaskCommand, projectsOf, taskProgress, type BoardMessage } from "@/lib/chat/project";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Card, Chat, Message, Priority, ProjectCard, Subtask, Task, User } from "@/lib/chat/types";
 import Avatar from "./Avatar";
@@ -189,23 +189,6 @@ function CategoryPicker({ categories, value, onChange, onAdd }: {
           <IconPlus size={14} /> New
         </button>
       )}
-    </div>
-  );
-}
-
-function ProgressSlider({ value, onChange }: { value: number; onChange: (n: number) => void }) {
-  return (
-    <div className={s.progressField}>
-      <input
-        type="range"
-        min={0}
-        max={100}
-        step={5}
-        value={value}
-        onChange={(e) => onChange(clampProgress(Number(e.target.value)))}
-        aria-label="Progress"
-      />
-      <span>{value}%</span>
     </div>
   );
 }
@@ -498,9 +481,6 @@ function TaskSheet({ chatId, messageId, taskId, onClose, onShowInChat }: {
             }}
           />
 
-          <p className={styles.sheetLabel}>Progress</p>
-          <ProgressSlider value={task.progress} onChange={(progress) => update({ progress })} />
-
           <SubtaskEditor subtasks={task.subtasks} onChange={setSubtasks} />
 
           <p className={styles.sheetLabel}>Move to</p>
@@ -544,24 +524,38 @@ function TaskSheet({ chatId, messageId, taskId, onClose, onShowInChat }: {
    The board
 --------------------------------------------------------------------------- */
 
-function TaskBody({ task, now, done, categories, onShow }: {
-  task: Task; now: number; done: boolean; categories: { id: string; name: string }[]; onShow?: (id: string) => void;
+function TaskBody({ task, now, done, categories, onShow, onToggleDone }: {
+  task: Task; now: number; done: boolean; categories: { id: string; name: string }[]; onShow?: (id: string) => void; onToggleDone?: () => void;
 }) {
   const who = task.assignee ? userById(task.assignee) : null;
   const category = task.category ? categories.find((c) => c.id === task.category) : null;
+  const progress = taskProgress(task);
   return (
     <>
       {category && <p className={s.taskCategory}>{category.name}</p>}
       <p className={`${s.taskTitle} ${done ? s.taskDone : ""}`}>
-        {done && <span className={s.doneMark} aria-hidden="true"><IconCheck size={10} /></span>}
+        {onToggleDone ? (
+          <button
+            type="button"
+            className={s.doneToggle}
+            aria-pressed={done}
+            aria-label={done ? "Mark task not done" : "Mark task done"}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onToggleDone(); }}
+          >
+            <span className={`${s.doneToggleDot} ${done ? s.doneToggleOn : ""}`}>{done && <IconCheck size={10} />}</span>
+          </button>
+        ) : (
+          done && <span className={s.doneMark} aria-hidden="true"><IconCheck size={10} /></span>
+        )}
         {task.title}
       </p>
       <div className={s.taskBadges}>
         <span className={`${s.priorityBadge} ${PRIORITY_CLASS[task.priority]}`}>{PRIORITY_LABEL[task.priority]}</span>
       </div>
       <div className={s.progressRow}>
-        <span className={s.progressBar}><span style={{ width: `${task.progress}%` }} /></span>
-        <em>{task.progress}%</em>
+        <span className={s.progressBar}><span style={{ width: `${progress}%` }} /></span>
+        <em>{progress}%</em>
       </div>
       {(task.due !== null || task.fromMessageId || task.subtasks.length > 0 || who) && (
         <div className={s.taskMeta}>
@@ -722,13 +716,12 @@ function NewTaskSheet({ chatId, messageId, column, onClose }: {
   const [due, setDue] = useState<number | null>(null);
   const [priority, setPriority] = useState<Priority>("moderate");
   const [category, setCategory] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [col, setCol] = useState(column);
   if (!board) return null;
 
   const create = () => {
-    const task = newTask({ title, column: col, assignee, due, priority, category, progress, subtasks, order: endOrder(tasksIn(board.card, col)) }, me);
+    const task = newTask({ title, column: col, assignee, due, priority, category, subtasks, order: endOrder(tasksIn(board.card, col)) }, me);
     cardOp(board, { kind: "task.add", task });
     onClose();
   };
@@ -764,9 +757,6 @@ function NewTaskSheet({ chatId, messageId, column, onClose }: {
           setCategory(id);
         }}
       />
-
-      <p className={styles.sheetLabel}>Progress</p>
-      <ProgressSlider value={progress} onChange={setProgress} />
 
       <SubtaskEditor subtasks={subtasks} onChange={setSubtasks} />
 
@@ -890,6 +880,19 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
   const openTask = (t: Task) => ui.openSheet(
     <TaskSheet chatId={message.chatId} messageId={message.id} taskId={t.id} onClose={ui.closeSheet} onShowInChat={showInChat} />,
   );
+
+  /** The board's own checkbox: complete (all subtasks tick, progress to 100, moves to Done) or reopen (back to the first column). */
+  const toggleTaskDone = (t: Task) => {
+    if (t.column === done) {
+      const first = card.columns[0]?.id;
+      if (first && first !== done) cardOp(message, { kind: "task.update", id: t.id, patch: { column: first, order: endOrder(tasksIn(card, first)) }, at: stamp() });
+      return;
+    }
+    const patch: Partial<Pick<Task, "column" | "order" | "progress" | "subtasks">> = { column: done, order: endOrder(tasksIn(card, done)) };
+    if (t.subtasks.length > 0) patch.subtasks = t.subtasks.map((st) => ({ ...st, done: true }));
+    else patch.progress = 100;
+    cardOp(message, { kind: "task.update", id: t.id, patch, at: stamp() });
+  };
 
   /** A new group, before Done, named and ready to rename; the board scrolls to it. */
   const addGroup = () => {
@@ -1193,8 +1196,7 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
                     }}
                     onContextMenu={(e) => e.preventDefault()}
                   >
-                    {/* No button inside the tile (it's a button itself); the task sheet has "Show in chat". */}
-                    <TaskBody task={t} now={now} done={isDone} categories={card.categories} />
+                    <TaskBody task={t} now={now} done={isDone} categories={card.categories} onToggleDone={() => toggleTaskDone(t)} />
                   </div>
                 ))}
                 {target && target.before === null && <div className={s.dropEnd} aria-hidden="true" />}
@@ -1285,20 +1287,20 @@ export function TaskFromMessage({ message, chat, onClose }: { message: Message; 
 const MINE_SHOWN = 4;
 
 /** Everything assigned to you, across every chat's board (Spaces tab). */
-export function MyTasks({ onOpenChat }: { onOpenChat: (chat: Chat) => void }) {
+export function MyTasks({ onOpenChat }: { onOpenChat: (chat: Chat, board?: BoardMessage) => void }) {
   const { state, me } = useChat();
   const now = useNow(60_000);
   const [all, setAll] = useState(false);
 
   const items = useMemo(() => {
-    const out: { task: Task; chat: Chat; board: string; label: string }[] = [];
+    const out: { task: Task; chat: Chat; board: BoardMessage; label: string }[] = [];
     for (const chat of state.data.chats) {
       if (!chat.memberIds.includes(me)) continue;
       const label = chatIdentity(chat, me, userById).label;
       for (const board of projectsOf(state.data.messages[chat.id] ?? [])) {
         const done = doneColumn(board.card);
         for (const task of Object.values(board.card.tasks)) {
-          if (!task.deleted && task.column !== done && task.assignee === me) out.push({ task, chat, board: board.card.name, label });
+          if (!task.deleted && task.column !== done && task.assignee === me) out.push({ task, chat, board, label });
         }
       }
     }
@@ -1318,11 +1320,11 @@ export function MyTasks({ onOpenChat }: { onOpenChat: (chat: Chat) => void }) {
       ) : (
         <div className={s.mineList}>
           {shown.map(({ task, chat, board, label }) => (
-            <button key={`${chat.id}-${task.id}`} className={s.mineRow} onClick={() => onOpenChat(chat)}>
+            <button key={`${chat.id}-${task.id}`} className={s.mineRow} onClick={() => onOpenChat(chat, board)}>
               <span className={s.mineDot} aria-hidden="true" />
               <span className={s.mineText}>
                 <b>{task.title}</b>
-                <small>{label === board ? label : `${label} · ${board}`}</small>
+                <small>{label === board.card.name ? label : `${label} · ${board.card.name}`}</small>
               </span>
               {task.due !== null && <DueChip due={task.due} now={now} />}
             </button>
