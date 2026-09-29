@@ -487,7 +487,7 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
         return (
           <li key={m.id}>
             <button className={s.result} onClick={() => jump(m.id)}>
-              <Avatar glyph={initials(u.fullName)} tone={u.tone} size={32} shape="circle" />
+              <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={32} shape="circle" />
               <span className={s.resultText}>
                 <span className={s.resultHead}><b>{nameOf(m.authorId)}</b><small>{when(m.createdAt, now)}</small></span>
                 <span className={s.resultBody}>{snippet(stripFormatting(m.body), q)}</span>
@@ -527,7 +527,7 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
 
       <div ref={scrollRef} className={s.scroll}>
         <div className={s.hero}>
-          <Avatar glyph={identity.glyph} tone={identity.tone} size={96} online={online} />
+          <Avatar glyph={identity.glyph} tone={identity.tone} photo={identity.photo} size={96} online={online} />
           <h2 ref={heroNameRef} className={s.name}>{identity.label}</h2>
           <p className={`${s.presence} ${online ? s.online : ""}`}>{presence}</p>
           <div className={s.actions}>
@@ -626,7 +626,7 @@ function SpaceMembers({ chat }: { chat: Chat }) {
           const on = id !== me && isOnline(id);
           return (
             <li key={id} className={s.member}>
-              <Avatar glyph={initials(u.fullName)} tone={u.tone} size={40} shape="circle" online={on} />
+              <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={40} shape="circle" online={on} />
               <span className={s.memberText}>
                 <b>{u.fullName}{id === me && <em> · You</em>}</b>
                 <span className={on ? s.online : undefined}>{on ? "Active now" : `@${u.name}`}</span>

@@ -26,7 +26,7 @@ function Faces({ ids }: { ids: string[] }) {
     <span className={styles.faces}>
       {ids.slice(0, 4).map((id) => {
         const u = userById(id);
-        return <Avatar key={id} glyph={initials(u.fullName)} tone={u.tone} size={18} shape="circle" />;
+        return <Avatar key={id} glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={18} shape="circle" />;
       })}
     </span>
   );

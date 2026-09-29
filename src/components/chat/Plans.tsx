@@ -34,7 +34,7 @@ function Faces({ ids, size = 16 }: { ids: string[]; size?: number }) {
     <span className={`${styles.faces} ${s.faces}`}>
       {ids.slice(0, 3).map((id) => {
         const u = userById(id);
-        return <Avatar key={id} glyph={initials(u.fullName)} tone={u.tone} size={size} shape="circle" />;
+        return <Avatar key={id} glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={size} shape="circle" />;
       })}
       {ids.length > 3 && <em>+{ids.length - 3}</em>}
     </span>
@@ -470,7 +470,7 @@ function SheetStop({ stop, me, now, isNow, isNext, canEdit, onTick, onEdit }: {
           {stop.cost ? <span>{euros(stop.cost)} each</span> : null}
           {owner && (
             <span className={s.owner}>
-              <Avatar glyph={initials(owner.fullName)} tone={owner.tone} size={16} shape="circle" />
+              <Avatar glyph={initials(owner.fullName)} tone={owner.tone} photo={owner.photo} size={16} shape="circle" />
               {stop.owner === me ? "You’re on it" : owner.name}
             </span>
           )}
@@ -568,7 +568,7 @@ function StopEditor({ stop, day, onSave, onCancel, onRemove }: {
               const on = owner === id;
               return (
                 <button key={id ?? "none"} type="button" className={`${styles.choice} ${s.ownerChip} ${on ? styles.choiceOn : ""}`} aria-pressed={on} onClick={() => setOwner(id)}>
-                  {u && <Avatar glyph={initials(u.fullName)} tone={u.tone} size={20} shape="circle" />}
+                  {u && <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={20} shape="circle" />}
                   {id === null ? "Nobody" : id === me ? "You" : u!.name}
                 </button>
               );

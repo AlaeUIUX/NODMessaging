@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { chatIdentity } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
-import { USERS } from "@/lib/chat/seed";
+import { allPeople } from "@/lib/chat/people";
 import { useChat, userById } from "@/lib/chat/store";
 import { TONES } from "@/lib/chat/avatar";
 import type { Card, Chat, Message } from "@/lib/chat/types";
@@ -77,7 +77,7 @@ export default function ChatView({ chat, leaving, onBack }: {
   const identity = chatIdentity(chat, me, userById);
   const other = chat.kind === "dm" ? chat.memberIds.find((id) => id !== me) : undefined;
   const online = !!other && isOnline(other);
-  const members = useMemo(() => USERS.filter((u) => chat.memberIds.includes(u.id) && u.id !== me), [chat, me]);
+  const members = useMemo(() => allPeople().filter((u) => chat.memberIds.includes(u.id) && u.id !== me), [chat, me]);
   // Anything unfinished in this chat puts a blue dot after the name.
   // Re-checked each minute too: a poll closing or an event starting ends "open" with no new message.
   const minute = useNow(60_000);
@@ -427,7 +427,7 @@ export default function ChatView({ chat, leaving, onBack }: {
           onClick={() => setContact(live.length ? "live" : "media")}
           aria-label={`${chat.kind === "dm" ? firstName : identity.label}${live.length ? `, ${live.length} open ${live.length === 1 ? "item" : "items"}` : ""}. Open details`}
         >
-          <Avatar glyph={identity.glyph} tone={identity.tone} size={40} online={online} />
+          <Avatar glyph={identity.glyph} tone={identity.tone} photo={identity.photo} size={40} online={online} />
           <span className={`${styles.tcName} ${styles.glass}`}>
             <span>{chat.kind === "dm" ? firstName : identity.label}</span>
             {live.length > 0 && <i className={styles.openDot} aria-hidden="true" />}
@@ -465,6 +465,7 @@ export default function ChatView({ chat, leaving, onBack }: {
             : `You and ${firstName} are connected on NOD`,
           glyph: identity.glyph,
           tone: identity.tone,
+          photo: identity.photo,
         }}
         firstUnreadId={firstUnreadId}
         typingUsers={typing}
@@ -503,7 +504,7 @@ export default function ChatView({ chat, leaving, onBack }: {
           onCancelEdit={() => setEditing(null)}
           onSend={(body, attachments) => {
             // "/task Hero copy @Reema fri" goes to the board instead of the thread.
-            const task = attachments.length ? null : parseTaskCommand(body, USERS.filter((u) => chat.memberIds.includes(u.id)));
+            const task = attachments.length ? null : parseTaskCommand(body, allPeople().filter((u) => chat.memberIds.includes(u.id)));
             if (task) { addTask(task); setReplyTo(null); return; }
             send(chat.id, body, { replyToId: replyTo?.id ?? null, attachments });
             setReplyTo(null);

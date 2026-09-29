@@ -235,7 +235,7 @@ function LiveChatBlock({ block, shape, cls }: { block: Block; shape: BlockShape;
   return (
     <div className={cls}>
       <span className={styles.mbLiveHead}>
-        <Avatar glyph={initials(author.fullName)} tone={author.tone} size={18} shape="circle" />
+        <Avatar glyph={initials(author.fullName)} tone={author.tone} photo={author.photo} size={18} shape="circle" />
         <span>{message.authorId === me ? "You" : author.name} · {where}</span>
         {message.kind === "card" && <em className={styles.mbLive}><i />Live</em>}
       </span>

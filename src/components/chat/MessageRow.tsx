@@ -356,7 +356,7 @@ export default memo(function MessageRow({
     <div ref={rowRef} className={rowClass} data-pos={pos} data-message-id={message.id}>
       {avatarSlot && (
         <div className={styles.avatarSlot}>
-          {showAvatar && <Avatar glyph={initials(author.fullName)} tone={author.tone} size={28} />}
+          {showAvatar && <Avatar glyph={initials(author.fullName)} tone={author.tone} photo={author.photo} size={28} />}
         </div>
       )}
 

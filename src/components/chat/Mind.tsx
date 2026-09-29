@@ -80,7 +80,7 @@ interface Ctx {
   openChat: (chatId: string) => void;
 }
 
-export default function MindTab({ onOpenChat }: { onOpenChat: (chat: Chat) => void }) {
+export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat: Chat) => void; onSettings: () => void }) {
   const { me, state } = useChat();
   const { mind, update } = useMind(me);
   const meUser = userById(me);
@@ -144,10 +144,10 @@ export default function MindTab({ onOpenChat }: { onOpenChat: (chat: Chat) => vo
       <header className={styles.profile}>
         <div className={styles.profileRow}>
           <div className={styles.profileId}>
-            <span className={styles.profileAvatar}>
-              <Avatar glyph={initials(meUser.fullName)} tone={meUser.tone} size={40} shape="circle" />
+            <button className={`${styles.profileAvatar} ${styles.avatarBtn}`} onClick={onSettings} aria-label="Settings">
+              <Avatar glyph={initials(meUser.fullName)} tone={meUser.tone} photo={meUser.photo} size={40} shape="circle" />
               <span className={styles.orgBadge}><Logo size={12} /></span>
-            </span>
+            </button>
             <div className={styles.profileText}>
               <b>{me === "me" ? "Your Mind" : `${meUser.name}'s Mind`}</b>
               <span>{mind.collections.length ? `${mind.collections.length} collection${mind.collections.length === 1 ? "" : "s"} · ${itemCount} items` : "Empty for now"}</span>

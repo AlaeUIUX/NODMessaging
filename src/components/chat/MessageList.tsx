@@ -27,7 +27,7 @@ interface Props {
   messages: Message[];
   meId: string;
   isGroupChat: boolean;
-  intro: { title: string; subtitle: string; glyph: string; tone: AvatarTone };
+  intro: { title: string; subtitle: string; glyph: string; tone: AvatarTone; photo?: string };
   firstUnreadId: string | null;
   typingUsers: string[];
   hasEarlier: boolean;
@@ -192,7 +192,7 @@ export default function MessageList({
         </button>
       ) : (
         <div className={styles.threadIntro}>
-          <Avatar glyph={intro.glyph} tone={intro.tone} size={72} />
+          <Avatar glyph={intro.glyph} tone={intro.tone} photo={intro.photo} size={72} />
           <h2>{intro.title}</h2>
           <p>{intro.subtitle}</p>
           <span className={styles.e2e}><IconLock size={12} />Messages are end-to-end encrypted</span>
@@ -245,7 +245,7 @@ export default function MessageList({
         <div className={`${styles.row} ${styles.theirs} ${styles.typingRow} ${typingShown.leaving ? styles.typingLeaving : styles.enterTheirs}`}>
           {isGroupChat && (
             <div className={styles.avatarSlot}>
-              <Avatar glyph={initials(userById(typingShown.user).fullName)} tone={userById(typingShown.user).tone} size={28} />
+              <Avatar glyph={initials(userById(typingShown.user).fullName)} tone={userById(typingShown.user).tone} photo={userById(typingShown.user).photo} size={28} />
             </div>
           )}
           <div className={styles.stack}>

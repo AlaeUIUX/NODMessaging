@@ -5,11 +5,11 @@ import { projectSeed } from "./seed-project";
 import type { Chat, ChatState, Message, User } from "./types";
 
 export const USERS: User[] = [
-  { id: "me", name: "Alae", fullName: "Alae", tone: "graphite" },
-  { id: "charles", name: "Charles", fullName: "Charles", tone: "denim" },
-  { id: "jamshad", name: "Jamshad", fullName: "Jamshad", tone: "sage" },
-  { id: "reema", name: "Reema", fullName: "Reema", tone: "clay" },
-  { id: "salman", name: "Salman", fullName: "Salman", tone: "plum" },
+  { id: "me", name: "Alae", fullName: "Alae", tone: "graphite", username: "alae", phone: "+43123456789", bio: "Designing NOD." },
+  { id: "charles", name: "Charles", fullName: "Charles", tone: "denim", username: "charles", phone: "+436601112233", bio: "Engineering · coffee first." },
+  { id: "jamshad", name: "Jamshad", fullName: "Jamshad", tone: "sage", username: "jamshad", phone: "+436602223344" },
+  { id: "reema", name: "Reema", fullName: "Reema", tone: "clay", username: "reema", phone: "+436603334455", bio: "Product, and plants." },
+  { id: "salman", name: "Salman", fullName: "Salman", tone: "plum", username: "salman", phone: "+436604445566" },
 ];
 
 export const CHATS: Chat[] = [

@@ -11,7 +11,11 @@
   padding-top: 4px;
 }
 
-.hello { display: grid; gap: 2px; padding: 0 4px; }
+.hello { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px; }
+.hello > div { display: grid; gap: 2px; min-width: 0; }
+.me { flex-shrink: 0; padding: 0; border: none; border-radius: var(--r-pill); background: none; cursor: pointer; transition: transform var(--t-fast); }
+.me:active { transform: scale(.94); }
+.me:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .hello p { margin: 0; font: var(--t-footnote); color: var(--ink-3); }
 .hello h2 { margin: 0; font: var(--t-title2); font-weight: var(--w-emph); letter-spacing: -.02em; text-wrap: balance; }
 

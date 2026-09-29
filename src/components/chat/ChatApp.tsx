@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getForceFailure, setForceFailure } from "@/lib/chat/api";
-import { clearMedia } from "@/lib/chat/media";
+import { getPrefs, resetDemoData, THEME_EVENT, useAccounts, type ThemePref } from "@/lib/chat/account";
 import { USERS } from "@/lib/chat/seed";
 import { ChatProvider, useChat, userById } from "@/lib/chat/store";
 import type { Chat } from "@/lib/chat/types";
@@ -11,6 +11,7 @@ import ChatView from "./ChatView";
 import { IconArrowRight, IconChecklist, IconMoneyReceive, IconMoon, IconPin, IconSun, IconUserGroup } from "./Icons";
 import Inbox from "./Inbox";
 import Logo from "./Logo";
+import Onboarding from "./Onboarding";
 import StageField from "./StageField";
 import { getPermission } from "./ui";
 import styles from "./chat.module.css";
@@ -20,6 +21,9 @@ const THEME_KEY = "nod.theme";
 const STAGE_KEY = "nod.stage";
 
 type Theme = "light" | "dark";
+
+/** What "Automatic" resolves to right now. */
+const systemTheme = (): Theme => (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
 
 /** The hero stage is one solid colour; swap it here or from the Developer drawer. */
 export const STAGE_COLORS = [
@@ -98,18 +102,8 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
           />
           Force send failure
         </label>
-        <button
-          className={styles.devReset}
-          onClick={async () => {
-            // Fresh seed for demos: conversations, drafts, identity, permission answers and stored files.
-            try {
-              Object.keys(localStorage).filter((k) => k.startsWith("nod.chat") || k.startsWith("nod.perm") || k.startsWith("nod.mind")).forEach((k) => localStorage.removeItem(k));
-              sessionStorage.removeItem("nod.chat.me");
-            } catch { /* private mode */ }
-            await clearMedia();
-            location.reload();
-          }}
-        >
+        {/* Fresh seed for demos: conversations, drafts, identities, profiles, settings, permission answers and stored files. */}
+        <button className={styles.devReset} onClick={() => { void resetDemoData(); }}>
           Reset demo data
         </button>
       </div>
@@ -139,12 +133,13 @@ function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
       const seen = (announced.current ??= new Set());
       let muted: string[] = [];
       try { muted = JSON.parse(localStorage.getItem(`nod.chat.muted.${me}`) ?? "[]"); } catch { /* private mode */ }
+      const prefs = getPrefs(me);
       // `started`: already under way when this tab opened, so it was due before we could say so.
       const notify = (key: string, chat: Chat, title: string, body: string, started: boolean) => {
         if (seen.has(key)) return;
         seen.add(key);
         if (first && started) return;
-        if (!muted.includes(chat.id) && getPermission("notifications") === "granted") onBanner({ id: Date.now(), chatId: chat.id, title, body });
+        if (!muted.includes(chat.id) && getPermission("notifications") === "granted") onBanner({ id: Date.now(), chatId: chat.id, title, body: prefs.previews ? body : "Tap to open the chat" });
       };
       for (const chat of latest.current.chats) {
         if (!chat.memberIds.includes(me)) continue;
@@ -155,7 +150,7 @@ function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
             for (const stop of c.days.flatMap((d) => d.stops)) {
               // Ten minutes ahead, for stops you're responsible for or plans you're going to.
               if (stop.doneBy || stop.at === null || stop.at - now > 10 * 60_000 || stop.at < now - 60_000) continue;
-              if (stop.owner === me || (going && !stop.owner)) {
+              if (prefs.notifyPlans && (stop.owner === me || (going && !stop.owner))) {
                 notify(`plan:${stop.id}`, chat, `${c.title} · ${new Date(stop.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`, stop.place ? `${stop.title} at ${stop.place}` : stop.title, stop.at <= now);
               }
             }
@@ -163,15 +158,15 @@ function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
           if (c && !m.deletedAt && c.type === "project") {
             const done = c.columns[c.columns.length - 1]?.id;
             for (const task of Object.values(c.tasks)) {
-              if (task.deleted || task.assignee !== me || task.column === done || task.due === null || task.due > now) continue;
+              if (!prefs.notifyTasks || task.deleted || task.assignee !== me || task.column === done || task.due === null || task.due > now) continue;
               notify(`task:${task.id}:${task.due}`, chat, `Due now · ${c.name}`, task.title, true);
             }
           }
           if (!c || c.type !== "reminder" || c.firedAt !== null || c.at > now) continue;
           updateCard(m, (x) => (x.type === "reminder" ? { ...x, firedAt: Date.now() } : x));
           const forMe = c.audience === "everyone" || m.authorId === me;
-          if (forMe && getPermission("notifications") === "granted") {
-            onBanner({ id: Date.now(), chatId: chat.id, title: `Reminder · ${chat.kind === "group" ? chat.name : userById(m.authorId).name}`, body: c.text });
+          if (forMe && prefs.notifyReminders && getPermission("notifications") === "granted") {
+            onBanner({ id: Date.now(), chatId: chat.id, title: `Reminder · ${chat.kind === "group" ? chat.name : userById(m.authorId).name}`, body: prefs.previews ? c.text : "Tap to open the chat" });
           }
         }
       }
@@ -189,7 +184,16 @@ function Device() {
   const [banner, setBanner] = useState<Banner | null>(null);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deviceRef = useRef<HTMLDivElement>(null);
-  const { state, saveFailed } = useChat();
+  // Another identity: whatever chat was open belongs to the previous one.
+  const [shownFor, setShownFor] = useState<string | null>(null);
+  const { state, saveFailed, me, setMe } = useChat();
+  const accounts = useAccounts();
+  // Nobody signed in on this device: the app starts at its welcome.
+  const signedIn = !!accounts?.includes(me);
+  if (shownFor !== me) {
+    setShownFor(me);
+    if (openChat) setOpenChat(null);
+  }
   const latestChats = useRef(state.data.chats);
   useEffect(() => { latestChats.current = state.data.chats; }, [state.data.chats]);
 
@@ -303,9 +307,15 @@ function Device() {
       <div className={styles.bezel}>
         <div className={styles.screenBox}>
           <div className={styles.island} />
-          <Inbox onOpen={open} pushed={!!openChat && !leaving} />
-          {openChat && <ChatView key={openChat.id} chat={openChat} leaving={leaving} onBack={back} />}
-          <ReminderWatcher onBanner={showBanner} />
+          {accounts === null ? null : !signedIn ? (
+            <Onboarding key="welcome" mode="first" onDone={(id) => setMe(id)} />
+          ) : (
+            <>
+              <Inbox key={me} onOpen={open} pushed={!!openChat && !leaving} />
+              {openChat && openChat.memberIds.includes(me) && <ChatView key={openChat.id} chat={openChat} leaving={leaving} onBack={back} />}
+              <ReminderWatcher onBanner={showBanner} />
+            </>
+          )}
           {banner && (
             <button
               key={banner.id}
@@ -333,14 +343,25 @@ function Device() {
 
 export default function ChatApp() {
   // Light is the product's primary mode; dark is opt-in and remembered.
-  const [theme, setTheme] = useState<Theme>("light");
+  const [pref, setPref] = useState<ThemePref>("light");
+  const [system, setSystem] = useState<Theme>("light");
+  const theme: Theme = pref === "system" ? system : pref;
   const [stage, setStage] = useState(STAGE_COLORS[0].value);
 
   useEffect(() => {
     // Restoring saved preferences after mount keeps server and client HTML identical.
+    const saved = readPref(THEME_KEY, "light");
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTheme(readPref(THEME_KEY, "light") === "dark" ? "dark" : "light");
+    setPref(saved === "dark" || saved === "system" ? saved : "light");
+    setSystem(systemTheme());
     setStage(readPref(STAGE_KEY, STAGE_COLORS[0].value));
+    // Settings → Appearance asks for a theme; "Automatic" follows the device.
+    const onPick = (e: Event) => { const t = (e as CustomEvent<ThemePref>).detail; setPref(t); writePref(THEME_KEY, t); };
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onSystem = () => setSystem(systemTheme());
+    window.addEventListener(THEME_EVENT, onPick);
+    mq.addEventListener("change", onSystem);
+    return () => { window.removeEventListener(THEME_EVENT, onPick); mq.removeEventListener("change", onSystem); };
   }, []);
 
   // The page sits inside the global <body>; keep its backdrop and scrollbars in step.
@@ -351,7 +372,7 @@ export default function ChatApp() {
 
   const flipTheme = () => {
     const next: Theme = theme === "light" ? "dark" : "light";
-    setTheme(next);
+    setPref(next);
     writePref(THEME_KEY, next);
   };
 

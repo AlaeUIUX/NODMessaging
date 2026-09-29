@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getPrefs } from "@/lib/chat/account";
 import { initials } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { htmlToMarkdown, markdownToHtml } from "@/lib/chat/richText";
@@ -442,7 +443,9 @@ export default function Composer({
     // Touch keyboards have no Shift+Enter: there Return is a new line and the
     // send button sends, the way phone messengers work.
     const touchKeyboard = window.matchMedia?.("(pointer: coarse)").matches && !e.metaKey && !e.ctrlKey;
-    if (e.key === "Enter" && (e.shiftKey || touchKeyboard)) {
+    // Settings → Chats: with "Return sends" off, Return is a new line and ⌘/Ctrl+Return sends.
+    const returnSends = getPrefs(meId).enterToSend || e.metaKey || e.ctrlKey;
+    if (e.key === "Enter" && (e.shiftKey || touchKeyboard || !returnSends)) {
       // A new paragraph continues lists and quotes; an empty item ends them.
       e.preventDefault();
       exec("insertParagraph");
@@ -513,7 +516,7 @@ export default function Composer({
                   className={`${styles.mentionItem} ${i === mentionIndex ? styles.mentionOn : ""}`}
                   onClick={() => insertMention(m)}
                 >
-                  <Avatar glyph={initials(m.fullName)} tone={m.tone} size={28} shape="circle" />
+                  <Avatar glyph={initials(m.fullName)} tone={m.tone} photo={m.photo} size={28} shape="circle" />
                   {m.fullName}
                   <span>@{m.name}</span>
                 </button>

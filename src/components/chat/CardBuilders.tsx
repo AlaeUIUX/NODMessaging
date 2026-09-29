@@ -532,7 +532,7 @@ export function PaymentBuilder({ mode, members, onSend, onClose }: {
       <div className={styles.memberPick}>
         {members.map((m) => (
           <button key={m.id} className={who.includes(m.id) ? styles.memberOn : undefined} disabled={confirming} onClick={() => toggle(m.id)}>
-            <Avatar glyph={initials(m.fullName)} tone={m.tone} size={40} shape="circle" />
+            <Avatar glyph={initials(m.fullName)} tone={m.tone} photo={m.photo} size={40} shape="circle" />
             <span>{m.name}</span>
             {who.includes(m.id) && <i className={styles.memberTick}><IconCheck size={10} /></i>}
           </button>

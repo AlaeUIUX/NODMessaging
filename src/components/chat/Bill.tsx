@@ -500,7 +500,7 @@ export function BillFlow({ onSend, onClose }: { onSend: Send; onClose: () => voi
                               aria-label={`${nameOf(p.id)} had ${it.name}`}
                               onClick={() => toggleClaim(it.id, p.id)}
                             >
-                              <Avatar glyph={initials(p.fullName)} tone={p.tone} size={34} shape="circle" />
+                              <Avatar glyph={initials(p.fullName)} tone={p.tone} photo={p.photo} size={34} shape="circle" />
                               {on && <i className={s.claimTick}><IconCheck size={9} /></i>}
                               <span>{nameOf(p.id)}</span>
                             </button>
@@ -516,7 +516,7 @@ export function BillFlow({ onSend, onClose }: { onSend: Send; onClose: () => voi
               <ul className={s.shareList}>
                 {people.map((p) => (
                   <li key={p.id}>
-                    <Avatar glyph={initials(p.fullName)} tone={p.tone} size={26} shape="circle" />
+                    <Avatar glyph={initials(p.fullName)} tone={p.tone} photo={p.photo} size={26} shape="circle" />
                     <span className={s.shareName}>{nameOf(p.id)}{p.id === me && <small>Paid the bill</small>}</span>
                     <b className={shares[p.id] ? undefined : s.nil}>{shares[p.id] ? fmt(shares[p.id]) : "—"}</b>
                   </li>
@@ -628,7 +628,7 @@ export function BillCardView({ message, card, interactive }: { message: Message;
             const due = owes(id);
             return (
               <li key={id}>
-                <Avatar glyph={initials(u.fullName)} tone={u.tone} size={24} shape="circle" />
+                <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={24} shape="circle" />
                 {due && id === me && interactive ? (<>
                   <span className={s.personName}>{nameOf(id)}</span>
                   <button className={s.payBtn} onClick={pay}>Pay {fmt(shares[id])}</button>
@@ -717,7 +717,7 @@ function Faces({ ids }: { ids: string[] }) {
     <span className={styles.faces}>
       {ids.slice(0, 3).map((id) => {
         const u = userById(id);
-        return <Avatar key={id} glyph={initials(u.fullName)} tone={u.tone} size={16} shape="circle" />;
+        return <Avatar key={id} glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={16} shape="circle" />;
       })}
     </span>
   );

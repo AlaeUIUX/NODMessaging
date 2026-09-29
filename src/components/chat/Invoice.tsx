@@ -52,7 +52,7 @@ export function InvoiceCardView({ message, card, invoice, interactive }: { messa
         {invoice.lines.length > 3 && <li className={iv.more}>+{invoice.lines.length - 3} more</li>}
       </ul>
       <p className={iv.billed}>
-        <Avatar glyph={initials(to.fullName)} tone={to.tone} size={22} shape="circle" />
+        <Avatar glyph={initials(to.fullName)} tone={to.tone} photo={to.photo} size={22} shape="circle" />
         <span className={iv.billedText}>{message.authorId === me ? `Billed to ${to.id === me ? "you" : to.name}` : owes ? `${author.name} billed you` : `${author.name} billed ${to.name}`}</span>
         <em className={paid ? iv.ok : undefined}>{paid ? "Paid" : "Unpaid"}</em>
       </p>

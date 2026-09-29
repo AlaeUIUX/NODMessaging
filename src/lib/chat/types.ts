@@ -214,6 +214,13 @@ export interface User {
   name: string;
   fullName: string;
   tone: AvatarTone;
+  /** Unique handle, without the @. */
+  username?: string;
+  /** E.164, e.g. +43123456789. */
+  phone?: string;
+  /** A small square photo (data URL); initials show when there's none. */
+  photo?: string;
+  bio?: string;
 }
 
 export interface Chat {

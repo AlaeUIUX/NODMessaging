@@ -68,7 +68,7 @@ export default function ReactionSheet({ message, meId, onRemove, onClose }: Prop
           const isMe = userId === meId;
           const body = (
             <>
-              <Avatar glyph={initials(user.fullName)} tone={user.tone} size={36} />
+              <Avatar glyph={initials(user.fullName)} tone={user.tone} photo={user.photo} size={36} />
               <span className={styles.srName}>
                 {isMe ? "You" : user.fullName}
                 {isMe && <small>Tap to remove</small>}

@@ -6,10 +6,14 @@ import { stripFormatting } from "@/lib/chat/markdown";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
-import { IconBellOff, IconPin } from "./Icons";
+import { IconBellOff, IconPin, IconShare, IconUserGroup } from "./Icons";
 import Logo from "./Logo";
 import { emojify } from "@/lib/chat/emoji";
 import MindTab from "./Mind";
+import Onboarding from "./Onboarding";
+import { InviteSheet } from "./Invite";
+import Settings from "./Settings";
+import { formatPhone } from "@/lib/chat/people";
 import NewChat from "./NewChat";
 import Dashboard from "./Dashboard";
 import StatusBar from "./StatusBar";
@@ -196,7 +200,7 @@ function toggle(set: Set<string>, id: string) {
 }
 
 export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void; pushed: boolean }) {
-  const { state, me, isOnline, lastReadAt, typingUsers } = useChat();
+  const { state, me, setMe, isOnline, lastReadAt, typingUsers } = useChat();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [tab, setTab] = useState<Tab>("chats");
@@ -205,6 +209,21 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
   const [muted, setMuted] = useState<Set<string>>(() => new Set());
   const searchRef = useRef<HTMLInputElement>(null);
   const meUser = userById(me);
+  const [settings, setSettings] = useState<{ leaving: boolean } | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [inviting, setInviting] = useState(false);
+  const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean } | null>(null);
+  const flash = (text: string) => {
+    const id = Date.now();
+    setToast({ text, id });
+    setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), 2200);
+    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 2420);
+  };
+  const openSettings = () => setSettings({ leaving: false });
+  const closeSettings = () => {
+    setSettings((x) => (x ? { leaving: true } : x));
+    setTimeout(() => setSettings((x) => (x?.leaving ? null : x)), 220);
+  };
 
   // Read after mount (and per person): the prerendered HTML uses the defaults.
   useEffect(() => {
@@ -262,25 +281,18 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
     { id: "spaces", label: "Spaces", badge: spaceMention ? "@" : undefined },
   ];
 
-  const placeholder = (title: string, body: string) => (
-    <div className={styles.tabEmpty}>
-      <Logo size={40} />
-      <h2>{title}</h2>
-      <p>{body}</p>
-    </div>
-  );
-
   return (
     // Covered by an open chat: out of the tab order and the accessibility tree.
     <div className={`${styles.screen} ${styles.inboxScreen} ${pushed ? styles.pushed : ""}`} data-inbox-screen inert={pushed}>
       <StatusBar />
 
-      {tab === "mind" ? <MindTab onOpenChat={onOpen} /> : tab === "dashboard" ? (
+      {tab === "mind" ? <MindTab onOpenChat={onOpen} onSettings={openSettings} /> : tab === "dashboard" ? (
         <div className={`${styles.inboxBody} ${styles.dashBody}`}>
           <div className={styles.edgeTop} />
           <div className={styles.inboxScroll}>
             <Dashboard
               onOpenChat={onOpen}
+              onSettings={openSettings}
               onUnread={() => { setFilter("unread"); setTab("chats"); }}
               onMind={() => setTab("mind")}
             />
@@ -291,15 +303,16 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
       <header className={styles.profile}>
         <div className={styles.profileRow}>
           <div className={styles.profileId}>
-            <span className={styles.profileAvatar}>
-              <Avatar glyph={initials(meUser.fullName)} tone={meUser.tone} size={40} shape="circle" />
+            {/* Your avatar opens Settings. */}
+            <button className={`${styles.profileAvatar} ${styles.avatarBtn}`} onClick={openSettings} aria-label="Settings">
+              <Avatar glyph={initials(meUser.fullName)} tone={meUser.tone} photo={meUser.photo} size={40} shape="circle" />
               <span className={styles.orgBadge}><Logo size={12} /></span>
-            </span>
+            </button>
             <div className={styles.profileText}>
               <b>Your inbox</b>
               <span>
                 <span className={styles.maskIcon} style={{ width: 12, height: 12, ["--src" as string]: "url(/nod/phone.svg)" }} aria-hidden="true" />
-                +43 123456789
+                {formatPhone(meUser.phone) || (meUser.username ? `@${meUser.username}` : "")}
               </span>
             </div>
           </div>
@@ -319,8 +332,13 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
       </header>
 
       <div className={styles.inboxBody}>
-        {tab === "explore" ? placeholder("Explore", "Discover public spaces and people on NOD.")
-        : (
+          {tab === "explore" ? (
+            <div className={styles.tabEmpty}>
+              <Logo size={40} />
+              <h2>Explore</h2>
+              <p>Discover public spaces and people on NOD.</p>
+            </div>
+          ) : (
           <div className={styles.inboxScroll}>
             {tab === "chats" && (
               <div className={styles.chips} role="tablist">
@@ -359,7 +377,7 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
                       {chat.kind === "group" ? (
                         <span className={styles.spaceAvatar} style={{ background: TONES[id.tone] }}><Logo size={36} /></span>
                       ) : (
-                        <Avatar glyph={id.glyph} tone={id.tone} size={56} shape="circle" online={online} />
+                        <Avatar glyph={id.glyph} tone={id.tone} photo={id.photo} size={56} shape="circle" online={online} />
                       )}
                       <div className={styles.rowMain}>
                         <div className={styles.rowText}>
@@ -392,14 +410,23 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
                   <span /><div><i /><i /></div>
                 </div>
               ))}
-              {ready && visible.length === 0 && (
+              {ready && visible.length === 0 && (rows.length === 0 && !query ? (
+                // A brand-new account: nothing to show yet, so point at people.
+                <div className={styles.inboxWelcome}>
+                  <Logo size={40} />
+                  <h2>Say hello</h2>
+                  <p>Find people you know on NOD, or invite someone to start your first conversation.</p>
+                  <button className={styles.primaryWide} onClick={() => setNewChat(true)}><IconUserGroup size={18} /> Find people</button>
+                  <button className={styles.secondaryWide} onClick={() => setInviting(true)}><IconShare size={18} /> Invite friends</button>
+                </div>
+              ) : (
                 <p className={styles.emptyInbox}>
                   {query ? `Nothing matches “${query}”` : filter === "unread" ? "You're all caught up." : "No conversations yet."}
                 </p>
-              )}
+              ))}
             </div>
           </div>
-        )}
+          )}
       </div>
 
       </>
@@ -407,7 +434,34 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
 
       <div className={styles.edgeBottom} />
       <NavDock tab={tab} onTab={setTab} />
-      {newChat && <NewChat onClose={() => setNewChat(false)} onOpen={onOpen} />}
+      {newChat && <NewChat onClose={() => setNewChat(false)} onOpen={onOpen} onInvite={() => setInviting(true)} onToast={flash} />}
+      {settings && (
+        <Settings
+          leaving={settings.leaving}
+          onBack={closeSettings}
+          onAddIdentity={() => setAdding(true)}
+          onInvite={() => setInviting(true)}
+          onToast={flash}
+        />
+      )}
+      {inviting && <InviteSheet onClose={() => setInviting(false)} onToast={flash} />}
+      {adding && (
+        <Onboarding
+          mode="add"
+          onCancel={() => setAdding(false)}
+          onDone={(id) => {
+            setAdding(false);
+            setMe(id);
+            closeSettings();
+            flash(`Signed in as ${userById(id).name}`);
+          }}
+        />
+      )}
+      {toast && (
+        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${styles.mindToast} ${toast.leaving ? styles.toastLeaving : ""}`} role="status">
+          <span className={styles.toastText}>{toast.text}</span>
+        </div>
+      )}
     </div>
   );
 }

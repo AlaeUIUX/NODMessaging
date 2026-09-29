@@ -15,7 +15,9 @@ import {
 import { sendMessage as apiSend } from "./api";
 import { releaseMedia } from "./media";
 import { reduceCardOp, tasksIn, unclaimedItems } from "./ops";
-import { buildSeedState, CHATS, USERS } from "./seed";
+import { accountIds, addAccount, getPrefs, initAccounts } from "./account";
+import { allPeople, enablePeople, personById, usePeopleVersion } from "./people";
+import { buildSeedState, CHATS } from "./seed";
 import { localStorageAdapter, readKey } from "./storage";
 import {
   createBroadcastTransport, NULL_TRANSPORT, PRESENCE_INTERVAL_MS, PRESENCE_TIMEOUT_MS, samePeers, type Peer,
@@ -240,8 +242,12 @@ interface ChatContextValue {
   send: (chatId: string, body: string, opts?: { replyToId?: string | null; attachments?: Attachment[] }) => void;
   /** Sends a structured message; `summary` is what previews and quotes show. Returns its id. */
   sendCard: (chatId: string, card: Card, summary: string) => string;
-  /** Creates a group with the current user in it, and returns it. */
+  /** Creates a group with the current user in it, and returns it. People who don't take Space invites are left out. */
   createGroup: (name: string, memberIds: string[]) => Chat;
+  /** The direct chat with someone, started if there isn't one yet. */
+  openDm: (userId: string) => Chat;
+  /** Changes when anyone's profile does (name, photo…), so views that show people re-render. */
+  peopleVersion: string;
   /** Replaces a card's state (votes, ticks, RSVPs…) and syncs it. */
   updateCard: (message: Message, update: (card: Card) => Card) => void;
   /** Applies one change to a shared card (plans, bills, projects) here and in every tab. */
@@ -329,14 +335,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // link uses it). Read after mount rather than in a lazy initializer: the
   // prerendered HTML always says "me", so reading it during render would
   // hydrate mismatched markup.
+  // Signed-in accounts belong to the device (this browser); a tab uses one of them.
+  const [peopleReady, setPeopleReady] = useState(false);
   useEffect(() => {
+    enablePeople();
     let id: string | null = null;
     try {
       const url = new URL(window.location.href);
       const as = url.searchParams.get("as");
-      if (as && USERS.some((u) => u.id === as)) {
+      if (as && allPeople().some((u) => u.id === as)) {
         id = as;
         window.sessionStorage.setItem(ME_KEY, as);
+        addAccount(as);
         url.searchParams.delete("as");
         window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
       } else {
@@ -345,11 +355,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     }
+    initAccounts(id);
+    const signedIn = accountIds();
+    // Logged out of this identity elsewhere: fall back to another one on the device.
+    if (!id || !signedIn.includes(id)) id = signedIn[0] ?? null;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (id) setMeState(id);
+    setPeopleReady(true);
   }, []);
+  const peopleVersion = usePeopleVersion();
 
+  /** Signs this tab in as someone; they join the device's accounts if they weren't there. */
   const setMe = useCallback((id: string) => {
+    addAccount(id);
     setMeState(id);
     try {
       window.sessionStorage.setItem(ME_KEY, id);
@@ -526,6 +544,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   /** Applies a receipt here and in every other tab. */
   const receipt = useCallback(
     (chatId: string, messageId: string, status: DeliveryStatus, byUserId: string) => {
+      // Someone who turned read receipts off only ever shows as "delivered".
+      if (status === "read" && !getPrefs(byUserId).readReceipts) status = "delivered";
       dispatch({ type: "status", chatId, messageId, status, byUserId, at: Date.now() });
       publish({ type: "status", chatId, messageId, status, byUserId });
     },
@@ -726,9 +746,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         id: `group-${Date.now().toString(36)}`,
         name: name.trim() || "New group",
         kind: "group",
-        memberIds: [meRef.current, ...memberIds.filter((id) => id !== meRef.current)],
+        memberIds: [meRef.current, ...memberIds.filter((id) => id !== meRef.current && getPrefs(id).spaceInvites !== "nobody")],
         tone: tones[Math.floor(Math.random() * tones.length)],
       };
+      dispatch({ type: "add-chat", chat });
+      publish({ type: "chat", chat });
+      return chat;
+    },
+    [publish],
+  );
+
+  const openDm = useCallback<ChatContextValue["openDm"]>(
+    (userId) => {
+      const who = meRef.current;
+      const existing = latest.current.chats.find((c) => c.kind === "dm" && c.memberIds.length === 2 && c.memberIds.includes(who) && c.memberIds.includes(userId));
+      if (existing) return existing;
+      const chat: Chat = { id: `dm-${[who, userId].sort().join("-")}`, name: personById(userId).name, kind: "dm", memberIds: [who, userId] };
+      latest.current = { ...latest.current, chats: [...latest.current.chats, chat] };
       dispatch({ type: "add-chat", chat });
       publish({ type: "chat", chat });
       return chat;
@@ -825,7 +859,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   );
 
   const setTyping = useCallback<ChatContextValue["setTyping"]>(
-    (chatId, isTyping) => publish({ type: "typing", chatId, userId: meRef.current, isTyping }),
+    (chatId, isTyping) => {
+      // With the typing indicator off, nobody hears about it (a "stopped" still goes out, in case it was just turned off).
+      if (isTyping && !getPrefs(meRef.current).typing) return;
+      publish({ type: "typing", chatId, userId: meRef.current, isTyping });
+    },
     [publish],
   );
 
@@ -846,7 +884,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const list = latest.current.messages[chatId] ?? [];
       const unread = list.filter((m) => m.authorId !== who && !m.readBy?.[who]);
       const at = Date.now();
-      if (unread.length) {
+      if (unread.length && getPrefs(who).readReceipts) {
         // One event for the lot: opening a long chat must not send a receipt per message.
         const messageIds = unread.map((m) => m.id);
         dispatch({ type: "read-by", chatId, messageIds, userId: who, at });
@@ -860,7 +898,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [publish],
   );
 
-  const isOnline = useCallback((userId: string) => peers.some((p) => p.userId === userId), [peers]);
+  // Someone who hides their online status never shows as online to others.
+  const isOnline = useCallback((userId: string) => userId !== me && getPrefs(userId).lastSeen !== "nobody" && peers.some((p) => p.userId === userId), [peers, me]);
   const lastReadAt = useCallback(
     (chatId: string) => state.data.lastReadAt[readKey(chatId, me)] ?? 0,
     [state.data.lastReadAt, me],
@@ -868,11 +907,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ChatContextValue>(
     () => ({
-      state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, retry,
+      state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, openDm, retry,
       toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead,
+      peopleVersion: `${peopleReady ? 1 : 0}:${peopleVersion}`,
     }),
-    [state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, retry,
-      toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead],
+    [state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, openDm, retry,
+      toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead, peopleReady, peopleVersion],
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
@@ -884,8 +924,9 @@ export function useChat() {
   return ctx;
 }
 
+/** Anyone on NOD, with their latest profile. */
 export function userById(id: string) {
-  return USERS.find((u) => u.id === id) ?? { id, name: id, fullName: id, tone: "graphite" as const };
+  return personById(id);
 }
 
 /** Consecutive messages from one author inside the window collapse together. */

@@ -13,9 +13,10 @@ export const TONES: Record<AvatarTone, string> = {
   graphite: "#2E2D2B",
 };
 
+/** Initials from the words that start with a letter; none (a name that's just a number) gives "", and the avatar shows a silhouette. */
 export function initials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
+  const parts = name.trim().split(/\s+/).filter((w) => /^\p{L}/u.test(w));
+  if (parts.length === 0) return "";
   if (parts.length === 1) return parts[0][0].toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
@@ -24,7 +25,7 @@ export function initials(name: string) {
 export function chatIdentity(chat: Chat, me: string, users: (id: string) => User) {
   if (chat.kind === "dm") {
     const other = users(chat.memberIds.find((id) => id !== me) ?? chat.memberIds[0]);
-    return { label: other.fullName, tone: other.tone, glyph: initials(other.fullName) };
+    return { label: other.fullName, tone: other.tone, glyph: initials(other.fullName), photo: other.photo };
   }
-  return { label: chat.name, tone: chat.tone ?? "graphite", glyph: initials(chat.name) };
+  return { label: chat.name, tone: chat.tone ?? "graphite", glyph: initials(chat.name), photo: undefined as string | undefined };
 }

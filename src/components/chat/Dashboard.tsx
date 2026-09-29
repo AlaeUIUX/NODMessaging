@@ -68,8 +68,9 @@ const clock = (t: number) => new Date(t).toLocaleTimeString(undefined, { hour: "
 type Row = { key: string; chat: Chat; message: Message; state: OpenState; label: string };
 type Upcoming = { key: string; at: number; title: string; sub: string; icon: React.ReactNode; chat?: Chat; timed: boolean };
 
-export default function Dashboard({ onOpenChat, onUnread, onMind }: {
+export default function Dashboard({ onOpenChat, onSettings, onUnread, onMind }: {
   onOpenChat: (chat: Chat) => void;
+  onSettings: () => void;
   onUnread: () => void;
   onMind: () => void;
 }) {
@@ -220,8 +221,13 @@ export default function Dashboard({ onOpenChat, onUnread, onMind }: {
   return (
     <div className={d.wrap}>
       <header className={d.hello}>
-        <p>{new Date(now).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</p>
-        <h2>{greeting(now)}, {meUser.name}</h2>
+        <div>
+          <p>{new Date(now).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</p>
+          <h2>{greeting(now)}, {meUser.name}</h2>
+        </div>
+        <button className={d.me} onClick={onSettings} aria-label="Settings">
+          <Avatar glyph={initials(meUser.fullName)} tone={meUser.tone} photo={meUser.photo} size={40} shape="circle" />
+        </button>
       </header>
 
       {/* The four numbers worth knowing at a glance. Each one goes somewhere. */}
@@ -315,7 +321,7 @@ export default function Dashboard({ onOpenChat, onUnread, onMind }: {
               const other = userById(x.out ? c.from[0] : x.message.authorId);
               return (
                 <button key={x.key} className={d.row} onClick={() => onOpenChat(x.chat)}>
-                  <Avatar glyph={initials(other.fullName)} tone={other.tone} size={32} shape="circle" />
+                  <Avatar glyph={initials(other.fullName)} tone={other.tone} photo={other.photo} size={32} shape="circle" />
                   <span className={d.rowText}>
                     <b>{c.invoice!.number} · {x.out ? `to ${other.name}` : `from ${other.name}`}</b>
                     <small className={x.overdue ? d.late : x.paid ? d.ok : undefined}>{x.paid ? "Paid" : x.state.summary}</small>

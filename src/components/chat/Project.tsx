@@ -68,7 +68,7 @@ function AssigneePicker({ people, me, value, onChange }: { people: User[]; me: s
     <div className={styles.chipGrid} role="group" aria-label="Assignee">
       {people.map((u) => (
         <button key={u.id} className={`${styles.choice} ${s.person} ${value === u.id ? styles.choiceOn : ""}`} aria-pressed={value === u.id} onClick={() => onChange(u.id)}>
-          <Avatar glyph={initials(u.fullName)} tone={u.tone} size={22} shape="circle" />
+          <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={22} shape="circle" />
           {u.id === me ? "You" : u.name}
         </button>
       ))}
@@ -396,7 +396,7 @@ function TaskBody({ task, now, done, onShow }: { task: Task; now: number; done: 
           )}
           {who && (
             <span className={s.assignee} title={who.fullName}>
-              <Avatar glyph={initials(who.fullName)} tone={who.tone} size={22} shape="circle" />
+              <Avatar glyph={initials(who.fullName)} tone={who.tone} photo={who.photo} size={22} shape="circle" />
               <span className={s.srOnly}>Assigned to {who.name}</span>
             </span>
           )}

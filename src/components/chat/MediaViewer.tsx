@@ -166,7 +166,7 @@ export function ReceiptSheet({ message, chat, onClose }: { message: Message; cha
     const u = userById(id);
     return (
       <div key={id} className={styles.sheetRow}>
-        <Avatar glyph={initials(u.fullName)} tone={u.tone} size={36} shape="circle" />
+        <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={36} shape="circle" />
         <span className={styles.srName}>{u.name}<small>{detail}</small></span>
       </div>
     );

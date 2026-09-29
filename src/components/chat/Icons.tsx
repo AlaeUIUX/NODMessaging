@@ -7,6 +7,8 @@ import {
   MoneyReceive01Icon, MoneySend01Icon, Moon02Icon, Notification01Icon, NotificationOff01Icon, PauseIcon,
   PencilEdit01Icon, PencilEdit02Icon, PinIcon, PlayIcon, PlusSignIcon, QuoteDownIcon, Search01Icon, SmileIcon,
   Share08Icon, SourceCodeIcon, Route01Icon, Invoice03Icon, ScanIcon, Task01Icon, Clock01Icon, DragDropVerticalIcon, Flag01Icon, Folder01Icon, ArrowUpRight01Icon, Bookmark02Icon, GridViewIcon, LibraryIcon, KanbanIcon, Tag01Icon, MoreHorizontalIcon, InboxIcon, ArrowDown01Icon, LeftToRightListDashIcon, PaintBrush01Icon, GameController03Icon, PieChartIcon, SparklesIcon, Undo02Icon, FavouriteIcon, Sun03Icon, TextBoldIcon, TextItalicIcon, TextStrikethroughIcon, TextUnderlineIcon, Tick02Icon, UserGroupIcon,
+  Message01Icon, Mail01Icon, WhatsappIcon, QrCodeIcon, Settings02Icon, Logout03Icon, UserAdd01Icon, Globe02Icon,
+  Shield01Icon, PaintBoardIcon, Database01Icon, InformationCircleIcon, HelpCircleIcon, SmartPhone01Icon, KeyboardIcon, ComputerIcon, Contact01Icon,
 } from "@hugeicons/core-free-icons";
 
 /**
@@ -97,3 +99,20 @@ export const IconTask = make(Task01Icon);
 export const IconClock = make(Clock01Icon);
 export const IconDrag = make(DragDropVerticalIcon);
 export const IconFlag = make(Flag01Icon);
+export const IconMessage = make(Message01Icon);
+export const IconMail = make(Mail01Icon);
+export const IconWhatsapp = make(WhatsappIcon);
+export const IconQr = make(QrCodeIcon);
+export const IconSettings = make(Settings02Icon);
+export const IconLogout = make(Logout03Icon);
+export const IconUserAdd = make(UserAdd01Icon);
+export const IconGlobe = make(Globe02Icon);
+export const IconShield = make(Shield01Icon);
+export const IconPalette = make(PaintBoardIcon);
+export const IconStorage = make(Database01Icon);
+export const IconInfo = make(InformationCircleIcon);
+export const IconHelp = make(HelpCircleIcon);
+export const IconSmartphone = make(SmartPhone01Icon);
+export const IconKeyboard = make(KeyboardIcon);
+export const IconDevice = make(ComputerIcon);
+export const IconContacts = make(Contact01Icon);

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Chat, Message, User } from "@/lib/chat/types";
-import { IconBell, IconCamera, IconImage, IconLocation } from "./Icons";
+import { IconBell, IconCamera, IconImage, IconLocation, IconUserGroup } from "./Icons";
 import styles from "./chat.module.css";
 
 /* ---------------------------------------------------------------------------
@@ -80,7 +80,7 @@ export function useDialog(ref: React.RefObject<HTMLElement | null>, onEscape?: (
    Permissions — remembered per browser, like the OS would.
 --------------------------------------------------------------------------- */
 
-export type PermissionKind = "notifications" | "location" | "camera" | "photos";
+export type PermissionKind = "notifications" | "location" | "camera" | "photos" | "contacts";
 export type PermissionState = "prompt" | "granted" | "denied";
 
 const KEY = (k: PermissionKind) => `nod.perm.${k}`;
@@ -118,6 +118,12 @@ const COPY: Record<PermissionKind, { title: string; body: string; allow: string[
     body: "Take photos and share them straight into a conversation.",
     allow: ["OK"],
     icon: <IconCamera size={26} />,
+  },
+  contacts: {
+    title: "“NOD” Would Like to Access Your Contacts",
+    body: "NOD checks which of your contacts are here, so you can message them. Numbers stay private and nobody is told.",
+    allow: ["OK"],
+    icon: <IconUserGroup size={26} />,
   },
   photos: {
     title: "“NOD” Would Like to Access Your Photos",

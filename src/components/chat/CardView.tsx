@@ -32,7 +32,7 @@ function Faces({ ids, size = 18 }: { ids: string[]; size?: number }) {
     <span className={styles.faces}>
       {ids.slice(0, 3).map((id) => {
         const u = userById(id);
-        return <Avatar key={id} glyph={initials(u.fullName)} tone={u.tone} size={size} shape="circle" />;
+        return <Avatar key={id} glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={size} shape="circle" />;
       })}
       {ids.length > 3 && <em>+{ids.length - 3}</em>}
     </span>
@@ -266,7 +266,7 @@ function ChecklistCard({ message, card, interactive }: { message: Message; card:
                 <span className={styles.checkLabel}>{it.label}</span>
                 {it.doneBy && (
                   <span className={styles.checkBy}>
-                    <Avatar glyph={initials(userById(it.doneBy).fullName)} tone={userById(it.doneBy).tone} size={20} shape="circle" />
+                    <Avatar glyph={initials(userById(it.doneBy).fullName)} tone={userById(it.doneBy).tone} photo={userById(it.doneBy).photo} size={20} shape="circle" />
                     Done by {it.doneBy === me ? "you" : userById(it.doneBy).name}
                   </span>
                 )}
@@ -510,7 +510,7 @@ function PaymentCard({ message, card, interactive }: { message: Message; card: O
           const paid = card.paidBy.includes(id);
           return (
             <li key={id}>
-              <Avatar glyph={initials(u.fullName)} tone={u.tone} size={22} shape="circle" />
+              <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={22} shape="circle" />
               <span>{id === me ? "You" : u.name}</span>
               <em className={paid ? styles.paidTag : undefined}>{paid ? "Paid" : "Pending"}</em>
             </li>
