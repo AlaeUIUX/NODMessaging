@@ -276,7 +276,7 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
 
       {tab === "mind" ? <MindTab onOpenChat={onOpen} /> : tab === "analytics" ? (
         <AnalyticsTab onOpenChat={onOpen} mode={analyticsMode} onOpenWidget={onOpenWidget} />
-      ) : tab === "explore" ? <ExploreTab /> : (
+      ) : tab === "explore" ? <ExploreTab onOpenChat={onOpen} /> : (
       <>
       <header className={styles.profile}>
         <div className={styles.profileRow}>

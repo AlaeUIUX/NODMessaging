@@ -109,7 +109,7 @@ export interface Mind {
 }
 
 /** Bump whenever the seed data itself changes, so anyone who already has a Mind picks up the new demo content (Reset-demo-data's automatic cousin — this only replaces stale seed content, per person, on their next load). */
-export const MIND_VERSION = 4;
+export const MIND_VERSION = 6;
 
 /* ---------------------------------------------------------------------------
    Dates
@@ -208,7 +208,7 @@ function alaeMind(): Mind {
               card("der Bahnhof", "the train station"), card("das Brötchen", "bread roll"),
             ] },
             { title: "Work", emoji: "💼", items: [
-              card("unterschreiben", "to sign", false, ["work"]), card("die Besprechung", "the meeting", false, ["work"]), card("der Termin", "the appointment", false, ["work"]),
+              card("unterschreiben", "to sign"), card("die Besprechung", "the meeting"), card("der Termin", "the appointment"),
             ] },
           ],
         },
@@ -232,7 +232,7 @@ function alaeMind(): Mind {
           sections: [
             { title: "Books", emoji: "📚", items: [
               {
-                kind: "book", title: "Hammer's German Grammar and Usage", source: "Martin Durrell", shelf: "reading",
+                kind: "book", title: "Hammer's German Grammar and Usage", source: "Martin Durrell", shelf: "reading", tags: ["german"],
                 public: { image: photo("photo-1519682337058-a94d519337bc"), category: "Learning", publishedAt: Date.now() - 5 * 60 * 60_000, savedBy: ["reema"] },
               },
               { kind: "book", title: "Grammatik aktiv A1–B1", source: "Cornelsen", shelf: "reading" },
@@ -240,11 +240,11 @@ function alaeMind(): Mind {
             ] },
             { title: "Links", emoji: "🔗", items: [
               {
-                kind: "link", title: "Dative or accusative? The only chart you need", source: "learngerman.dw.com", url: "https://learngerman.dw.com", tags: ["cases"],
+                kind: "link", title: "Dative or accusative? The only chart you need", source: "learngerman.dw.com", url: "https://learngerman.dw.com", tags: ["cases", "german"],
                 public: { image: photo("photo-1618221195710-dd6b41faaea6"), category: "Learning", publishedAt: Date.now() - 9 * 60 * 60_000, savedBy: [] },
               },
               {
-                kind: "link", title: "Where the verb goes in a subordinate clause", source: "yourdailygerman.com", url: "https://yourdailygerman.com",
+                kind: "link", title: "Where the verb goes in a subordinate clause", source: "yourdailygerman.com", url: "https://yourdailygerman.com", tags: ["german"],
                 public: { image: photo("photo-1600210492486-724fe5c67fb0"), category: "Learning", publishedAt: Date.now() - 12 * 60 * 60_000, savedBy: ["charles"] },
               },
             ] },
@@ -281,15 +281,15 @@ function alaeMind(): Mind {
       pages: [
         { title: "Vienna weekend", emoji: "🎡", view: "list", defaultKind: "note", sections: one([
           {
-            kind: "date", title: "Train to Vienna", at: Date.now() + 18 * DAY,
+            kind: "date", title: "Train to Vienna", at: Date.now() + 18 * DAY, tags: ["vienna", "travel"],
             public: { image: photo("photo-1600210492486-724fe5c67fb0"), category: "Travel", publishedAt: Date.now() - 4 * DAY, savedBy: ["charles"] },
           },
           {
-            kind: "link", title: "Café Sperl", source: "cafesperl.at", url: "https://cafesperl.at",
+            kind: "link", title: "Café Sperl", source: "cafesperl.at", url: "https://cafesperl.at", tags: ["vienna", "travel", "cafe"],
             public: { image: photo("photo-1616486338812-3dadae4b4ace"), category: "Travel", publishedAt: Date.now() - 3 * DAY, savedBy: [] },
           },
           {
-            kind: "note", title: "To try", body: "Sachertorte, the Naschmarkt on Saturday morning, a Heuriger in Grinzing.",
+            kind: "note", title: "To try", body: "Sachertorte, the Naschmarkt on Saturday morning, a Heuriger in Grinzing.", tags: ["vienna", "travel", "food"],
             public: { image: photo("photo-1600585154340-be6161a56a0c"), category: "Food", publishedAt: Date.now() - 2 * DAY, savedBy: ["reema"] },
           },
         ]) },
@@ -314,11 +314,11 @@ function charlesMind(): Mind {
         ] },
         { title: "References", emoji: "📎", view: "list", defaultKind: "link", sections: one([
           {
-            kind: "link", title: "Acme · Web v3", source: "figma.com", url: "https://figma.com",
+            kind: "link", title: "Acme · Web v3", source: "figma.com", url: "https://figma.com", tags: ["work"],
             public: { image: photo("photo-1467232004584-a241de8bcf5d"), category: "Work", publishedAt: Date.now() - 30 * 60_000, savedBy: [] },
           },
           {
-            kind: "link", title: "Competitor teardown: linear.app", source: "linear.app", url: "https://linear.app",
+            kind: "link", title: "Competitor teardown: linear.app", source: "linear.app", url: "https://linear.app", tags: ["work"],
             public: { image: photo("photo-1615874959474-d609969a20ed"), category: "Work", publishedAt: Date.now() - 3 * 60 * 60_000, savedBy: ["me"] },
           },
           { kind: "note", title: "Call · 12 Sep", body: "They want the hero calmer: less gradient, more product. Dana signs off copy." },
@@ -420,11 +420,82 @@ function reemaMind(): Mind {
   ], "c-home");
 }
 
+function jamshadMind(): Mind {
+  return build([
+    {
+      id: "c-german-cheatsheets", name: "German grammar cheatsheets", emoji: "📋", tone: "#C99432", chatIds: [],
+      vault: [],
+      pages: [
+        { title: "Cases", emoji: "🔤", view: "list", defaultKind: "note", sections: one([
+          {
+            kind: "note", title: "Der/die/das by case, one table", body: "Nominative, accusative, dative, genitive — the whole declension table on one page.", tags: ["german", "grammar", "cases"],
+            public: { image: photo("photo-1519681393784-d120267933ba"), category: "Learning", publishedAt: Date.now() - 7 * 60 * 60_000, savedBy: [] },
+          },
+          { kind: "note", title: "Prepositions that always take dative", body: "aus, bei, mit, nach, seit, von, zu.", tags: ["german", "grammar", "cases"] },
+        ]) },
+        { title: "Word order", emoji: "🧩", view: "list", defaultKind: "note", sections: one([
+          { kind: "note", title: "Verb-second rule, with examples", body: "The finite verb is always the second element in a main clause.", tags: ["german", "grammar"] },
+          { kind: "note", title: "Time — manner — place", body: "The standard adverbial order in a German sentence.", tags: ["german", "grammar"] },
+        ]) },
+      ],
+    },
+  ], "c-german-cheatsheets");
+}
+
+function salmanMind(): Mind {
+  const task = (title: string, status: TaskStatus, tags: string[] = []): Item => ({ kind: "todo", title, status, done: status === "done", tags });
+  return build([
+    {
+      id: "c-freelance", name: "Freelance toolkit", emoji: "💼", tone: "#5B8A6B", chatIds: [],
+      vault: [],
+      pages: [
+        { title: "Templates", emoji: "🗂️", view: "list", defaultKind: "link", sections: one([
+          {
+            kind: "link", title: "A day-rate contract template that doesn't suck", source: "bonsai.com", url: "https://bonsai.com", tags: ["work"],
+            public: { image: photo("photo-1454165804606-c3d57bc86b40"), category: "Work", publishedAt: Date.now() - 10 * 60 * 60_000, savedBy: [] },
+          },
+          {
+            kind: "note", title: "How I price a fixed-scope project", body: "Estimate hours, add 20% for revisions, then quote the range not the number.", tags: ["work"],
+            public: { image: photo("photo-1454165804606-c3d57bc86b40"), category: "Work", publishedAt: Date.now() - 30 * 60 * 60_000, savedBy: ["charles"] },
+          },
+        ]) },
+        { title: "This week", emoji: "✅", view: "list", defaultKind: "todo", sections: one([task("Send Q3 invoices", "todo")]) },
+      ],
+    },
+  ], "c-freelance");
+}
+
+function petraMind(): Mind {
+  return build([
+    {
+      id: "c-vienna-coffee", name: "Vienna coffee spots", emoji: "☕", tone: "#86507A", chatIds: [],
+      vault: [],
+      public: { image: photo("photo-1445116572660-236099ec97a0"), category: "Travel", publishedAt: Date.now() - 8 * DAY, savedBy: [] },
+      pages: [
+        { title: "Classics", emoji: "☕", view: "shelf", views: ["shelf", "list"], defaultKind: "link", sections: one([
+          { kind: "link", title: "Café Sperl", source: "cafesperl.at", url: "https://cafesperl.at", tags: ["vienna", "cafe", "travel"] },
+          { kind: "link", title: "Café Central", source: "cafecentral.wien", url: "https://cafecentral.wien", tags: ["vienna", "cafe", "travel"] },
+          { kind: "link", title: "Kleines Café", source: "", url: "", tags: ["vienna", "cafe", "travel"] },
+        ]) },
+        { title: "Newer favourites", emoji: "🌱", view: "shelf", views: ["shelf", "list"], defaultKind: "link", sections: one([
+          { kind: "link", title: "Balthasar (specialty roast)", source: "balthasar.at", url: "https://balthasar.at", tags: ["vienna", "cafe", "travel"] },
+        ]) },
+      ],
+    },
+  ], "c-vienna-coffee");
+  // Note: the whole collection above already carries `public` — a folder can be
+  // published the same way a block is, set directly since `build()` passes
+  // extra Collection fields (like `public`) straight through.
+}
+
 /** Alae, Charles and Reema have been using Mind for a while; everyone else starts blank. */
 export function seedMind(userId: string): Mind {
   if (userId === "me") return alaeMind();
   if (userId === "charles") return charlesMind();
   if (userId === "reema") return reemaMind();
+  if (userId === "jamshad") return jamshadMind();
+  if (userId === "salman") return salmanMind();
+  if (userId === "petra") return petraMind();
   return { version: MIND_VERSION, collections: [], current: null, blocks: {} };
 }
 
@@ -605,7 +676,7 @@ export function removeBlock(mind: Mind, id: string): Mind {
    Save to Mind — work out where a message belongs
 --------------------------------------------------------------------------- */
 
-const words = (s: string) => s.toLowerCase().match(/[a-zà-ÿß]{4,}/g)?.map((w) => w.replace(/s$/, "")) ?? [];
+export const words = (s: string) => s.toLowerCase().match(/[a-zà-ÿß]{4,}/g)?.map((w) => w.replace(/s$/, "")) ?? [];
 
 export interface Route { collectionId: string; reason: string }
 
@@ -736,7 +807,7 @@ export function publicBlocks(userIds: string[]): { userId: string; block: Block 
  * plain copy, not a live reference — Explore has no "chat" to stay linked to.
  * Also records the save on the source item, so its face-pile stays accurate.
  */
-export function toggleSaveExploreItem(me: string, sourceUserId: string, blockId: string): "saved" | "removed" | "no-collection" {
+export function toggleSaveExploreItem(me: string, sourceUserId: string, blockId: string, preferredCollectionId?: string): "saved" | "removed" | "no-collection" {
   if (sourceUserId !== me) {
     updateMind(sourceUserId, (m) => {
       const b = m.blocks[blockId];
@@ -755,9 +826,57 @@ export function toggleSaveExploreItem(me: string, sourceUserId: string, blockId:
     if (!source) return m;
     const id = newId();
     const copy: Block = { ...source, id, createdAt: Date.now(), tags: [...source.tags], public: undefined, savedFrom: { userId: sourceUserId, blockId } };
-    return place({ ...m, blocks: { ...m.blocks, [id]: copy } }, id, { collectionId: m.current ?? m.collections[0].id });
+    const destination = preferredCollectionId && m.collections.some((c) => c.id === preferredCollectionId) ? preferredCollectionId : (m.current ?? m.collections[0].id);
+    return place({ ...m, blocks: { ...m.blocks, [id]: copy } }, id, { collectionId: destination });
   });
   return result;
+}
+
+/* ---------------------------------------------------------------------------
+   Following — a lightweight subscription, distinct from saving a copy. A
+   followed collection is never copied into the follower's own `collections`;
+   it's resolved back to the source's live data at render time, so (unlike a
+   save) it reflects the author's later edits.
+--------------------------------------------------------------------------- */
+
+export interface Follow { sourceUserId: string; collectionId: string; followedAt: number }
+
+const FOLLOW_KEY = "nod.explore.follows";
+let followCache: Record<string, Follow[]> | null = null;
+
+function loadFollows(): Record<string, Follow[]> {
+  if (followCache) return followCache;
+  try {
+    const text = localStorage.getItem(FOLLOW_KEY);
+    followCache = text ? JSON.parse(text) : {};
+  } catch { followCache = {}; }
+  return followCache!;
+}
+function writeFollows() {
+  try { localStorage.setItem(FOLLOW_KEY, JSON.stringify(followCache)); } catch { /* storage full or blocked */ }
+}
+
+export function followedCollections(me: string): Follow[] {
+  return loadFollows()[me] ?? [];
+}
+
+export function isFollowingCollection(me: string, sourceUserId: string, collectionId: string): boolean {
+  return followedCollections(me).some((f) => f.sourceUserId === sourceUserId && f.collectionId === collectionId);
+}
+
+export function toggleFollowCollection(me: string, sourceUserId: string, collectionId: string): "followed" | "unfollowed" {
+  const all = loadFollows();
+  const mine = all[me] ?? [];
+  const already = mine.some((f) => f.sourceUserId === sourceUserId && f.collectionId === collectionId);
+  followCache = {
+    ...all,
+    [me]: already
+      ? mine.filter((f) => !(f.sourceUserId === sourceUserId && f.collectionId === collectionId))
+      : [...mine, { sourceUserId, collectionId, followedAt: Date.now() }],
+  };
+  writeFollows();
+  notify();
+  return already ? "unfollowed" : "followed";
 }
 
 /* ---------------------------------------------------------------------------

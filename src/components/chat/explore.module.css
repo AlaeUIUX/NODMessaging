@@ -1,8 +1,8 @@
 /* ==========================================================================
-   Explore — anything published from any Mind, across the whole cast.
-   A photo-forward discovery feed: a big cover photo with a quiet save
-   button, a kind tag and a timestamp under it, the title, then who shared
-   it and who else saved it.
+   Explore — a ranked discovery feed of things you don't already have:
+   collections to follow, Spaces to join, new picks for your collections,
+   what your contacts are into, and things related to what you saved. Every
+   card carries its own "why" line and one action (Save / Follow / Join).
    ========================================================================== */
 
 /* ---- featured carousel ---- */
@@ -19,6 +19,7 @@
   background: var(--fill);
   cursor: pointer;
 }
+.featuredSlide .tile { position: absolute; inset: 0; }
 .featuredScrim {
   position: absolute;
   inset: 0;
@@ -121,6 +122,31 @@
   text-overflow: ellipsis;
 }
 
+.followingChip {
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--fill-2);
+  color: var(--ink-2);
+  font: var(--t-subhead);
+  font-weight: var(--w-control);
+  cursor: pointer;
+}
+
+.coldPrompt {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--fill-2);
+  color: var(--ink-2);
+  font: var(--t-subhead);
+}
+
+.sheetActions { display: flex; gap: 10px; margin: 14px 0; }
+.sheetActions > * { flex: 1; }
+
 .section { margin-top: 24px; }
 .section:first-child { margin-top: 0; }
 .sectionHead { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 12px; }
@@ -174,6 +200,9 @@
   cursor: pointer;
 }
 .img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.tile { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+.tileEmoji { font-size: 34px; line-height: 1; }
+.tile svg { color: var(--ink-3); }
 
 .saveBtn {
   position: absolute;
@@ -223,9 +252,31 @@
   letter-spacing: .02em;
   white-space: nowrap;
 }
-.when { flex-shrink: 0; font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); }
+.when {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, .45);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font: var(--t-caption1);
+  font-weight: var(--w-control);
+}
 
-.category { margin: 8px 0 0; font: var(--t-caption1); font-weight: var(--w-control); color: var(--ink-3); }
+.reasonRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 8px 0 0;
+  color: var(--ink-3);
+  font: var(--t-caption1);
+  font-weight: var(--w-control);
+}
+.reasonRow svg { flex-shrink: 0; }
+.reasonRow span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .title {
   margin: 2px 0 0;
@@ -238,7 +289,6 @@
 }
 
 .meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
-.metaLeft { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .metaText {
   min-width: 0;
   overflow: hidden;
@@ -247,7 +297,3 @@
   font: var(--t-footnote);
   color: var(--ink-2);
 }
-.faces { display: flex; align-items: center; flex-shrink: 0; }
-.faces > span { margin-left: -7px; box-shadow: 0 0 0 2px var(--bg); }
-.faces > span:first-child { margin-left: 0; }
-.faces em { margin-left: 5px; font-style: normal; font: var(--t-caption1); font-weight: var(--w-control); color: var(--ink-3); }

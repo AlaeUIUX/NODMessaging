@@ -5,11 +5,14 @@ import { projectSeed } from "./seed-project";
 import type { Chat, ChatState, Message, User } from "./types";
 
 export const USERS: User[] = [
-  { id: "me", name: "Alae", fullName: "Alae", tone: "graphite" },
-  { id: "charles", name: "Charles", fullName: "Charles", tone: "denim" },
-  { id: "jamshad", name: "Jamshad", fullName: "Jamshad", tone: "sage" },
-  { id: "reema", name: "Reema", fullName: "Reema", tone: "clay" },
-  { id: "salman", name: "Salman", fullName: "Salman", tone: "plum" },
+  { id: "me", name: "Alae", fullName: "Alae", tone: "graphite", city: "Vienna", language: "en" },
+  { id: "charles", name: "Charles", fullName: "Charles", tone: "denim", city: "Berlin", language: "en" },
+  { id: "jamshad", name: "Jamshad", fullName: "Jamshad", tone: "sage", city: "Vienna", language: "de" },
+  { id: "reema", name: "Reema", fullName: "Reema", tone: "clay", city: "Lisbon", language: "en" },
+  { id: "salman", name: "Salman", fullName: "Salman", tone: "plum", city: "Berlin", language: "en" },
+  // Not a contact of Alae's (never added to a Chat below) — her content only ever
+  // surfaces to Alae through Explore's ranking, never through "you know her".
+  { id: "petra", name: "Petra", fullName: "Petra", tone: "ochre", city: "Vienna", language: "de" },
 ];
 
 export const CHATS: Chat[] = [
@@ -18,6 +21,15 @@ export const CHATS: Chat[] = [
   { id: "reema", name: "Reema", kind: "dm", memberIds: ["me", "reema"] },
   { id: "jamshad", name: "Jamshad", kind: "dm", memberIds: ["me", "jamshad"] },
   { id: "salman", name: "Salman", kind: "dm", memberIds: ["me", "salman"] },
+  // Joinable Spaces, discoverable in Explore — Alae isn't a member of either yet.
+  {
+    id: "space-vienna-german", name: "Vienna German Learners", kind: "group", memberIds: ["jamshad", "petra"], tone: "sage",
+    space: { category: "Learning", city: "Vienna", open: true, createdAt: Date.now() - 40 * 86_400_000 },
+  },
+  {
+    id: "space-freelance", name: "Freelance Design & Dev", kind: "group", memberIds: ["charles", "salman"], tone: "denim",
+    space: { category: "Work", city: "Berlin", open: true, createdAt: Date.now() - 60 * 86_400_000 },
+  },
 ];
 
 const HOUR = 60 * 60 * 1000;
@@ -236,4 +248,4 @@ export function buildSeedState(now = Date.now()): ChatState {
 
 // v7/v8 added the plan, bill and board demos; existing threads keep theirs and gain these
 // (v8 again, for anyone who loaded v7 before the demos were filled in).
-export const CURRENT_VERSION = 13;
+export const CURRENT_VERSION = 14;

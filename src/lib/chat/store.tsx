@@ -149,16 +149,17 @@ function reducer(state: State, action: Action): State {
         m.id === action.messageId ? { ...m, pinned: action.pinned } : m,
       );
 
-    case "add-chat":
-      if (state.data.chats.some((c) => c.id === action.chat.id)) return state;
+    case "add-chat": {
+      const exists = state.data.chats.some((c) => c.id === action.chat.id);
       return {
         ...state,
         data: {
           ...state.data,
-          chats: [...state.data.chats, action.chat],
+          chats: exists ? state.data.chats.map((c) => (c.id === action.chat.id ? action.chat : c)) : [...state.data.chats, action.chat],
           messages: { ...state.data.messages, [action.chat.id]: state.data.messages[action.chat.id] ?? [] },
         },
       };
+    }
 
     case "card":
       return mapMessages(state, action.chatId, (m) => (m.id === action.messageId ? { ...m, card: action.card } : m));
@@ -242,6 +243,8 @@ interface ChatContextValue {
   sendCard: (chatId: string, card: Card, summary: string) => string;
   /** Creates a group with the current user in it, and returns it. */
   createGroup: (name: string, memberIds: string[]) => Chat;
+  /** Adds the current user to an open Space's members; already-a-member is a no-op. Returns null if the chat doesn't exist. */
+  joinSpace: (chatId: string) => Chat | null;
   /** Replaces a card's state (votes, ticks, RSVPs…) and syncs it. */
   updateCard: (message: Message, update: (card: Card) => Card) => void;
   /** Applies one change to a shared card (plans, bills, projects) here and in every tab. */
@@ -736,6 +739,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [publish],
   );
 
+  const joinSpace = useCallback<ChatContextValue["joinSpace"]>(
+    (chatId) => {
+      const existing = chatOf(chatId);
+      if (!existing) return null;
+      if (existing.memberIds.includes(meRef.current)) return existing;
+      const chat: Chat = { ...existing, memberIds: [...existing.memberIds, meRef.current] };
+      dispatch({ type: "add-chat", chat });
+      publish({ type: "chat", chat });
+      return chat;
+    },
+    [chatOf, publish],
+  );
+
   const sendCard = useCallback<ChatContextValue["sendCard"]>(
     (chatId, card, summary) => {
       const id = newId();
@@ -868,10 +884,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ChatContextValue>(
     () => ({
-      state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, retry,
+      state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, joinSpace, retry,
       toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead,
     }),
-    [state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, retry,
+    [state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, joinSpace, retry,
       toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead],
   );
 

@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NOD Analytics — v1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page:#E9E7E4; --bg:#F4F3F1; --card:#FFFFFF; --ink:#1C1917; --ink-2:#57534E; --ink-3:#A8A29E;
+    --line:#EEECEA; --fill:#F4F3F1; --fill-2:#E7E5E4; --dot-off:#EAE8E5;
+    --accent:#00359E; --accent-2:#5B7FFF; --accent-soft:rgba(0,53,158,.08);
+    --warn:#D98A1A; --warn-soft:rgba(217,138,26,.12); --ok:#16A34A; --ok-soft:rgba(22,163,74,.1); --bad:#DC2626; --bad-soft:rgba(220,38,38,.09);
+    --r-card:26px; --e:0 1px 2px rgba(28,25,23,.04), 0 8px 24px -12px rgba(28,25,23,.10);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--page);font-family:Geist,system-ui,sans-serif;color:var(--ink);
+    display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:32px 16px;
+    -webkit-font-smoothing:antialiased;font-feature-settings:"tnum" 1}
+  button{font:inherit;color:inherit;border:none;background:none;cursor:pointer}
+
+  /* ---------- device ---------- */
+  .phone{width:390px;height:844px;border-radius:54px;background:#111;padding:11px;box-shadow:0 40px 80px -30px rgba(0,0,0,.35);flex-shrink:0}
+  .screen{position:relative;width:100%;height:100%;border-radius:44px;overflow:hidden;background:var(--bg)}
+  .status{position:absolute;inset:0 0 auto;height:50px;display:flex;align-items:center;justify-content:space-between;padding:6px 30px 0 34px;font-weight:600;font-size:16px;z-index:5;background:linear-gradient(var(--bg) 60%,transparent)}
+  .island{z-index:6;position:absolute;left:50%;top:10px;transform:translateX(-50%);width:120px;height:34px;border-radius:20px;background:#000}
+  .scroll{position:absolute;inset:0;overflow-y:auto;padding:58px 14px 120px;scrollbar-width:none}
+  .scroll::-webkit-scrollbar{display:none}
+
+  /* ---------- header ---------- */
+  .head{display:flex;justify-content:space-between;align-items:center;padding:4px 6px 18px}
+  .head small{display:block;font-size:13px;color:var(--ink-3);margin-bottom:2px}
+  .head h1{font-size:25px;font-weight:600;letter-spacing:-.025em}
+  .me{width:40px;height:40px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-weight:600;position:relative}
+  .me::after{content:"";position:absolute;right:-1px;bottom:-1px;width:12px;height:12px;border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
+
+  /* ---------- card primitives ---------- */
+  .card{background:var(--card);border-radius:var(--r-card);box-shadow:var(--e);padding:20px;margin-bottom:12px;
+    opacity:0;transform:translateY(10px);animation:rise .6s cubic-bezier(.22,1,.36,1) forwards}
+  .card:nth-of-type(2){animation-delay:.06s}.card:nth-of-type(3){animation-delay:.12s}.card:nth-of-type(4){animation-delay:.18s}.card:nth-of-type(5){animation-delay:.24s}
+  @keyframes rise{to{opacity:1;transform:none}}
+  .ctop{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .ctitle{font-size:15px;font-weight:500;color:var(--ink-2)}
+  .pill{height:30px;padding:0 12px;border-radius:99px;background:var(--fill);font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;color:var(--ink-2)}
+  .arrow{width:32px;height:32px;border-radius:50%;background:var(--fill);display:grid;place-items:center;color:var(--ink-2)}
+  .big{font-size:46px;font-weight:500;letter-spacing:-.045em;line-height:1}
+  .big .c{color:var(--ink-3)}
+  .chip{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border-radius:8px;font-size:12.5px;font-weight:600}
+  .chip.ok{background:var(--ok-soft);color:var(--ok)} .chip.bad{background:var(--bad-soft);color:var(--bad)} .chip.warn{background:var(--warn-soft);color:var(--warn)}
+  .sub{font-size:13px;color:var(--ink-3)}
+  .sep{height:1px;background:var(--line);margin:18px -20px}
+
+  /* ---------- money ---------- */
+  .heroMeta{display:flex;align-items:center;gap:8px;margin-top:10px}
+  .chart{position:relative;margin:22px -4px 0}
+  .chart svg{display:block;width:100%;overflow:visible}
+  .xaxis{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3);padding:8px 4px 0}
+  .legendLine{display:flex;gap:14px;font-size:12px;color:var(--ink-3);margin-top:12px}
+  .legendLine i{display:inline-block;width:14px;height:0;border-top:2px solid var(--ink);vertical-align:middle;margin-right:6px}
+  .legendLine i.d{border-top:2px dashed var(--ink-3)}
+  .split{display:grid;grid-template-columns:1fr 1px 1fr;gap:16px;align-items:stretch}
+  .split .v{width:1px;background:var(--line)}
+  .kv small{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-3)}
+  .kv small b{width:7px;height:7px;border-radius:50%;display:inline-block}
+  .kv strong{display:block;font-size:22px;font-weight:500;letter-spacing:-.03em;margin:6px 0 10px}
+  .btn{height:32px;padding:0 14px;border-radius:99px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:transform .12s}
+  .btn:active{transform:scale(.95)}
+  .btn.dark{background:var(--ink);color:#fff}
+  .btn.soft{background:var(--fill);color:var(--ink)}
+  .stack{display:flex;align-items:center}
+  .stack span{width:24px;height:24px;border-radius:50%;border:2px solid #fff;margin-left:-7px;font-size:10px;font-weight:600;display:grid;place-items:center;color:#fff}
+  .stack span:first-child{margin-left:0}
+  .stack em{font-style:normal;font-size:12.5px;color:var(--ink-3);margin-left:8px}
+
+  /* ---------- needs you ---------- */
+  .countRow{display:flex;align-items:flex-end;justify-content:space-between}
+  .seg{display:flex;gap:4px;margin:16px 0 12px;height:10px}
+  .seg i{border-radius:99px;transform-origin:left;animation:grow .8s .3s cubic-bezier(.22,1,.36,1) both}
+  @keyframes grow{from{transform:scaleX(0)}}
+  .dots{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--ink-2)}
+  .dots span{display:inline-flex;align-items:center;gap:6px}
+  .dots b{width:8px;height:8px;border-radius:50%}
+  .dots em{font-style:normal;font-weight:600;color:var(--ink)}
+  .acts{margin-top:16px;display:flex;flex-direction:column;gap:6px}
+  .act{display:flex;align-items:center;gap:12px;padding:12px;border-radius:18px;background:var(--fill)}
+  .act .ic{width:36px;height:36px;border-radius:12px;background:#fff;display:grid;place-items:center;flex-shrink:0}
+  .act .tx{flex:1;min-width:0}
+  .act .tx b{display:block;font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .act .tx small{display:block;font-size:12px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mini{display:flex;gap:3px;margin-top:6px;height:4px;width:120px}
+  .mini i{border-radius:99px}
+  .seeall{width:100%;margin-top:10px;height:40px;border-radius:14px;font-size:13.5px;font-weight:500;color:var(--ink-2)}
+
+  /* ---------- tiles ---------- */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+  .grid2 .card{margin:0;padding:18px}
+  .tileTitle{font-size:14px;font-weight:500;color:var(--ink-2);display:flex;justify-content:space-between;align-items:center}
+  .ring{position:relative;width:118px;height:118px;margin:14px auto 12px}
+  .ring svg{width:100%;height:100%}
+  .ring .ctr{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+  .ring .ctr b{font-size:27px;font-weight:500;letter-spacing:-.04em}
+  .tileFoot{font-size:12.5px;color:var(--ink-3);line-height:1.5}
+  .tileFoot b{color:var(--ink);font-weight:600}
+  .tileFoot .late{color:var(--bad);font-weight:500}
+  .matrix{display:grid;grid-template-columns:repeat(9,1fr);gap:5px;margin:16px 0 14px}
+  .matrix i{aspect-ratio:1;border-radius:50%;background:var(--dot-off);animation:pop .4s cubic-bezier(.34,1.4,.64,1) both}
+  .matrix i.on{background:var(--ink)}
+  @keyframes pop{from{transform:scale(0)}}
+  .tileBig{font-size:27px;font-weight:500;letter-spacing:-.04em;margin-top:10px}
+
+  /* ---------- week ---------- */
+  .week{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:14px}
+  .day{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0 10px;border-radius:16px;font-size:11.5px;color:var(--ink-3)}
+  .day b{font-size:16px;font-weight:500;color:var(--ink)}
+  .day .pips{display:flex;gap:3px;height:5px}
+  .day .pips i{width:5px;height:5px;border-radius:50%;background:var(--ink-3)}
+  .day.today{background:var(--ink);color:rgba(255,255,255,.6)}
+  .day.today b{color:#fff}.day.today .pips i{background:#fff}
+  .ev{display:flex;align-items:center;gap:14px;padding:12px 0;border-top:1px solid var(--line)}
+  .ev:first-of-type{border-top:none}
+  .ev .t{width:66px;flex-shrink:0;white-space:nowrap}
+  .ev .t b{display:block;font-size:15px;font-weight:500}
+  .ev .t small{font-size:11.5px;color:var(--ink-3)}
+  .ev .bar{width:3px;align-self:stretch;border-radius:3px}
+  .ev .tx{flex:1;min-width:0}
+  .ev .tx b{display:block;font-size:14.5px;font-weight:500}
+  .ev .tx small{display:block;font-size:12px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .soon{font-size:11.5px;font-weight:600;color:var(--accent);background:var(--accent-soft);padding:4px 8px;border-radius:8px;white-space:nowrap}
+
+  /* ---------- activity ---------- */
+  .dm{display:flex;justify-content:space-between;align-items:flex-end;margin-top:18px}
+  .dm .col{display:flex;flex-direction:column;align-items:center;gap:8px;position:relative}
+  .dm .stackd{display:grid;grid-template-columns:repeat(2,8px);gap:4px;direction:ltr}
+  .dm .stackd i{width:8px;height:8px;border-radius:50%;background:var(--dot-off);animation:pop .35s cubic-bezier(.34,1.4,.64,1) both}
+  .dm .stackd i.on{background:#C9C5C0}
+  .dm .col.now .stackd i.on{background:var(--accent)}
+  .dm .col small{font-size:11px;color:var(--ink-3)}
+  .dm .col.now small{color:var(--ink);font-weight:600}
+  .dm .tip{position:absolute;top:-30px;background:var(--ink);color:#fff;font-size:11px;font-weight:500;padding:4px 7px;border-radius:7px;white-space:nowrap;opacity:0;transform:translateY(4px);transition:.15s;pointer-events:none}
+  .dm .col:hover .tip,.dm .col.show .tip{opacity:1;transform:none}
+  .busy{display:flex;align-items:center;gap:10px;margin-top:18px;padding:10px 12px;border-radius:16px;background:var(--fill);font-size:13px;color:var(--ink-2)}
+  .busy .av{width:28px;height:28px;border-radius:9px;background:var(--ink);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:600}
+  .busy b{color:var(--ink);font-weight:600}
+
+  /* ---------- tab bar ---------- */
+  .tabs{position:absolute;left:14px;right:14px;bottom:26px;height:68px;border-radius:34px;background:rgba(255,255,255,.78);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);
+    box-shadow:0 10px 30px -10px rgba(28,25,23,.25),inset 0 0 0 1px rgba(255,255,255,.9);display:grid;grid-template-columns:repeat(4,1fr);padding:6px;z-index:6}
+  .tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:500;color:var(--ink-2);border-radius:28px}
+  .tab.on{background:#fff;color:var(--ink);box-shadow:0 2px 8px -2px rgba(0,0,0,.12)}
+  .home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#111;z-index:7}
+
+  /* annotation panel beside the phone */
+  .notes{max-width:340px;margin-left:40px;padding-top:40px;font-size:14px;line-height:1.55;color:#44403C}
+  .notes h2{font-size:20px;font-weight:600;letter-spacing:-.02em;margin-bottom:6px;color:var(--ink)}
+  .notes p{margin-bottom:12px}
+  .notes ol{padding-left:18px}.notes li{margin-bottom:8px}
+  @media (max-width:820px){body{flex-direction:column;align-items:center}.notes{margin:32px 0 0;padding:0}}
+  @media (max-width:420px){body{padding:0}.phone{width:100vw;height:100svh;border-radius:0;padding:0}.screen{border-radius:0}.notes{padding:0 16px 40px}}
+</style>
+</head>
+<body>
+
+<div class="phone"><div class="screen">
+  <div class="status"><span>9:41</span><span style="font-size:13px;letter-spacing:1px">●●● ◔ ▭</span></div>
+  <div class="island"></div>
+
+  <div class="scroll" id="scroll">
+    <header class="head">
+      <div><small>Wednesday, September 30</small><h1>Good morning, Alae</h1></div>
+      <div class="me">A</div>
+    </header>
+
+    <!-- ============ MONEY ============ -->
+    <section class="card">
+      <div class="ctop">
+        <span class="ctitle">Spent in September</span>
+        <span class="pill">Month
+          <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg></span>
+      </div>
+      <div class="big">€312<span class="c">.40</span></div>
+      <div class="heroMeta">
+        <span class="chip ok">↓ €48.00</span><span class="sub">less than August</span>
+      </div>
+
+      <div class="chart">
+        <svg id="spend" viewBox="0 0 330 130" height="130"></svg>
+        <div class="xaxis"><span>Sep 1</span><span>Sep 15</span><span style="color:var(--ink);font-weight:600">Today</span></div>
+      </div>
+      <div class="legendLine"><span><i></i>September</span><span><i class="d"></i>August</span></div>
+
+      <div class="sep"></div>
+
+      <div class="split">
+        <div class="kv">
+          <small><b style="background:var(--warn)"></b>You owe</small>
+          <strong>€19.92</strong>
+          <button class="btn dark">Settle up</button>
+        </div>
+        <div class="v"></div>
+        <div class="kv">
+          <small><b style="background:var(--ok)"></b>Owed to you</small>
+          <strong>€42.00</strong>
+          <div class="stack">
+            <span style="background:#7C6F64">MK</span><span style="background:#3F5E8C">JD</span><em>2 people</em>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ NEEDS YOU ============ -->
+    <section class="card">
+      <div class="ctop" style="margin-bottom:6px">
+        <span class="ctitle">Needs you</span>
+        <button class="arrow" aria-label="Open">
+          <svg width="12" height="12" viewBox="0 0 12 12"><path d="M3.5 8.5l5-5M4.5 3.5h4v4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></button>
+      </div>
+      <div class="countRow">
+        <div class="big">5</div>
+        <span class="sub" style="padding-bottom:4px">oldest waiting 2 days</span>
+      </div>
+      <div class="seg">
+        <i style="flex:2;background:var(--accent)"></i>
+        <i style="flex:1;background:var(--accent-2)"></i>
+        <i style="flex:1;background:var(--warn)"></i>
+        <i style="flex:1;background:#D6D3D1"></i>
+      </div>
+      <div class="dots">
+        <span><b style="background:var(--accent)"></b>Votes <em>2</em></span>
+        <span><b style="background:var(--accent-2)"></b>RSVPs <em>1</em></span>
+        <span><b style="background:var(--warn)"></b>Payments <em>1</em></span>
+        <span><b style="background:#D6D3D1"></b>Requests <em>1</em></span>
+      </div>
+
+      <div class="acts">
+        <div class="act">
+          <div class="ic"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 13V8M8 13V3M13 13V6" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/></svg></div>
+          <div class="tx"><b>Where for lunch on Friday?</b>
+            <small>Sushi leads · 3 votes · closes 6 PM</small>
+            <div class="mini"><i style="flex:2;background:var(--ink)"></i><i style="flex:1;background:#D6D3D1"></i></div>
+          </div>
+          <button class="btn dark">Vote</button>
+        </div>
+        <div class="act">
+          <div class="ic"><svg width="16" height="16" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10" rx="2.5" stroke="var(--accent-2)" stroke-width="1.6" fill="none"/><path d="M2.5 7h11M5.5 2v3M10.5 2v3" stroke="var(--accent-2)" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+          <div class="tx"><b>Design crit</b><small>Today 4:30 PM · Studio Loft</small></div>
+          <button class="btn soft">Going</button>
+        </div>
+        <div class="act">
+          <div class="ic"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" stroke="var(--warn)" stroke-width="1.6" fill="none"/><path d="M8 5v6M6 9.5c.4.6 1.1 1 2 1s1.8-.5 1.8-1.3S9 8 8 8s-1.8-.4-1.8-1.2S7 5.5 8 5.5s1.5.4 1.8 1" stroke="var(--warn)" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="tx"><b>Figma seats</b><small>You owe Maya · NOD Team</small></div>
+          <button class="btn soft">€19.92</button>
+        </div>
+      </div>
+      <button class="seeall">See all 5</button>
+    </section>
+
+    <!-- ============ TASKS + CHECKLISTS ============ -->
+    <div class="grid2">
+      <section class="card">
+        <div class="tileTitle">Tasks
+          <svg width="12" height="12" viewBox="0 0 12 12"><path d="M4.5 2.5L8 6l-3.5 3.5" stroke="var(--ink-3)" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></div>
+        <div class="ring"><svg id="ring" viewBox="0 0 120 120"></svg>
+          <div class="ctr"><div><b>40%</b></div></div></div>
+        <div class="tileFoot"><b>2 of 5</b> done<br><span class="late">1 overdue</span> · 1 due Fri</div>
+      </section>
+      <section class="card">
+        <div class="tileTitle">Checklists
+          <svg width="12" height="12" viewBox="0 0 12 12"><path d="M4.5 2.5L8 6l-3.5 3.5" stroke="var(--ink-3)" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></div>
+        <div class="tileBig">69%</div>
+        <div class="matrix" id="matrix"></div>
+        <div class="tileFoot"><b>18 of 26</b> ticked<br>across 3 lists</div>
+      </section>
+    </div>
+
+    <!-- ============ THIS WEEK ============ -->
+    <section class="card">
+      <div class="ctop"><span class="ctitle">This week</span><span class="pill">3 coming up</span></div>
+      <div class="week" id="week"></div>
+      <div class="ev">
+        <div class="t"><b>4:30</b><small>PM · Today</small></div>
+        <div class="bar" style="background:var(--accent-2)"></div>
+        <div class="tx"><b>Design crit</b><small>Studio Loft · 2 going</small></div>
+        <span class="soon">in 6h</span>
+      </div>
+      <div class="ev">
+        <div class="t"><b>9:00</b><small>AM · Thu</small></div>
+        <div class="bar" style="background:#D6D3D1"></div>
+        <div class="tx"><b>Send the weekly recap</b><small>Reminder · NOD Team</small></div>
+      </div>
+      <div class="ev">
+        <div class="t"><b>12:30</b><small>PM · Fri</small></div>
+        <div class="bar" style="background:var(--accent)"></div>
+        <div class="tx"><b>Team lunch</b><small>Offsite plan · Kiku Sushi</small></div>
+      </div>
+    </section>
+
+    <!-- ============ ACTIVITY ============ -->
+    <section class="card">
+      <div class="ctop" style="margin-bottom:8px"><span class="ctitle">Activity</span><span class="pill">7 days</span></div>
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <div class="big" style="font-size:38px">44</div>
+        <span class="sub">messages</span>
+        <span class="chip ok" style="margin-left:auto">↗ 18%</span>
+      </div>
+      <div class="dm" id="dm"></div>
+      <div class="busy"><div class="av">NT</div><span>Busiest: <b>NOD Team</b> · 21 messages</span></div>
+    </section>
+  </div>
+
+  <nav class="tabs">
+    <button class="tab"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 15.5V5.5A2.5 2.5 0 016.5 3h7A2.5 2.5 0 0116 5.5v5a2.5 2.5 0 01-2.5 2.5H7z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></svg>Chats</button>
+    <button class="tab"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="9" r="6" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M8 17h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Mind</button>
+    <button class="tab on"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 16v-4M10 16V4M16 16V8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>Analytics</button>
+    <button class="tab"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M13 13l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Explore</button>
+  </nav>
+  <div class="home"></div>
+</div></div>
+
+<aside class="notes">
+  <h2>Analytics v1 — what changed</h2>
+  <p>Each area of your life gets its own card and its own way of showing data, so you can take it in at a glance before reading a single row.</p>
+  <ol>
+    <li><b>Money</b> shows this month's spending as a running line against last month's (dashed), so "am I spending more or less" is visible without doing any maths. Owe and owed sit together with the action beside them.</li>
+    <li><b>Needs you</b> is one number with a segmented bar showing what kind of thing is waiting. The top three items can be acted on right there (Vote, Going, Pay) without leaving the page.</li>
+    <li><b>Tasks</b> uses a dotted ring for progress. <b>Checklists</b> uses a dot grid where each dot is one real item, ticked or not.</li>
+    <li><b>This week</b> is a 7-day strip with a dot for each thing booked that day, then a short timeline with times first.</li>
+    <li><b>Activity</b> is a dot chart where each dot is one message. Today is in NOD cobalt. Tap a column to see its count.</li>
+  </ol>
+  <p>Colours: stone neutrals plus NOD cobalt as the one accent. Amber only means money you owe, and red only means overdue.</p>
+</aside>
+
+<script>
+/* ---- spend line: cumulative Sept vs Aug ---- */
+(function(){
+  const sep=[0,12,12,30,48,48,62,90,96,96,118,130,142,142,160,172,190,190,206,214,230,236,250,262,268,280,290,298,306,312.4];
+  const aug=[0,8,20,34,40,58,70,78,96,110,120,134,146,160,170,184,196,210,220,236,248,262,276,290,302,318,330,342,352,360.4];
+  const W=330,H=130,pad=10,max=370,n=30;
+  const x=i=>i/(n-1)*W, y=v=>H-pad-(v/max)*(H-pad*2);
+  const smooth=pts=>{let d=`M${pts[0][0]},${pts[0][1]}`;for(let i=0;i<pts.length-1;i++){const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
+    const c1=[p1[0]+(p2[0]-p0[0])/6,p1[1]+(p2[1]-p0[1])/6],c2=[p2[0]-(p3[0]-p1[0])/6,p2[1]-(p3[1]-p1[1])/6];d+=`C${c1},${c2},${p2}`}return d};
+  const A=smooth(aug.map((v,i)=>[x(i),y(v)])), S=smooth(sep.map((v,i)=>[x(i),y(v)]));
+  const ex=x(n-1), ey=y(sep[n-1]);
+  document.getElementById('spend').innerHTML=`
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#00359E" stop-opacity=".14"/><stop offset="1" stop-color="#00359E" stop-opacity="0"/></linearGradient></defs>
+    ${[0.25,0.5,0.75].map(f=>`<line x1="0" x2="${W}" y1="${pad+f*(H-2*pad)}" y2="${pad+f*(H-2*pad)}" stroke="#F0EEEC"/>`).join('')}
+    <path d="${A}" fill="none" stroke="#C9C5C0" stroke-width="1.6" stroke-dasharray="3 4"/><text x="${W}" y="${y(aug[n-1])-8}" text-anchor="end" font-size="10.5" fill="#A8A29E" style="font-family:Geist,system-ui">Aug €360</text>
+    <path d="${S} L${ex},${H} L0,${H}Z" fill="url(#g)"/>
+    <path id="sl" d="${S}" fill="none" stroke="#1C1917" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="${ex}" cy="${ey}" r="11" fill="#00359E" opacity=".12"><animate attributeName="r" values="7;13;7" dur="2.4s" repeatCount="indefinite"/></circle>
+    <circle cx="${ex}" cy="${ey}" r="5" fill="#00359E" stroke="#fff" stroke-width="2"/>
+    <g transform="translate(${ex-68},${ey+12})"><rect width="58" height="24" rx="8" fill="#1C1917"/><text x="29" y="16" text-anchor="middle" font-size="11.5" font-weight="600" fill="#fff" style="font-family:Geist,system-ui">€312.40</text></g>`;
+  const sl=document.getElementById('sl'),L=sl.getTotalLength();sl.style.strokeDasharray=L;sl.style.strokeDashoffset=L;
+  sl.getBoundingClientRect();sl.style.transition='stroke-dashoffset 1.4s cubic-bezier(.22,1,.36,1) .25s';sl.style.strokeDashoffset=0;
+})();
+
+/* ---- dotted task ring ---- */
+(function(){
+  const N=40,on=16,r=50,c=60;let s='';
+  for(let i=0;i<N;i++){const a=-Math.PI/2+i/N*Math.PI*2;
+    s+=`<circle cx="${c+r*Math.cos(a)}" cy="${c+r*Math.sin(a)}" r="${i<on?3.4:2.4}" fill="${i<on?'#00359E':'#E4E1DE'}" style="animation:pop .3s ${i*18}ms both"/>`}
+  for(let i=0;i<28;i++){const a=-Math.PI/2+i/28*Math.PI*2;s+=`<circle cx="${c+38*Math.cos(a)}" cy="${c+38*Math.sin(a)}" r="1.2" fill="#EDEAE7"/>`}
+  document.getElementById('ring').innerHTML=s;
+})();
+
+/* ---- checklist dot matrix: one dot per item ---- */
+(function(){
+  const total=26,done=18;let s='';
+  for(let i=0;i<27;i++){ s+= i<total ? `<i class="${i<done?'on':''}" style="animation-delay:${i*14}ms"></i>` : `<i style="visibility:hidden"></i>`}
+  document.getElementById('matrix').innerHTML=s;
+})();
+
+/* ---- week strip ---- */
+(function(){
+  const days=[['Mon',28,0],['Tue',29,1],['Wed',30,1],['Thu',1,1],['Fri',2,2],['Sat',3,0],['Sun',4,0]];
+  document.getElementById('week').innerHTML=days.map(([d,n,p],i)=>`<div class="day ${i===2?'today':''}">${d}<b>${n}</b><span class="pips">${'<i></i>'.repeat(p)}</span></div>`).join('');
+})();
+
+/* ---- activity dot matrix: one dot per message ---- */
+(function(){
+  const vals=[[ 'Thu',5],['Fri',9],['Sat',2],['Sun',3],['Mon',8],['Tue',11],['Today',6]], rows=6;
+  document.getElementById('dm').innerHTML=vals.map(([d,v],ci)=>{
+    let dots='';for(let r=rows-1;r>=0;r--)for(let c=0;c<2;c++){const idx=r*2+c;dots+=`<i class="${idx<v?'on':''}" style="animation-delay:${ci*50+(rows-r)*30}ms"></i>`}
+    return `<div class="col ${ci===6?'now':''}" onclick="this.classList.toggle('show')"><span class="tip">${v} msgs</span><div class="stackd">${dots}</div><small>${d}</small></div>`}).join('');
+})();
+</script>
+</body>
+</html>

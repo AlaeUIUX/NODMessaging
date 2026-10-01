@@ -32,6 +32,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={geist.variable}>
       <body>{children}</body>
+      <script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async />
     </html>
   );
 }

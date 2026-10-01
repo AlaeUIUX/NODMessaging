@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NOD Analytics — v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page:#E6E4E1; --bg:#F5F4F2; --panel:#FFFFFF;
+    --ink:#1C1917; --ink-2:#57534E; --ink-3:#A29B95; --line:#F0EEEB; --soft:#F3F2F0; --off:#ECEAE7;
+    --accent:#00359E; --a2:#4A6FD6; --a3:#9DB2EC; --a4:#D5DEF6;
+    --warn:#C9791A; --ok:#15803D; --bad:#DC2626;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--page);font-family:Geist,system-ui,sans-serif;color:var(--ink);display:flex;justify-content:center;align-items:flex-start;
+    min-height:100vh;padding:32px 16px;-webkit-font-smoothing:antialiased;font-feature-settings:"tnum" 1}
+  button{font:inherit;color:inherit;border:none;background:none;cursor:pointer}
+
+  /* device */
+  .phone{width:390px;height:844px;border-radius:56px;background:#0E0E0E;padding:10px;flex-shrink:0}
+  .screen{position:relative;width:100%;height:100%;border-radius:46px;overflow:hidden;background:var(--bg)}
+  .status{position:absolute;inset:0 0 auto;height:52px;display:flex;align-items:center;justify-content:space-between;padding:8px 32px 0 36px;font-weight:600;font-size:16px;z-index:5;background:linear-gradient(var(--bg) 65%,rgba(245,244,242,0))}
+  .island{position:absolute;z-index:6;left:50%;top:11px;transform:translateX(-50%);width:120px;height:34px;border-radius:20px;background:#000}
+  .scroll{position:absolute;inset:0;overflow-y:auto;padding:60px 12px 124px;scrollbar-width:none}
+  .scroll::-webkit-scrollbar{display:none}
+
+  /* header */
+  .head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 26px}
+  .head small{display:block;font-size:13px;color:var(--ink-3);margin-bottom:3px}
+  .head h1{font-size:24px;font-weight:500;letter-spacing:-.03em}
+  .me{width:38px;height:38px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-weight:500;font-size:15px}
+
+  /* shared type */
+  .label{font-size:13px;color:var(--ink-3)}
+  .num{font-weight:400;letter-spacing:-.05em;line-height:.95}
+  .num .c{color:var(--ink-3)}
+  .up{color:var(--ok)} .down{color:var(--bad)}
+
+  .fade{opacity:0;transform:translateY(8px);animation:rise .7s cubic-bezier(.22,1,.36,1) forwards}
+  @keyframes rise{to{opacity:1;transform:none}}
+  @keyframes pop{from{transform:scale(0)}}
+
+  /* hero — sits on the page, no container */
+  .hero{padding:0 8px}
+  .hero .num{font-size:60px;margin:8px 0 12px}
+  .delta{font-size:14px;color:var(--ink-3)} .delta b{font-weight:500;color:var(--ok)}
+  .spend{margin:26px -2px 0;position:relative}
+  .spend svg{display:block;width:100%;overflow:visible}
+  .xaxis{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3);padding:10px 2px 0}
+  .xaxis b{font-weight:500;color:var(--ink)}
+
+  /* panels — flat, no shadow, no border */
+  .panel{background:var(--panel);border-radius:18px;padding:22px;margin-top:10px}
+  .ph{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:18px}
+  .ph h2{font-size:15px;font-weight:500;letter-spacing:-.01em}
+  .ph a{font-size:13px;color:var(--ink-3);text-decoration:none}
+
+  /* bare panels: no surface, content sits on the page */
+  .panel.bare{background:transparent;padding-left:8px;padding-right:8px}
+  .bare .r{border-top-color:#E6E3DF}
+  .bare .act:not(.primary){background:#fff}
+  .bare .matrix i{background:#E3E0DC}
+  .bare .matrix i.on{background:var(--ink)}
+  .two .panel.bare{padding:18px 8px 18px 12px}
+
+  .tasks{display:flex;align-items:center;gap:18px}
+  .gauge{position:relative;width:160px;flex-shrink:0}
+  .gauge svg{display:block;width:100%;overflow:visible}
+  .gc{position:absolute;left:0;right:0;bottom:-2px;text-align:center}
+  .gc .num{font-size:36px}
+  .gc .label{font-size:12px}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  .tl{list-style:none;flex:1;display:flex;flex-direction:column;gap:14px}
+  .tl li{display:flex;align-items:center;gap:10px}
+  .tl i{width:4px;height:16px;border-radius:4px}
+  .tl b{font-size:17px;font-weight:400;letter-spacing:-.02em;width:18px}
+  .tl span{margin-left:auto;font-size:13px;color:var(--ink-3)}
+  .matrix.wide{grid-template-columns:repeat(13,15px);justify-content:space-between;gap:10px 0;margin:20px 0 0}
+
+  /* checklists */
+  .crows{margin-top:18px}
+  .crow{display:flex;align-items:center;gap:14px;padding:13px 0;border-top:1px solid #E6E3DF}
+  .crows .crow:first-child{border-top:none}
+  .cn{flex:1;min-width:0;font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .trk{display:flex;gap:4px;flex-shrink:0}
+  .trk i{width:7px;height:7px;border-radius:50%;box-shadow:inset 0 0 0 1.4px #CFCAC5;animation:pop .35s cubic-bezier(.34,1.4,.64,1) both}
+  .trk i.on{background:var(--ink);box-shadow:none}
+  .trk i.done{background:var(--accent)}
+  .cc{width:52px;text-align:right;flex-shrink:0;font-size:13px;font-variant-numeric:tabular-nums}
+  .cc em{font-style:normal;color:var(--ink-3)}
+  .empty{margin-top:14px;font-size:13.5px;color:var(--ink-3)}
+  .seeall{display:flex;justify-content:space-between;align-items:center;width:100%;margin-top:6px;padding:14px 0 0;border-top:1px solid #E6E3DF;font-size:13.5px;font-weight:500;text-align:left}
+  .seeall span{font-weight:400;font-size:12.5px;color:var(--ink-3)}
+  /* sheet */
+  .scrim{position:absolute;inset:0;background:rgba(28,25,23,.28);opacity:0;pointer-events:none;transition:opacity .3s;z-index:8}
+  .scrim.on{opacity:1;pointer-events:auto}
+  .sheet{position:absolute;left:0;right:0;bottom:0;height:78%;background:#fff;border-radius:24px 24px 0 0;z-index:9;transform:translateY(100%);transition:transform .45s cubic-bezier(.22,1,.36,1);display:flex;flex-direction:column}
+  .sheet.on{transform:none}
+  .grab{width:36px;height:5px;border-radius:3px;background:#E0DDD9;margin:8px auto 4px;flex-shrink:0}
+  .sh{overflow-y:auto;padding:10px 22px 40px}
+  .sh h3{font-size:18px;font-weight:500;letter-spacing:-.02em;margin:6px 0 4px}
+  .shs{font-size:12px;color:var(--ink-3);margin:18px 0 2px}
+  .sh .crow{border-top-color:var(--line)}
+  .sh .shs + .crow{border-top:none}
+  /* scenario switch */
+  .sc{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 18px}
+  .sc button{height:30px;padding:0 12px;border-radius:99px;background:#fff;font-size:12.5px;font-weight:500;color:var(--ink-2)}
+  .sc button.on{background:var(--ink);color:#fff}
+
+  /* balances */
+  .bal{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:28px}
+  .bal .panel{margin:0;padding:18px 18px 16px}
+  .bal .num{font-size:28px;margin:10px 0 16px}
+  .tag{display:inline-flex;align-items:center;gap:6px}
+  .tag i{width:6px;height:6px;border-radius:50%}
+  .pay{height:30px;padding:0 14px;border-radius:99px;background:var(--ink);color:#fff;font-size:13px;font-weight:500}
+  .faces{display:flex;align-items:center;height:30px}
+  .faces span{width:26px;height:26px;border-radius:50%;border:2px solid #fff;margin-left:-8px;font-size:10px;font-weight:500;color:#fff;display:grid;place-items:center}
+  .faces span:first-child{margin-left:0}
+  .faces em{font-style:normal;font-size:12.5px;color:var(--ink-3);margin-left:8px}
+
+  /* needs you */
+  .needTop{display:flex;align-items:baseline;gap:10px}
+  .needTop .num{font-size:44px}
+  .seg{display:flex;gap:3px;height:6px;margin:18px 0 12px}
+  .seg i{border-radius:99px;transform-origin:left;animation:grow .9s .35s cubic-bezier(.22,1,.36,1) both}
+  @keyframes grow{from{transform:scaleX(0)}}
+  .key{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--ink-3)}
+  .key span{display:inline-flex;align-items:center;gap:6px}
+  .key i{width:6px;height:6px;border-radius:50%}
+  .key b{font-weight:500;color:var(--ink)}
+  .blocks{display:flex;gap:4px;margin:18px 0 6px}
+  .blocks div{display:flex;flex-direction:column;gap:8px;min-width:0}
+  .blocks i{height:30px;border-radius:8px;display:flex;align-items:center;padding:0 10px;font-style:normal;font-size:13px;font-weight:500;
+    transform-origin:left;animation:grow .9s .35s cubic-bezier(.22,1,.36,1) both}
+  .blocks span{font-size:11.5px;color:var(--ink-3);white-space:nowrap;padding-left:2px}
+  .rows{margin-top:18px}
+  .r{display:flex;align-items:center;gap:16px;padding:16px 0;border-top:1px solid var(--line)}
+  .r:last-child{padding-bottom:2px}
+  .r:first-child{border-top:none}
+  .r > i{width:6px;height:6px;border-radius:50%;flex-shrink:0;align-self:flex-start;margin-top:8px}
+  .r .tx{flex:1;min-width:0}
+  .r .tx b{display:block;font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .r .tx small{display:block;margin-top:3px;font-size:12.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .r .vote{display:flex;gap:2px;margin-top:8px;height:3px;width:110px}
+  .r .vote s{border-radius:9px;text-decoration:none}
+  .act{height:32px;padding:0 14px;border-radius:99px;background:var(--soft);font-size:13px;font-weight:500;white-space:nowrap;transition:transform .12s}
+  .act.primary{background:var(--ink);color:#fff}
+  .act:active,.pay:active{transform:scale(.95)}
+
+  /* tiles */
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+  .two .panel{margin:0;padding:18px;display:flex;flex-direction:column}
+  .two .num{font-size:30px;margin-top:10px}
+  .ring{width:100%;aspect-ratio:1;max-width:124px;margin:10px auto 6px}
+  .ring svg{width:100%;height:100%}
+  .foot{margin-top:auto;padding-top:12px;font-size:12.5px;color:var(--ink-3);line-height:1.55}
+  .foot b{font-weight:500;color:var(--ink)}
+  .matrix{display:grid;grid-template-columns:repeat(9,1fr);gap:5px;margin:16px 0 4px}
+  .matrix i{aspect-ratio:1;border-radius:50%;background:var(--off);animation:pop .4s cubic-bezier(.34,1.4,.64,1) both}
+  .matrix i.on{background:var(--ink)}
+  .tileHead{display:flex;justify-content:space-between;align-items:baseline}
+
+  /* week */
+  .week{display:grid;grid-template-columns:repeat(7,1fr);margin:0 -6px 8px}
+  .d{display:flex;flex-direction:column;align-items:center;gap:6px;padding:9px 0 10px;border-radius:12px;font-size:11px;color:var(--ink-3)}
+  .d b{font-size:17px;font-weight:400;color:var(--ink);letter-spacing:-.02em}
+  .d .p{display:flex;gap:3px;height:4px}.d .p i{width:4px;height:4px;border-radius:50%;background:var(--ink)}
+  .d.today{background:var(--ink);color:rgba(255,255,255,.55)}.d.today b{color:#fff}.d.today .p i{background:#fff}
+  .ev{display:flex;align-items:baseline;gap:16px;padding:14px 0;border-top:1px solid var(--line)}
+  .ev .t{width:72px;white-space:nowrap;flex-shrink:0;font-size:15px;letter-spacing:-.02em}
+  .ev .t small{display:block;font-size:11.5px;color:var(--ink-3);letter-spacing:0;margin-top:2px}
+  .ev .tx{flex:1;min-width:0}
+  .ev .tx b{display:block;font-size:14.5px;font-weight:500}
+  .ev .tx small{display:block;margin-top:2px;font-size:12.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ev .soon{font-size:12.5px;font-weight:500;color:var(--accent)}
+
+  /* messages bar chart */
+  .msgTop{display:flex;align-items:baseline;gap:10px}
+  .msgTop .num{font-size:44px}
+  .bars{position:relative;display:grid;grid-template-columns:repeat(7,1fr);align-items:end;height:150px;margin-top:22px}
+  .bar{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:6px;cursor:pointer}
+  .bar em{position:relative;z-index:1;font-style:normal;font-size:11px;color:var(--ink-3);background:#fff;padding:0 4px;border-radius:4px}
+  .bar s{display:block;width:26px;border-radius:13px;background:var(--off);text-decoration:none;transform-origin:bottom;animation:rise2 .8s cubic-bezier(.22,1,.36,1) both;transition:background .15s}
+  .bar:hover s{background:#DCD9D5}
+  .bar.now s{background:var(--accent)} .bar.now em{color:var(--ink);font-weight:500}
+  @keyframes rise2{from{transform:scaleY(0)}}
+  .avg{position:absolute;left:0;right:0;border-top:1px dashed #D6D2CE;pointer-events:none}
+  .avg span{position:absolute;right:0;top:-10px;font-size:10.5px;color:var(--ink-3);background:#fff;padding:1px 6px;border-radius:6px;border:1px solid var(--line)}
+  .days{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:11px;color:var(--ink-3);margin-top:10px}
+  .days b{font-weight:500;color:var(--ink)}
+  .busy{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-3);display:flex;justify-content:space-between}
+  .busy b{font-weight:500;color:var(--ink)}
+
+  /* tab bar */
+  .tabs{position:absolute;left:14px;right:14px;bottom:26px;height:66px;border-radius:33px;background:rgba(255,255,255,.72);
+    backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);
+    box-shadow:0 0 0 1px rgba(28,25,23,.05);display:grid;grid-template-columns:repeat(4,1fr);padding:6px;z-index:6}
+  .tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:500;color:var(--ink-3);border-radius:28px}
+  .tab.on{background:var(--soft);color:var(--ink)}
+  .home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#111;z-index:7}
+
+  .notes{max-width:340px;margin-left:44px;padding-top:44px;font-size:14px;line-height:1.6;color:#44403C}
+  .notes h2{font-size:19px;font-weight:500;letter-spacing:-.02em;margin-bottom:10px;color:var(--ink)}
+  .notes p{margin-bottom:12px}
+  @media (max-width:820px){body{flex-direction:column;align-items:center}.notes{margin:32px 0 0;padding:0}}
+  @media (max-width:420px){body{padding:0}.phone{width:100vw;height:100svh;border-radius:0;padding:0}.screen{border-radius:0}.notes{padding:0 16px 40px}}
+</style>
+</head>
+<body>
+
+<div class="phone"><div class="screen">
+  <div class="status"><span>9:41</span><span style="font-size:12px;letter-spacing:1px">●●● ▭</span></div>
+  <div class="island"></div>
+
+  <div class="scroll">
+    <header class="head fade">
+      <div><small>Wednesday, September 30</small><h1>Good morning, Alae</h1></div>
+      <div class="me">A</div>
+    </header>
+
+    <!-- MONEY: on the page, no container -->
+    <section class="hero fade" style="animation-delay:.04s">
+      <span class="label">Spent in September</span>
+      <div class="num">€312<span class="c">.40</span></div>
+      <div class="delta"><b>↓ €48</b> less than August</div>
+      <div class="spend">
+        <svg id="spend" viewBox="0 0 346 140" height="140"></svg>
+        <div class="xaxis"><span>1 Sep</span><span>15</span><b>Today</b></div>
+      </div>
+    </section>
+
+    <div class="bal fade" style="animation-delay:.1s">
+      <div class="panel">
+        <span class="label tag"><i style="background:var(--warn)"></i>You owe</span>
+        <div class="num">€19<span class="c">.92</span></div>
+        <button class="pay">Settle up</button>
+      </div>
+      <div class="panel">
+        <span class="label tag"><i style="background:var(--ok)"></i>Owed to you</span>
+        <div class="num">€42<span class="c">.00</span></div>
+        <div class="faces"><span style="background:#8A7D72">MK</span><span style="background:#3F5E8C">JD</span><em>2 people</em></div>
+      </div>
+    </div>
+
+    <!-- NEEDS YOU -->
+    <section class="panel bare fade" style="animation-delay:.16s">
+      <div class="ph"><h2>Needs you</h2><a href="#">See all</a></div>
+      <div class="needTop"><div class="num">5</div><span class="label">waiting on you</span></div>
+      <div class="blocks">
+        <div style="flex:2"><i style="background:var(--accent);color:#fff">2</i><span>Votes</span></div>
+        <div style="flex:1"><i style="background:var(--a2);color:#fff">1</i><span>RSVP</span></div>
+        <div style="flex:1"><i style="background:var(--a3);color:var(--ink)">1</i><span>Payment</span></div>
+        <div style="flex:1"><i style="background:var(--a4);color:var(--ink)">1</i><span>Request</span></div>
+      </div>
+      <div class="rows">
+        <div class="r">
+          <div class="tx"><b>Where for lunch on Friday?</b><small>Sushi leads · closes 6 PM</small></div>
+          <button class="act primary">Vote</button></div>
+        <div class="r">
+          <div class="tx"><b>Design crit</b><small>Today, 4:30 PM</small></div>
+          <button class="act">Going</button></div>
+      </div>
+    </section>
+
+    <!-- TASKS -->
+    <section class="panel fade" style="animation-delay:.22s">
+      <div class="ph"><h2>Tasks</h2><span class="label" style="color:var(--bad)">1 overdue</span></div>
+      <div class="tasks">
+        <div class="gauge"><svg id="gauge" viewBox="0 0 160 88"></svg>
+          <div class="gc"><div class="num">5</div><span class="label">Your tasks</span></div></div>
+        <ul class="tl">
+          <li><i style="background:var(--a4)"></i><b>2</b><span>To do</span></li>
+          <li><i style="background:var(--a2)"></i><b>1</b><span>In progress</span></li>
+          <li><i style="background:var(--accent)"></i><b>2</b><span>Done</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- CHECKLISTS: fixed 10-dot track per list, top 3 open lists, rest in a sheet -->
+    <section class="panel bare fade" style="animation-delay:.26s" id="ck"></section>
+
+    <!-- THIS WEEK -->
+    <section class="panel fade" style="animation-delay:.28s">
+      <div class="ph"><h2>This week</h2><a href="#">Calendar</a></div>
+      <div class="week" id="week"></div>
+      <div class="ev"><div class="t">4:30 pm<small>Today</small></div>
+        <div class="tx"><b>Design crit</b><small>Studio Loft · 2 going</small></div><span class="soon">in 6h</span></div>
+      <div class="ev"><div class="t">9:00 am<small>Thu</small></div>
+        <div class="tx"><b>Send the weekly recap</b><small>Reminder · NOD Team</small></div></div>
+      <div class="ev"><div class="t">12:30 pm<small>Fri</small></div>
+        <div class="tx"><b>Team lunch</b><small>Offsite plan · Kiku Sushi</small></div></div>
+    </section>
+
+    <!-- MESSAGES -->
+    <section class="panel fade" style="animation-delay:.34s">
+      <div class="ph"><h2>Messages</h2><span class="label">Last 7 days</span></div>
+      <div class="msgTop"><div class="num">44</div><span class="label"><span class="up">↗ 18%</span> vs last week</span><span class="label" style="margin-left:auto"><svg width="14" height="2" style="vertical-align:middle;margin-right:5px"><line x1="0" x2="14" y1="1" y2="1" stroke="#C9C4BF" stroke-width="1.5" stroke-dasharray="3 2"/></svg>avg 6.3/day</span></div>
+      <div class="bars" id="bars"></div>
+      <div class="days" id="days"></div>
+      <div class="busy"><span>Busiest chat</span><span><b>NOD Team</b> · 21</span></div>
+    </section>
+  </div>
+
+  <div class="scrim" id="scrim" onclick="closeSheet()"></div>
+  <div class="sheet" id="sheet"><div class="grab"></div><div class="sh" id="shBody"></div></div>
+
+  <nav class="tabs">
+    <button class="tab"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 15.5V5.5A2.5 2.5 0 016.5 3h7A2.5 2.5 0 0116 5.5v5a2.5 2.5 0 01-2.5 2.5H7z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></svg>Chats</button>
+    <button class="tab"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="9" r="6" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M8 17h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Mind</button>
+    <button class="tab on"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 16v-4M10 16V4M16 16V8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>Analytics</button>
+    <button class="tab"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M13 13l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Explore</button>
+  </nav>
+  <div class="home"></div>
+</div></div>
+
+<aside class="notes">
+  <h2>Stress test: Checklists</h2>
+  <p>Switch the data to see how the section holds up.</p>
+  <div class="sc">
+    <button class="on" onclick="scen('typical',this)">3 lists</button>
+    <button onclick="scen('heavy',this)">20 lists</button>
+    <button onclick="scen('single',this)">1 list · 80 items</button>
+    <button onclick="scen('empty',this)">None</button>
+  </div>
+  <p><b>Same scale for every list.</b> Each list gets a 10-dot track, and each dot is 10% of that list. A 6-item list and an 80-item list take the same space and can be compared at a glance, while the real count sits on the right.</p>
+  <p><b>Never more than 3 rows.</b> The overview shows the three most recently active lists that aren't finished. Everything else, done lists included, is one tap away in "See all".</p>
+  <p><b>The headline stays one number.</b> The % and "ticked" count are across all your lists, so the section is the same height with 3 lists or 300.</p>
+</aside>
+
+<script>
+/* spend: cumulative Sept (solid) vs Aug (dashed) */
+(function(){
+  const sep=[0,12,12,30,48,48,62,90,96,96,118,130,142,142,160,172,190,190,206,214,230,236,250,262,268,280,290,298,306,312.4];
+  const aug=[0,8,20,34,40,58,70,78,96,110,120,134,146,160,170,184,196,210,220,236,248,262,276,290,302,318,330,342,352,360.4];
+  const W=346,H=140,pad=12,max=370,n=30,x=i=>i/(n-1)*(W-8),y=v=>H-pad-(v/max)*(H-pad*2);
+  const sm=p=>{let d=`M${p[0]}`;for(let i=0;i<p.length-1;i++){const a=p[i-1]||p[i],b=p[i],c=p[i+1],e=p[i+2]||c;
+    d+=`C${b[0]+(c[0]-a[0])/6},${b[1]+(c[1]-a[1])/6} ${c[0]-(e[0]-b[0])/6},${c[1]-(e[1]-b[1])/6} ${c}`}return d};
+  const S=sm(sep.map((v,i)=>[x(i),y(v)])),A=sm(aug.map((v,i)=>[x(i),y(v)])),ex=x(n-1),ey=y(sep[n-1]);
+  let base='';for(let i=0;i<=58;i++)base+=`<circle cx="${i*(W-8)/58}" cy="${H}" r="1.1" fill="#CFCAC5"/>`;
+  document.getElementById('spend').innerHTML=`
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#00359E" stop-opacity=".08"/><stop offset="1" stop-color="#00359E" stop-opacity="0"/></linearGradient></defs>
+    ${base}
+    <path d="${A}" fill="none" stroke="#CFCAC5" stroke-width="1.5" stroke-dasharray="2 4" stroke-linecap="round"/>
+    <text x="${ex}" y="${y(aug[n-1])-9}" text-anchor="end" font-size="11" fill="#A29B95" style="font-family:Geist,system-ui">Aug</text>
+    <path d="${S} L${ex},${H} L0,${H}Z" fill="url(#g)"/>
+    <path id="sl" d="${S}" fill="none" stroke="#1C1917" stroke-width="2" stroke-linecap="round"/>
+    <line x1="${ex}" x2="${ex}" y1="${ey}" y2="${H}" stroke="#1C1917" stroke-width="1" stroke-dasharray="2 3" opacity=".25"/>
+    <circle cx="${ex}" cy="${ey}" r="12" fill="#00359E" opacity=".12"><animate attributeName="r" values="6;13;6" dur="2.6s" repeatCount="indefinite"/><animate attributeName="opacity" values=".2;0;.2" dur="2.6s" repeatCount="indefinite"/></circle>
+    <circle cx="${ex}" cy="${ey}" r="4.5" fill="#00359E" stroke="#F5F4F2" stroke-width="2.5"/>`;
+  const sl=document.getElementById('sl'),L=sl.getTotalLength();sl.style.strokeDasharray=L;sl.style.strokeDashoffset=L;
+  sl.getBoundingClientRect();sl.style.transition='stroke-dashoffset 1.5s cubic-bezier(.22,1,.36,1) .2s';sl.style.strokeDashoffset=0;
+})();
+
+/* tasks: segmented half-gauge — to do / in progress / done */
+(function(){
+  const seg=[[2,'#D5DEF6'],[1,'#4A6FD6'],[2,'#00359E']],tot=5,cx=80,cy=80,r=66,gap=15;
+  const pt=a=>[cx+r*Math.cos(a),cy-r*Math.sin(a)];let t=0,s='';
+  seg.forEach(([v,c],i)=>{const a0=Math.PI-(t/tot)*Math.PI-(i?gap/2:0)*Math.PI/180;t+=v;
+    const a1=Math.PI-(t/tot)*Math.PI+(i<seg.length-1?gap/2:0)*Math.PI/180;const [x0,y0]=pt(a0),[x1,y1]=pt(a1);
+    s+=`<path d="M${x0},${y0} A${r},${r} 0 0 1 ${x1},${y1}" fill="none" stroke="${c}" stroke-width="13" stroke-linecap="round" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100" style="animation:draw .9s ${300+i*180}ms cubic-bezier(.22,1,.36,1) forwards"/>`});
+  document.getElementById('gauge').innerHTML=s;
+})();
+
+/* checklists — scales to any number of lists / items.
+   Rule: every list gets the same 10-dot track (each dot = 10%), so an 80-item list and a
+   6-item list read on the same scale; the literal count sits beside it. Overview shows the
+   3 most recently active OPEN lists; everything else lives in the sheet. */
+const SCEN={
+  typical:[['Launch prep',12,9],['Groceries',8,4],['Offsite packing',6,5]],
+  heavy:[['Venue audit',80,44],['Launch prep',12,9],['Groceries',8,4],['Offsite packing',6,5],['Q4 hiring loop',24,6],['Brand refresh',31,30],
+    ['Apartment move',45,12],['Onboarding — Sam',15,15],['Wedding guests',120,87],['Studio inventory',60,21],['Book club picks',10,3],['Tax docs',14,14],
+    ['Kitchen reno',38,9],['Newsletter #42',9,7],['Camping gear',22,22],['Pitch deck edits',17,11],['Birthday plan',11,2],['Garden',16,5],['Car service',7,6],['Reading list',40,13]],
+  single:[['Venue audit',80,44]],
+  empty:[]
+};
+const fill=(d,t)=>d>=t?10:Math.min(9,Math.max(d>0?1:0,Math.floor(d/t*10)));
+const track=(d,t,k0)=>{const f=fill(d,t);return `<span class="trk">${Array.from({length:10},(_,i)=>`<i class="${i<f?'on':''}${d>=t?' done':''}" style="animation-delay:${k0+i*18}ms"></i>`).join('')}</span>`};
+const row=([n,t,d],i,_,q)=>`<div class="crow"><span class="cn">${n}</span>${track(d,t,q?80+i*12:300+i*60)}<span class="cc">${d}<em>/${t}</em></span></div>`;
+const fmt=n=>n.toLocaleString();
+let CUR=SCEN.typical;
+function renderCk(L){
+  CUR=L;const el=document.getElementById('ck');
+  const tot=L.reduce((a,[,t])=>a+t,0),done=L.reduce((a,[,,d])=>a+d,0),open=L.filter(([,t,d])=>d<t);
+  const head=`<div class="ph"><h2>Checklists</h2><span class="label">${L.length?`${L.length} list${L.length>1?'s':''}`:''}</span></div>`;
+  if(!L.length){el.innerHTML=head+`<p class="empty">Checklists from your chats will show up here.</p>`;return}
+  const pct=Math.round(done/tot*100);
+  const summary=`<div class="needTop"><div class="num">${pct}%</div><span class="label">${fmt(done)} of ${fmt(tot)} ticked</span></div>`;
+  const body=open.length?`<div class="crows">${open.slice(0,3).map(row).join('')}</div>`:`<p class="empty">Every list is done.</p>`;
+  const extra=L.length-Math.min(3,open.length);
+  const more=extra>0?`<button class="seeall" onclick="openSheet()">See all ${L.length} lists<span>${L.length-open.length} done · ${open.length} open</span></button>`:'';
+  el.innerHTML=head+summary+body+more;
+}
+function openSheet(){
+  const open=CUR.filter(([,t,d])=>d<t),done=CUR.filter(([,t,d])=>d>=t);
+  document.getElementById('shBody').innerHTML=`<h3>All checklists</h3>
+    <p class="shs">In progress · ${open.length}</p>${open.map((r,i)=>row(r,i,0,1)).join('')}
+    ${done.length?`<p class="shs">Done · ${done.length}</p>${done.map((r,i)=>row(r,i,0,1)).join('')}`:''}`;
+  document.getElementById('sheet').classList.add('on');document.getElementById('scrim').classList.add('on');
+}
+function closeSheet(){document.getElementById('sheet').classList.remove('on');document.getElementById('scrim').classList.remove('on')}
+function scen(k,btn){renderCk(SCEN[k]);document.querySelectorAll('.sc button').forEach(b=>b.classList.toggle('on',b===btn))}
+renderCk(SCEN.typical);
+
+/* week strip *//* week strip */
+(function(){const d=[['Mon',28,0],['Tue',29,1],['Wed',30,1],['Thu',1,1],['Fri',2,2],['Sat',3,0],['Sun',4,0]];
+  document.getElementById('week').innerHTML=d.map(([w,n,p],i)=>`<div class="d ${i===2?'today':''}">${w}<b>${n}</b><span class="p">${'<i></i>'.repeat(p)}</span></div>`).join('')})();
+
+/* messages: one bar per day, count on top, dashed average */
+(function(){
+  const v=[['Thu',5],['Fri',9],['Sat',2],['Sun',3],['Mon',8],['Tue',11],['Today',6]],max=11,h=118;
+  const avg=v.reduce((a,[,n])=>a+n,0)/v.length;
+  document.getElementById('bars').innerHTML=v.map(([d,n],i)=>`<div class="bar ${i===6?'now':''}"><em>${n}</em><s style="height:${Math.max(8,n/max*h)}px;animation-delay:${350+i*50}ms"></s></div>`).join('')
+    +`<div class="avg" style="bottom:${avg/max*h}px"></div>`;
+  document.getElementById('days').innerHTML=v.map(([d],i)=>i===6?`<b>${d}</b>`:`<span>${d}</span>`).join('');
+})();
+</script>
+</body>
+</html>

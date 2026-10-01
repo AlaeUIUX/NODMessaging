@@ -213,6 +213,17 @@ export interface User {
   name: string;
   fullName: string;
   tone: AvatarTone;
+  /** Explore's ranking/copy signals — both optional, never required for a user to function. */
+  language?: string;
+  city?: string;
+}
+
+/** Present only on a group chat that's a discoverable, joinable "Space"; absent means an ordinary private group. */
+export interface SpaceMeta {
+  category: string;
+  city?: string;
+  open: boolean;
+  createdAt: number;
 }
 
 export interface Chat {
@@ -222,6 +233,7 @@ export interface Chat {
   memberIds: string[];
   /** Groups only; DMs take their colour from the other member. */
   tone?: AvatarTone;
+  space?: SpaceMeta;
 }
 
 export interface ChatState {
