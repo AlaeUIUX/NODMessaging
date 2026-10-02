@@ -6,15 +6,17 @@ import { stripFormatting } from "@/lib/chat/markdown";
 import { openItems, type OpenState } from "@/lib/chat/open";
 import { sortStops } from "@/lib/chat/ops";
 import { useChat, userById } from "@/lib/chat/store";
-import type { Attachment, Card, Chat, Message } from "@/lib/chat/types";
+import type { Attachment, Card, Chat, Message, SpaceMeta } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import {
-  IconBack, IconBell, IconBellOff, IconBoard, IconCalendar, IconChecklist, IconClose, IconCompose, IconFile, IconGame,
-  IconImage, IconLink, IconLocation, IconMoneyReceive, IconOpen, IconPoll, IconReceipt, IconRoute, IconSearch, IconSparkles,
+  IconBack, IconBell, IconBellOff, IconBoard, IconCalendar, IconChecklist, IconChevron, IconClose, IconCompose, IconFile,
+  IconGame, IconImage, IconLink, IconLocation, IconMoneyReceive, IconOpen, IconPoll, IconReceipt, IconRoute, IconSearch,
+  IconSparkles,
 } from "./Icons";
 import { FileRow, Photo } from "./Media";
+import { ExploreCategoryPicker } from "./Mind";
 import StatusBar from "./StatusBar";
-import { reducedMotion, relative, useChatUi, useDialog, useNow } from "./ui";
+import { reducedMotion, relative, Sheet, useChatUi, useDialog, useNow } from "./ui";
 import styles from "./chat.module.css";
 import s from "./contact.module.css";
 
@@ -598,11 +600,82 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
               {panels[tab]}
             </div>
             </section>
+            {isGroup && <SpaceExploreRow chat={chat} />}
             {isGroup && <SpaceMembers chat={chat} />}
           </>
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Whether this Space shows up in Explore, and a tap-through to publish or
+ * un-publish it. Any member can do this — there's no owner/role concept yet.
+ * Reads the chat fresh from the store (like `useLiveBoard` in Project.tsx),
+ * since `chat` here is otherwise the snapshot `ChatApp` captured when it was
+ * opened, which never updates on its own.
+ */
+function SpaceExploreRow({ chat }: { chat: Chat }) {
+  const { state } = useChat();
+  const ui = useChatUi();
+  const live = state.data.chats.find((c) => c.id === chat.id) ?? chat;
+  const published = !!live.space?.open;
+  return (
+    <div className={styles.listGroup}>
+      <button
+        className={styles.actionRow}
+        onClick={() => ui.openSheet(<PublishSpaceSheet chat={live} onClose={ui.closeSheet} />)}
+      >
+        <span className={styles.actionIcon}><IconSparkles size={20} /></span>
+        <span className={styles.contactText}>
+          <b>Explore</b>
+          <small>{published ? `Discoverable · ${live.space!.category}` : "Not discoverable"}</small>
+        </span>
+        <IconChevron size={16} />
+      </button>
+    </div>
+  );
+}
+
+/** Choosing a category (and optionally a city) is the whole point of this sheet — publishing never changes anything about the chat itself. */
+function PublishSpaceSheet({ chat, onClose }: { chat: Chat; onClose: () => void }) {
+  const { setSpace } = useChat();
+  const [category, setCategory] = useState<string | null>(chat.space?.category ?? null);
+  const [city, setCity] = useState(chat.space?.city ?? "");
+  const published = !!chat.space?.open;
+
+  const publish = () => {
+    if (!category) return;
+    const space: SpaceMeta = { category, city: city.trim() || undefined, open: true, createdAt: chat.space?.createdAt ?? Date.now() };
+    setSpace(chat.id, space);
+    onClose();
+  };
+
+  return (
+    <Sheet title="Publish to Explore" onClose={onClose} action={{ label: published ? "Save" : "Publish", disabled: !category, onClick: publish }}>
+      <p className={styles.sheetNote}>
+        Anyone can find &ldquo;{chat.name}&rdquo; on Explore and join, with the category (and city, if you add one) you pick below.
+      </p>
+
+      <p className={styles.sheetLabel}>Category</p>
+      <ExploreCategoryPicker value={category} onChange={setCategory} />
+
+      <p className={styles.sheetLabel}>City (optional)</p>
+      <input
+        className={styles.plainInput}
+        value={city}
+        onChange={(e) => setCity(e.target.value)}
+        placeholder="e.g. Vienna"
+        aria-label="City"
+      />
+
+      {published && (
+        <button className={styles.secondaryWide} onClick={() => { setSpace(chat.id, null); onClose(); }}>
+          Remove from Explore
+        </button>
+      )}
+    </Sheet>
   );
 }
 

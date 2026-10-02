@@ -1467,7 +1467,7 @@ const PUBLISH_IMAGES = [
 type PublishTarget = { kind: "block"; id: string } | { kind: "collection"; id: string };
 
 /** The category chip picker on the publish sheet: a shared list across everyone, extendable on the spot. */
-function ExploreCategoryPicker({ value, onChange }: { value: string | null; onChange: (category: string) => void }) {
+export function ExploreCategoryPicker({ value, onChange }: { value: string | null; onChange: (category: string) => void }) {
   const [categories, setCategories] = useState(exploreCategories);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");

@@ -20,7 +20,7 @@ import { localStorageAdapter, readKey } from "./storage";
 import {
   createBroadcastTransport, NULL_TRANSPORT, PRESENCE_INTERVAL_MS, PRESENCE_TIMEOUT_MS, samePeers, type Peer,
 } from "./transport";
-import type { Attachment, Card, CardOp, Chat, ChatState, ChatTransport, DeliveryStatus, Message, TransportEvent } from "./types";
+import type { Attachment, Card, CardOp, Chat, ChatState, ChatTransport, DeliveryStatus, Message, SpaceMeta, TransportEvent } from "./types";
 
 /**
  * One id per browsing context, fixed at module load — two tabs get different
@@ -245,6 +245,8 @@ interface ChatContextValue {
   createGroup: (name: string, memberIds: string[]) => Chat;
   /** Adds the current user to an open Space's members; already-a-member is a no-op. Returns null if the chat doesn't exist. */
   joinSpace: (chatId: string) => Chat | null;
+  /** Publishes (or un-publishes, with `null`) a group chat as a discoverable Space. Any member can do this — there's no owner/role concept yet. */
+  setSpace: (chatId: string, space: SpaceMeta | null) => void;
   /** Replaces a card's state (votes, ticks, RSVPs…) and syncs it. */
   updateCard: (message: Message, update: (card: Card) => Card) => void;
   /** Applies one change to a shared card (plans, bills, projects) here and in every tab. */
@@ -752,6 +754,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [chatOf, publish],
   );
 
+  const setSpace = useCallback<ChatContextValue["setSpace"]>(
+    (chatId, space) => {
+      const existing = chatOf(chatId);
+      if (!existing) return;
+      const chat: Chat = { ...existing, space: space ?? undefined };
+      dispatch({ type: "add-chat", chat });
+      publish({ type: "chat", chat });
+    },
+    [chatOf, publish],
+  );
+
   const sendCard = useCallback<ChatContextValue["sendCard"]>(
     (chatId, card, summary) => {
       const id = newId();
@@ -884,10 +897,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ChatContextValue>(
     () => ({
-      state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, joinSpace, retry,
+      state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, joinSpace, setSpace, retry,
       toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead,
     }),
-    [state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, joinSpace, retry,
+    [state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, joinSpace, setSpace, retry,
       toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead],
   );
 

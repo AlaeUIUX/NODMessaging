@@ -178,6 +178,17 @@ export function buildSeedState(now = Date.now()): ChatState {
         closedAt: now - 2 * HOUR,
       },
     }),
+    msg({
+      id: "g-17", chatId: "general", authorId: "me", kind: "card", body: "Payment request: Studio Loft deposit", createdAt: now - 36 * HOUR,
+      card: {
+        type: "payment",
+        mode: "request",
+        amount: 45,
+        note: "Studio Loft deposit",
+        from: ["charles", "reema"],
+        paidBy: [],
+      },
+    }),
   );
 
   // A shared moodboard: several photos in one message, shown as a collection.
@@ -223,11 +234,43 @@ export function buildSeedState(now = Date.now()): ChatState {
   const jamshad: Message[] = [
     msg({ id: "j-1", chatId: "jamshad", authorId: "me", body: "Did the QR idea make it into the deck?", createdAt: now - 52 * HOUR, status: "read" }),
     msg({ id: "j-2", chatId: "jamshad", authorId: "jamshad", body: "Slide 9. Clients loved it.", createdAt: now - 51 * HOUR }),
+    msg({
+      id: "j-3", chatId: "jamshad", authorId: "jamshad", kind: "card", body: "Checklist: Standup agenda", createdAt: now - 20 * HOUR,
+      card: {
+        type: "checklist",
+        title: "Standup agenda",
+        items: [
+          { id: "ja1", label: "Yesterday's blockers", doneBy: "jamshad" },
+          { id: "ja2", label: "Today's focus", doneBy: "me" },
+          { id: "ja3", label: "Anything for design review", doneBy: "jamshad" },
+        ],
+        everyoneCanEdit: true,
+        editors: [],
+        requests: [],
+      },
+    }),
   ];
 
   const salman: Message[] = [
     msg({ id: "s-1", chatId: "salman", authorId: "salman", body: "Hello Alae, hope you're well. Can you join us for a few mins?", createdAt: now - 26 * HOUR }),
     msg({ id: "s-2", chatId: "salman", authorId: "me", body: "On my way 👋", createdAt: now - 26 * HOUR + 90_000, status: "read" }),
+    msg({
+      id: "s-3", chatId: "salman", authorId: "me", kind: "card", body: "Checklist: Move prep", createdAt: now - 10 * HOUR,
+      card: {
+        type: "checklist",
+        title: "Move prep",
+        items: [
+          { id: "sa1", label: "Book the van", doneBy: "me" },
+          { id: "sa2", label: "Pack the kitchen", doneBy: null },
+          { id: "sa3", label: "Label boxes by room", doneBy: null },
+          { id: "sa4", label: "Forward the mail", doneBy: null },
+          { id: "sa5", label: "Confirm the new lease", doneBy: null },
+        ],
+        everyoneCanEdit: true,
+        editors: [],
+        requests: [],
+      },
+    }),
   ];
 
   // Feature demos (plans, bills, boards) live in their own seed files and slot into their chats by time.
@@ -248,4 +291,4 @@ export function buildSeedState(now = Date.now()): ChatState {
 
 // v7/v8 added the plan, bill and board demos; existing threads keep theirs and gain these
 // (v8 again, for anyone who loaded v7 before the demos were filled in).
-export const CURRENT_VERSION = 14;
+export const CURRENT_VERSION = 16;

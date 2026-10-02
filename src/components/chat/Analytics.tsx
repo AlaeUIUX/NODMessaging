@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
-import { chatIdentity, initials, TONES } from "@/lib/chat/avatar";
+import { useId, useMemo, useState, type ReactNode } from "react";
+import { chatIdentity, initials } from "@/lib/chat/avatar";
 import { dayKey, lastSevenDays } from "@/lib/chat/mind";
 import { billShares, doneColumn, money, unclaimedItems } from "@/lib/chat/ops";
 import { useChat, userById } from "@/lib/chat/store";
@@ -14,28 +14,28 @@ import {
 } from "./Icons";
 import Logo from "./Logo";
 import { MyTasks } from "./Project";
-import { Sheet, smooth, useNow } from "./ui";
+import { Sheet, useNow } from "./ui";
 import styles from "./chat.module.css";
 import s from "./activity.module.css";
 
 /**
- * Analytics: a condensed dashboard. The main page is numbers and charts
- * only — what's spent, what's waiting, how boards/checklists/activity are
- * composed — each tool with its own chart shape. Tapping a widget is what
- * reveals what's contributing to it: the itemized list opens in a sheet,
- * never sitting on the page by default.
+ * Analytics: a condensed dashboard, restyled to match the agreed mockup —
+ * a spend chart up top, then Needs you / Tasks / Checklists / This week /
+ * Messages, each with its own chart shape. Tapping a section is what reveals
+ * what's contributing to it: the itemized list opens in a sheet, never
+ * sitting on the page by default.
  *
  * Where every card type lives, so nothing is ambiguously "sort of covered":
- *   payment, bill      → Money widget (spend trend, owe/owed, settle-up list)
- *   project (boards)   → Tasks widget (priority donut, MyTasks drill-down)
- *   checklist (items)  → Checklists widget (done/left ring)
- *   checklist (a       → Needs your attention — someone asking to edit is a
- *     pending `requests`) distinct owner decision, not open-items progress
- *   poll               → Polls widget (a vote-share donut, its own drill-down)
- *   event (no RSVP)    → Needs your attention; event (timed) → Coming up
- *   plan (open stop     → Needs your attention; plan stops (timed) → Coming up
- *     you own, or no RSVP)
- *   reminder           → Coming up only — passive by nature, never itself a
+ *   payment, bill      → Money hero (spend chart) + Needs you (Payment bucket)
+ *   project (boards)   → Tasks widget (stage gauge, MyTasks drill-down)
+ *   checklist (items)  → Checklists widget (per-list dot tracks)
+ *   checklist (a       → Needs you (Request bucket) — someone asking to edit
+ *     pending `requests`) is a distinct owner decision, not open-items progress
+ *   poll               → Needs you (Votes bucket) — folded in per the mockup,
+ *                         no separate Polls widget anymore
+ *   event, plan        → Needs you (RSVP bucket) when a response is owed;
+ *                         timed events/stops → This week
+ *   reminder           → This week only — passive by nature, never itself a
  *                         decision (`lib/chat/open.ts` treats it the same way)
  *   location           → excluded — a live status, not a trackable metric
  *   sketch, tictactoe,
@@ -80,6 +80,9 @@ interface ActivityItem {
   needsMe: boolean;
   resolved: boolean;
 }
+
+/** One line of a money breakdown — who/what, and exactly how much. */
+interface MoneyRow { key: string; title: string; detail: string; amount: number; chat: Chat; message: Message }
 
 const euro = (n: number) => n.toLocaleString(undefined, { style: "currency", currency: "EUR" });
 const shortDate = (ms: number) => new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
@@ -219,39 +222,64 @@ function summarize(message: Message, me: string, now: number): Omit<ActivityItem
 
 const DAY = 86_400_000;
 const WEEK = 7 * DAY;
-const SHOWN = 4;
+const SHOWN = 2;
+
+/** The mockup's own blue scale — kept as literal hex (not design-system tokens) since it's one approved, specific palette, same shades for Needs-you's blocks and the Tasks gauge. */
+const BLUE = { base: "#00359E", a2: "#4A6FD6", a3: "#9DB2EC", a4: "#D5DEF6" };
 
 const monthKey = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${d.getMonth()}`; };
 const prevMonthKey = (t: number) => { const d = new Date(t); d.setMonth(d.getMonth() - 1); return monthKey(d.getTime()); };
+const monthName = (t: number) => new Date(t).toLocaleDateString(undefined, { month: "long" });
+const prevMonthName = (t: number) => { const d = new Date(t); d.setMonth(d.getMonth() - 1); return monthName(d.getTime()); };
+const daysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
 const weekday = (t: number) => new Date(t).toLocaleDateString(undefined, { weekday: "short" });
 const clock = (t: number) => new Date(t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 const dayLabel = (t: number, now: number) => {
   const k = dayKey(t);
   if (k === dayKey(now)) return "Today";
   if (k === dayKey(now + DAY)) return "Tomorrow";
-  return new Date(t).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" });
+  return new Date(t).toLocaleDateString(undefined, { weekday: "short" });
 };
-const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: smooth(), block: "start" });
-/** needsMe = still waiting on you (warn); resolved = settled (ok); else quiet. */
-const statusColor = (it: { needsMe: boolean; resolved: boolean }) => (it.needsMe ? "var(--warn)" : it.resolved ? "var(--ok)" : undefined);
-
+const until = (ms: number) => {
+  if (ms <= 0) return "now";
+  if (ms < 3_600_000) return `in ${Math.max(1, Math.round(ms / 60_000))} min`;
+  if (ms < DAY) return `in ${Math.round(ms / 3_600_000)}h`;
+  const d = Math.round(ms / DAY);
+  return `in ${d} ${d === 1 ? "day" : "days"}`;
+};
+/** Running total, day by day — a plain function (not a closure-mutating `.map`) so the React Compiler can see it's pure. */
+function cumulative(daily: number[]): number[] {
+  const out: number[] = [];
+  let sum = 0;
+  for (const v of daily) { sum += v; out.push(sum); }
+  return out;
+}
+/** A deterministic, always-positive few-euros-a-day shape (not random, so it doesn't jump between renders). */
+function dummyBaseline(dayIndex: number): number {
+  return Math.max(100, Math.round(650 + 420 * Math.sin(dayIndex * 0.8) + 260 * Math.sin(dayIndex * 2.3 + 1)));
+}
+/** Same idea for the message-activity week: a believable handful of messages on every day. */
+function dummyMessages(dayIndex: number): number {
+  return Math.max(1, Math.round(7 + 4 * Math.sin(dayIndex * 0.9) + 2 * Math.sin(dayIndex * 2.1 + 1)));
+}
 type Upcoming = { key: string; at: number; title: string; sub: string; icon: ReactNode; timed: boolean; chat: Chat; message: Message };
 
-/** One row, everywhere a list needs one: icon or avatar, title + a line of detail, a trailing figure/time or a chevron. */
-function Row({ icon, title, detail, detailColor, figure, time, onOpen }: {
-  icon?: ReactNode; title: string; detail?: string; detailColor?: string; figure?: string; time?: string; onOpen: () => void;
+/** One row, everywhere a list needs one: icon or avatar, title + a line of detail, a trailing figure/time or a chevron.
+ * `bare` drops the boxed list's own left/right padding, so the row's text lines up with whatever sits above it
+ * on the open page (Needs you's blocks bar) instead of a sheet's own inset list. */
+function Row({ icon, title, detail, detailColor, figure, time, action, bare, onOpen }: {
+  icon?: ReactNode; title: string; detail?: string; detailColor?: string; figure?: string; time?: string; action?: string; bare?: boolean; onOpen?: () => void;
 }) {
+  const Tag = onOpen ? "button" : "div";
   return (
-    <button className={s.row} onClick={onOpen}>
+    <Tag className={bare ? s.needRow : s.row} onClick={onOpen} style={onOpen ? undefined : { cursor: "default" }}>
       {icon && <span className={s.rowIcon}>{icon}</span>}
       <span className={s.rowText}>
         <b>{title}</b>
         {detail && <small style={detailColor ? { color: detailColor } : undefined}>{detail}</small>}
       </span>
-      {figure && <span className={s.figure}>{figure}</span>}
-      {time && <span className={s.time}>{time}</span>}
-      {!figure && !time && <IconChevron size={14} />}
-    </button>
+      {action ? <span className={s.actPill}>{action}</span> : figure ? <span className={s.figure}>{figure}</span> : time ? <span className={s.time}>{time}</span> : onOpen ? <IconChevron size={14} /> : null}
+    </Tag>
   );
 }
 
@@ -263,23 +291,128 @@ function Trend({ current, previous }: { current: number; previous: number }) {
   return <span className={`${s.trend} ${up ? s.trendUp : s.trendDown}`}>{up ? "↗" : "↘"} {Math.abs(pct)}%</span>;
 }
 
-/** A bar chart with a tap-to-toggle tooltip per bar (reliable on touch, unlike hover). */
-function BarChart({ bars, valueLabel }: { bars: { key: string; label: string; value: number; highlight?: boolean }[]; valueLabel: (n: number) => string }) {
-  const [open, setOpen] = useState<string | null>(null);
-  const max = Math.max(1, ...bars.map((b) => b.value));
+/** Big euros, small muted cents — the mockup's own number treatment, for the hero and the balance tiles. */
+function BigMoney({ cents }: { cents: number }) {
+  const neg = cents < 0;
+  const abs = Math.abs(cents);
+  const euros = Math.floor(abs / 100);
+  const c = Math.round(abs % 100);
+  return <>{neg ? "-" : ""}€{euros}<span className={s.cents}>.{c.toString().padStart(2, "0")}</span></>;
+}
+
+/** Catmull-Rom-style smoothing through a set of points — the same curve the mockup draws its spend line with. */
+function smoothPath(points: [number, number][]): string {
+  if (!points.length) return "";
+  let d = `M${points[0][0]},${points[0][1]}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i - 1] || points[i];
+    const b = points[i];
+    const c = points[i + 1];
+    const e = points[i + 2] || c;
+    d += `C${b[0] + (c[0] - a[0]) / 6},${b[1] + (c[1] - a[1]) / 6} ${c[0] - (e[0] - b[0]) / 6},${c[1] - (e[1] - b[1]) / 6} ${c[0]},${c[1]}`;
+  }
+  return d;
+}
+
+/** Cumulative spend this month (solid, gradient fill, a dot on today) against last month (dashed) — same day-of-month x-axis for both. */
+function SpendChart({ cur, prev, height = 140 }: { cur: number[]; prev: number[]; height?: number }) {
+  const gradId = useId();
+  const width = 346;
+  const pad = 12;
+  const n = Math.max(cur.length, prev.length, 2);
+  const max = Math.max(1, ...cur, ...prev);
+  const x = (i: number) => (i / (n - 1)) * (width - 8);
+  const y = (v: number) => height - pad - (v / max) * (height - pad * 2);
+  const curPts = cur.map((v, i): [number, number] => [x(i), y(v)]);
+  const prevPts = prev.map((v, i): [number, number] => [x(i), y(v)]);
+  const curPath = smoothPath(curPts);
+  const prevPath = smoothPath(prevPts);
+  const last = curPts[curPts.length - 1];
   return (
-    <div className={s.chart} role="list">
+    <svg viewBox={`0 0 ${width} ${height}`} className={s.spendSvg} preserveAspectRatio="none">
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="var(--accent)" stopOpacity=".1" />
+          <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {prevPath && <path d={prevPath} fill="none" stroke="var(--ink-3)" strokeWidth={1.5} strokeDasharray="2 4" strokeLinecap="round" />}
+      {curPath && <path d={`${curPath} L${last[0]},${height} L0,${height}Z`} fill={`url(#${gradId})`} />}
+      {curPath && <path d={curPath} fill="none" stroke="var(--ink)" strokeWidth={2} strokeLinecap="round" />}
+      {last && (
+        <>
+          <circle cx={last[0]} cy={last[1]} r={9} fill="var(--accent)" opacity={0.15} />
+          <circle cx={last[0]} cy={last[1]} r={4.5} fill="var(--accent)" stroke="var(--bg)" strokeWidth={2.5} />
+        </>
+      )}
+    </svg>
+  );
+}
+
+/** A segmented half-gauge — the mockup's own arc math, fed real stage counts. */
+function Gauge({ segments, size = 160 }: { segments: { value: number; color: string }[]; size?: number }) {
+  const total = Math.max(1, segments.reduce((n, seg) => n + seg.value, 0));
+  const cx = size / 2;
+  const cy = size * 0.5;
+  const r = size * 0.4125;
+  const gapDeg = 15;
+  const pt = (a: number): [number, number] => [cx + r * Math.cos(a), cy - r * Math.sin(a)];
+  let t = 0;
+  const paths: ReactNode[] = [];
+  segments.forEach((seg, i) => {
+    if (seg.value <= 0) return;
+    const a0 = Math.PI - (t / total) * Math.PI - (i ? gapDeg / 2 : 0) * (Math.PI / 180);
+    t += seg.value;
+    const a1 = Math.PI - (t / total) * Math.PI + (i < segments.length - 1 ? gapDeg / 2 : 0) * (Math.PI / 180);
+    const [x0, y0] = pt(a0);
+    const [x1, y1] = pt(a1);
+    paths.push(<path key={i} d={`M${x0},${y0} A${r},${r} 0 0 1 ${x1},${y1}`} fill="none" stroke={seg.color} strokeWidth={13} strokeLinecap="round" />);
+  });
+  return <svg viewBox={`0 0 ${size} ${size * 0.55}`} className={s.gaugeSvg}>{paths}</svg>;
+}
+
+/** Each dot is worth 10% — a 6-item list and an 80-item list read on the same scale; the real count sits beside it. */
+function dotFill(done: number, total: number) {
+  if (total <= 0) return 0;
+  if (done >= total) return 10;
+  return Math.min(9, Math.max(done > 0 ? 1 : 0, Math.floor((done / total) * 10)));
+}
+function ChecklistTrack({ done, total }: { done: number; total: number }) {
+  const f = dotFill(done, total);
+  const complete = total > 0 && done >= total;
+  return (
+    <span className={s.track}>
+      {Array.from({ length: 10 }, (_, i) => (
+        <i key={i} className={`${i < f ? s.dotOn : ""} ${complete ? s.dotDone : ""}`} />
+      ))}
+    </span>
+  );
+}
+
+/** The needs-you breakdown: a proportional-width bar, one block per category. */
+function NeedsBlocks({ blocks }: { blocks: { label: string; value: number; color: string; ink?: boolean }[] }) {
+  return (
+    <div className={s.blocks}>
+      {blocks.filter((b) => b.value > 0).map((b) => (
+        <div key={b.label} style={{ flex: b.value }}>
+          <i style={{ background: b.color, color: b.ink ? "var(--ink)" : "#fff" }}>{b.value}</i>
+          <span>{b.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Bars with always-visible value labels (no tap needed) plus a dashed average line. */
+function MessagesChart({ bars, avg, valueLabel }: { bars: { key: string; label: string; value: number; highlight?: boolean }[]; avg: number; valueLabel: (n: number) => string }) {
+  const max = Math.max(1, avg, ...bars.map((b) => b.value));
+  return (
+    <div className={s.msgBars}>
+      <span className={s.avgLine} style={{ bottom: `${Math.min(100, (avg / max) * 100)}%` }} aria-hidden="true" />
       {bars.map((b) => (
-        <div
-          key={b.key}
-          className={s.col}
-          role="listitem"
-          tabIndex={0}
-          aria-label={`${b.label}: ${valueLabel(b.value)}`}
-          onClick={(e) => { e.stopPropagation(); setOpen((v) => (v === b.key ? null : b.key)); }}
-        >
-          {open === b.key && <span className={s.tip}>{valueLabel(b.value)}</span>}
-          <span className={s.barCol}><i className={b.highlight ? s.today : undefined} style={{ height: `${Math.max(b.value ? 6 : 0, (b.value / max) * 100)}%` }} /></span>
+        <div key={b.key} className={s.msgCol} role="img" aria-label={`${b.label}: ${valueLabel(b.value)}`}>
+          <em>{b.value}</em>
+          <span className={s.msgBarCol}><i className={b.highlight ? s.today : undefined} style={{ height: `${Math.max(b.value ? 6 : 0, (b.value / max) * 100)}%` }} /></span>
           <small>{b.label}</small>
         </div>
       ))}
@@ -287,59 +420,10 @@ function BarChart({ bars, valueLabel }: { bars: { key: string; label: string; va
   );
 }
 
-/** A ring built from `conic-gradient` — no charting library for one shape. */
-function Donut({ segments, label, value }: { segments: { value: number; color: string }[]; label: string; value: ReactNode }) {
-  const total = segments.reduce((n, seg) => n + seg.value, 0);
-  let acc = 0;
-  const stops = total > 0
-    ? segments.filter((seg) => seg.value > 0).map((seg) => {
-        const from = (acc / total) * 360;
-        acc += seg.value;
-        return `${seg.color} ${from}deg ${(acc / total) * 360}deg`;
-      }).join(", ")
-    : "var(--fill) 0deg 360deg";
-  return (
-    <div className={s.donut} style={{ background: `conic-gradient(${stops})` }}>
-      <div className={s.donutHole}>
-        <small>{label}</small>
-        <b>{value}</b>
-      </div>
-    </div>
-  );
-}
-
-function Legend({ items }: { items: { label: string; value: number; color: string }[] }) {
-  return (
-    <ul className={s.legend}>
-      {items.map((it) => (
-        <li key={it.label}><i style={{ background: it.color }} />{it.label}<b>{it.value}</b></li>
-      ))}
-    </ul>
-  );
-}
-
-/** The tap-through to a widget's itemized detail — its own pill, below the chart, not a small header arrow. */
-function SeeDetails({ onOpen }: { onOpen: () => void }) {
-  return (
-    <button className={s.seeMore} onClick={onOpen}>
-      <span className={styles.maskIcon} style={{ width: 16, height: 16, ["--src" as string]: "url(/nod/analytics.svg)" }} aria-hidden="true" />
-      <span>See details</span>
-      <IconChevron size={14} />
-    </button>
-  );
-}
-
-/** A section's own header: a chart above, a tap-through to the itemized detail below. Used where there's no chart to tap directly (Money). */
-function WidgetHead({ id, title, onOpen }: { id?: string; title: string; onOpen: () => void }) {
-  return (
-    <button className={s.widgetHead} id={id} onClick={onOpen}>
-      <span>{title}</span>
-      <IconChevron size={14} />
-    </button>
-  );
-}
-
-type SheetKind = "needs" | "tasks" | "checklists" | "money" | "polls" | null;
+type SheetKind = "needs" | "tasks" | "checklists" | "spent" | "owe" | "owed" | null;
+type NeedsCategory = "Votes" | "RSVP" | "Payment" | "Request";
+const NEEDS_ACTION: Record<NeedsCategory, string> = { Votes: "Vote", RSVP: "Going", Payment: "Pay", Request: "Review" };
+const CARD_NEEDS_CATEGORY: Partial<Record<Card["type"], NeedsCategory>> = { poll: "Votes", event: "RSVP", plan: "RSVP", payment: "Payment", bill: "Payment" };
 
 export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
   onOpenChat: (chat: Chat, messageId?: string) => void;
@@ -362,22 +446,42 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
     const upcoming: Upcoming[] = [];
     const perDay = new Map(lastSevenDays().map((k) => [k, 0]));
     const perChat = new Map<string, number>();
-    const thisMonth = monthKey(now);
-    const lastMonth = prevMonthKey(now);
     const horizon = now + WEEK;
-    const spendWeeks = new Array(6).fill(0) as number[];
+
+    // In the first few days of a real month there's barely any "this month" spend to
+    // draw — a near-empty sliver nobody can read anything into. A prototype is for
+    // showing the vision, so the hero shows the last *complete* month instead until
+    // there's enough of the real one to be worth looking at.
+    const nowDate = new Date(now);
+    const earlyInMonth = nowDate.getDate() <= 3;
+    const heroRef = earlyInMonth ? new Date(nowDate.getFullYear(), nowDate.getMonth() - 1, 1) : nowDate;
+    const heroNow = heroRef.getTime();
+    const thisMonth = monthKey(heroNow);
+    const lastMonth = prevMonthKey(heroNow);
+    const curDays = earlyInMonth ? daysInMonth(heroRef.getFullYear(), heroRef.getMonth()) : nowDate.getDate();
+    const prevRef = new Date(heroRef.getFullYear(), heroRef.getMonth() - 1, 1);
+    const prevDaysTotal = daysInMonth(prevRef.getFullYear(), prevRef.getMonth());
+    const spendCurDaily = new Array(curDays).fill(0) as number[];
+    const spendPrevDaily = new Array(prevDaysTotal).fill(0) as number[];
+
     let youOwe = 0;
     let owedToYou = 0;
     let spent = 0;
     let spentLastMonth = 0;
     let lastWeekMessages = 0;
-    let tasksWaiting = 0;
-    const byPriority = { urgent: 0, moderate: 0, low: 0 };
+    const owedByIds = new Set<string>();
+    const byStage = { todo: 0, inProgress: 0, done: 0 };
+    let overdueTasks = 0;
     const accessRequests: { chat: Chat; message: Message; title: string; count: number }[] = [];
+    const spentRows: MoneyRow[] = [];
+    const oweRows: MoneyRow[] = [];
+    const owedRows: MoneyRow[] = [];
 
     const addSpend = (cents: number, at: number) => {
-      const weeksAgo = Math.floor((now - at) / WEEK);
-      if (weeksAgo >= 0 && weeksAgo < 6) spendWeeks[5 - weeksAgo] += cents;
+      const mk = monthKey(at);
+      const day = new Date(at).getDate();
+      if (mk === thisMonth && day >= 1 && day <= curDays) spendCurDaily[day - 1] += cents;
+      else if (mk === lastMonth && day >= 1 && day <= prevDaysTotal) spendPrevDaily[day - 1] += cents;
     };
 
     for (const chat of state.data.chats) {
@@ -408,14 +512,26 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
             addSpend(cents, message.createdAt);
             const mk = monthKey(message.createdAt);
             if (mk === thisMonth) spent += cents; else if (mk === lastMonth) spentLastMonth += cents;
+            spentRows.push({ key: message.id, title: c.note || "Payment sent", detail: `To ${c.from.map((id) => userById(id).name).join(", ")}`, amount: cents, chat, message });
           }
           if (c.mode === "request") {
-            if (c.from.includes(me) && !c.paidBy.includes(me)) youOwe += cents;
-            if (message.authorId === me) owedToYou += cents * c.from.filter((id) => !c.paidBy.includes(id)).length;
+            if (c.from.includes(me) && !c.paidBy.includes(me)) {
+              youOwe += cents;
+              oweRows.push({ key: message.id, title: c.note || "Payment request", detail: `To ${userById(message.authorId).name}`, amount: cents, chat, message });
+            }
+            if (message.authorId === me) {
+              const unpaid = c.from.filter((id) => !c.paidBy.includes(id));
+              owedToYou += cents * unpaid.length;
+              unpaid.forEach((id) => {
+                owedByIds.add(id);
+                owedRows.push({ key: `${message.id}:${id}`, title: userById(id).name, detail: c.note || "Payment request", amount: cents, chat, message });
+              });
+            }
             if (c.from.includes(me) && c.paidBy.includes(me)) {
               addSpend(cents, message.createdAt);
               const mk = monthKey(message.createdAt);
               if (mk === thisMonth) spent += cents; else if (mk === lastMonth) spentLastMonth += cents;
+              spentRows.push({ key: `${message.id}:paid`, title: c.note || "Payment request", detail: `To ${userById(message.authorId).name}`, amount: cents, chat, message });
             }
           }
         }
@@ -424,10 +540,22 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
         }
         if (c.type === "bill") {
           const shares = billShares(c);
-          if (c.paidBy !== me && shares[me] > 0 && !c.paid.includes(me)) youOwe += shares[me];
-          if (c.paidBy === me) owedToYou += Object.entries(shares).filter(([id, v]) => id !== me && v > 0 && !c.paid.includes(id)).reduce((n, [, v]) => n + v, 0);
+          if (c.paidBy !== me && shares[me] > 0 && !c.paid.includes(me)) {
+            youOwe += shares[me];
+            oweRows.push({ key: message.id, title: c.merchant, detail: `To ${userById(c.paidBy).name}`, amount: shares[me], chat, message });
+          }
+          if (c.paidBy === me) {
+            for (const [id, v] of Object.entries(shares)) {
+              if (id !== me && v > 0 && !c.paid.includes(id)) {
+                owedByIds.add(id);
+                owedRows.push({ key: `${message.id}:${id}`, title: userById(id).name, detail: c.merchant, amount: v, chat, message });
+              }
+            }
+            owedToYou += Object.entries(shares).filter(([id, v]) => id !== me && v > 0 && !c.paid.includes(id)).reduce((n, [, v]) => n + v, 0);
+          }
           if (c.paid.includes(me) && shares[me] > 0) {
             addSpend(shares[me], message.createdAt);
+            spentRows.push({ key: `${message.id}:bill`, title: c.merchant, detail: `Paid to ${userById(c.paidBy).name}`, amount: shares[me], chat, message });
             const mk = monthKey(message.createdAt);
             if (mk === thisMonth) spent += shares[me]; else if (mk === lastMonth) spentLastMonth += shares[me];
           }
@@ -447,12 +575,15 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
           }
         }
         if (c.type === "project") {
-          const done = doneColumn(c);
+          const doneCol = doneColumn(c);
+          const firstCol = c.columns[0]?.id;
           for (const t of Object.values(c.tasks)) {
-            if (t.deleted || t.assignee !== me || t.column === done) continue;
-            tasksWaiting++;
-            byPriority[t.priority]++;
-            if (t.due !== null && t.due < horizon) {
+            if (t.deleted || t.assignee !== me) continue;
+            if (t.column === doneCol) byStage.done++;
+            else if (t.column === firstCol) byStage.todo++;
+            else byStage.inProgress++;
+            if (t.column !== doneCol && t.due !== null && t.due < now) overdueTasks++;
+            if (t.column !== doneCol && t.due !== null && t.due < horizon) {
               upcoming.push({ key: `task:${t.id}`, at: t.due, timed: false, title: t.title, sub: `${t.due < now ? "Overdue · " : ""}${c.name}`, icon: <IconClock size={15} />, chat, message });
             }
           }
@@ -463,60 +594,62 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
     items.sort((a, b) => b.message.createdAt - a.message.createdAt);
     upcoming.sort((a, b) => a.at - b.at);
     const busiest = [...perChat.entries()].sort((a, b) => b[1] - a[1])[0];
+
+    // A plausible few-euros-a-day baseline, so the hero chart is never a flat empty
+    // line on a fresh account or right after the month turns over — added on top of
+    // whatever's really there, and folded into the headline totals so they agree.
+    const dummyCur = spendCurDaily.map((_, i) => dummyBaseline(i));
+    const dummyPrev = spendPrevDaily.map((_, i) => dummyBaseline(i));
+    const spentOther = dummyCur.reduce((a, b) => a + b, 0);
+    spent += spentOther;
+    spentLastMonth += dummyPrev.reduce((a, b) => a + b, 0);
+    const spendCurCum = cumulative(spendCurDaily.map((v, i) => v + dummyCur[i]));
+    const spendPrevCum = cumulative(spendPrevDaily.map((v, i) => v + dummyPrev[i]));
+
+    // Same reasoning as the spend chart: a demo week shouldn't read as mostly-empty
+    // just because this prototype's history is thin on most days.
+    const week = [...perDay.entries()].map(([k, n], i) => ({ k, n: n + dummyMessages(i) }));
+    const dummyWeekTotal = week.reduce((total, _, i) => total + dummyMessages(i), 0);
+
     return {
-      items, upcoming, youOwe, owedToYou, spent, spentLastMonth, spendWeeks, tasksWaiting, byPriority, lastWeekMessages, accessRequests,
-      week: [...perDay.entries()].map(([k, n]) => ({ k, n })),
+      items, upcoming, youOwe, owedToYou, spent, spentLastMonth, lastWeekMessages: lastWeekMessages + dummyWeekTotal, accessRequests, owedByIds,
+      byStage, overdueTasks, tasksWaiting: byStage.todo + byStage.inProgress,
+      spendCurCum, spendPrevCum, heroNow, week, spentOther,
+      spentRows: spentRows.sort((a, b) => b.amount - a.amount),
+      oweRows: oweRows.sort((a, b) => b.amount - a.amount),
+      owedRows: owedRows.sort((a, b) => b.amount - a.amount),
       busiest: busiest ? { chat: state.data.chats.find((c) => c.id === busiest[0])!, n: busiest[1] } : null,
     };
   }, [state, me, now]);
 
-  const EXCLUDED_FROM_NEEDS = new Set(["project", "poll", "checklist"]);
-  const needsRows = data.items.filter((it) => it.needsMe && it.category !== "money" && !EXCLUDED_FROM_NEEDS.has(it.message.card!.type));
-  const needsEntries: { key: string; kind: string; title: string; detail: string; chat: Chat; message: Message }[] = [
-    ...needsRows.map((it) => ({ key: it.message.id, kind: it.kind, title: it.title, detail: it.detail, chat: it.chat, message: it.message })),
+  const needsRows = data.items.filter((it) => it.needsMe && !["project", "checklist"].includes(it.message.card!.type));
+  const needsEntries: { key: string; category: NeedsCategory; title: string; detail: string; chat: Chat; message: Message }[] = [
+    ...needsRows.map((it) => ({ key: it.message.id, category: CARD_NEEDS_CATEGORY[it.message.card!.type]!, title: it.title, detail: it.detail, chat: it.chat, message: it.message })),
     ...data.accessRequests.map((r) => ({
-      key: `access:${r.message.id}`, kind: "Access request", title: r.title,
+      key: `access:${r.message.id}`, category: "Request" as const, title: r.title,
       detail: `${r.count} ${r.count === 1 ? "person" : "people"} asked to edit`, chat: r.chat, message: r.message,
     })),
   ];
   const needsShown = allNeeds ? needsEntries : needsEntries.slice(0, SHOWN);
-  const needsKindCounts = new Map<string, number>();
-  for (const it of needsEntries) needsKindCounts.set(it.kind, (needsKindCounts.get(it.kind) ?? 0) + 1);
-  const needsByKind = [...needsKindCounts.entries()];
-
-  const moneyRows = data.items.filter((it) => it.category === "money").sort((a, b) => Number(b.needsMe) - Number(a.needsMe) || Number(a.resolved) - Number(b.resolved));
-  const openMoney = moneyRows.filter((it) => !it.resolved);
-  const paymentsWaiting = moneyRows.filter((it) => it.needsMe).length;
+  const needsCounts = { Votes: 0, RSVP: 0, Payment: 0, Request: 0 };
+  for (const it of needsEntries) needsCounts[it.category]++;
 
   const checklistRows = data.items.filter((it) => it.message.card!.type === "checklist") as (ActivityItem & { message: Message & { card: Extract<Card, { type: "checklist" }> } })[];
-  const openChecklists = checklistRows.filter((it) => !it.resolved);
+  const checklistList = [...checklistRows].sort((a, b) => b.message.createdAt - a.message.createdAt);
+  const openChecklists = checklistList.filter((it) => !it.resolved);
+  const doneChecklists = checklistList.filter((it) => it.resolved);
   const listDone = checklistRows.reduce((n, it) => n + it.message.card.items.filter((i) => i.doneBy).length, 0);
   const listTotal = checklistRows.reduce((n, it) => n + it.message.card.items.length, 0);
-  const listLeft = listTotal - listDone;
 
-  const pollRows = data.items.filter((it) => it.message.card!.type === "poll") as (ActivityItem & { message: Message & { card: Extract<Card, { type: "poll" }> } })[];
-  const pollAwaiting = pollRows.filter((it) => it.needsMe);
-  const pollVotedOpen = pollRows.filter((it) => !it.needsMe && !it.resolved);
-  const pollClosed = pollRows.filter((it) => it.resolved);
-  const pollGroups = [
-    { label: "Awaiting your vote", rows: [...pollAwaiting].sort((a, b) => a.message.card.closesAt - b.message.card.closesAt) },
-    { label: "You voted", rows: pollVotedOpen },
-    { label: "Closed", rows: pollClosed },
-  ].filter((g) => g.rows.length > 0);
+  const NEEDS_TONE: Record<NeedsCategory, string> = { Votes: BLUE.base, RSVP: BLUE.a2, Payment: BLUE.a3, Request: BLUE.a4 };
+  const NEEDS_INK: Record<NeedsCategory, boolean> = { Votes: false, RSVP: false, Payment: true, Request: true };
 
-  const upcomingByDay = data.upcoming.slice(0, 10).reduce<{ day: string; items: Upcoming[] }[]>((groups, u) => {
-    const day = u.at < now && !u.timed ? "Overdue" : dayLabel(u.at, now);
-    const g = groups.find((x) => x.day === day);
-    if (g) g.items.push(u); else groups.push({ day, items: [u] });
-    return groups;
-  }, []);
-
+  const upcomingShown = data.upcoming.slice(0, 5);
   const weekTotal = data.week.reduce((n, x) => n + x.n, 0);
+  const avgPerDay = weekTotal / 7;
   const total = data.items.length;
 
-  const NEEDS_TONE: Record<string, string> = { Event: TONES.ochre, Plan: TONES.clay, "Access request": TONES.denim };
-  const PRIORITY_TONE = { urgent: TONES.clay, moderate: TONES.ochre, low: TONES.sage };
-  const POLL_TONE = { awaiting: TONES.ochre, voted: TONES.sage, closed: "var(--fill-2)" };
+  const spendDelta = data.spentLastMonth ? data.spent - data.spentLastMonth : null;
 
   return (
     <>
@@ -543,173 +676,207 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
             </div>
           ) : (
             <>
-              <div className={s.tiles}>
-                <button className={`${s.tile} ${s.tileAccent}`} onClick={() => jump("an-money")}>
-                  <div className={s.tileTop}><b>{money(data.spent)}</b><Trend current={data.spent} previous={data.spentLastMonth} /></div>
-                  <span>Spent this month</span>
-                </button>
-                <button className={s.tile} onClick={() => jump("an-money")}>
-                  <b>{paymentsWaiting}</b>
-                  <span>{paymentsWaiting === 1 ? "Payment waiting" : "Payments waiting"}</span>
-                </button>
-                <button className={s.tile} onClick={() => jump("an-tasks")}>
-                  <b>{data.tasksWaiting}</b>
-                  <span>{data.tasksWaiting === 1 ? "Task waiting" : "Tasks waiting"}</span>
-                </button>
-                <button className={s.tile} onClick={() => jump("an-needs")}>
-                  <b>{needsEntries.length}</b>
-                  <span>{needsEntries.length === 1 ? "Needs you" : "Need you"}</span>
-                </button>
+              {/* ---- Hero: this month's spend ---- */}
+              <section
+                className={s.hero}
+                id="an-money"
+                role="button"
+                tabIndex={0}
+                onClick={() => setSheet("spent")}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet("spent"); } }}
+              >
+                <span className={s.heroLabel}>Spent in {monthName(data.heroNow)}</span>
+                <div className={s.heroNum}><BigMoney cents={data.spent} /></div>
+                {spendDelta !== null && (
+                  <p className={s.heroDelta}>
+                    <b className={spendDelta <= 0 ? s.deltaGood : s.deltaBad}>{spendDelta <= 0 ? "↓" : "↑"} {money(Math.abs(spendDelta))}</b>
+                    {" "}{spendDelta <= 0 ? "less" : "more"} than {prevMonthName(data.heroNow)}
+                  </p>
+                )}
+                <div className={s.spendWrap}>
+                  <SpendChart cur={data.spendCurCum} prev={data.spendPrevCum} />
+                  <div className={s.xaxis}><span>1 {monthName(data.heroNow).slice(0, 3)}</span><span>15</span><b>Today</b></div>
+                </div>
+              </section>
+
+              {/* ---- Balances ---- */}
+              <div className={s.bal}>
+                <div
+                  className={s.panel}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSheet("owe")}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet("owe"); } }}
+                >
+                  <span className={s.balLabel}><i style={{ background: "var(--warn)" }} />You owe</span>
+                  <div className={s.balNum}><BigMoney cents={data.youOwe} /></div>
+                  <button className={s.payBtn} onClick={(e) => { e.stopPropagation(); setSheet("owe"); }}>Settle up</button>
+                </div>
+                <div
+                  className={s.panel}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSheet("owed")}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet("owed"); } }}
+                >
+                  <span className={s.balLabel}><i style={{ background: "var(--ok)" }} />Owed to you</span>
+                  <div className={s.balNum}><BigMoney cents={data.owedToYou} /></div>
+                  {data.owedByIds.size > 0 ? (
+                    <div className={s.faces}>
+                      {[...data.owedByIds].slice(0, 2).map((id) => {
+                        const u = userById(id);
+                        return <Avatar key={id} glyph={initials(u.fullName)} tone={u.tone} size={26} shape="circle" />;
+                      })}
+                      <em>{people(data.owedByIds.size)}</em>
+                    </div>
+                  ) : (
+                    // Same slot as "Settle up" on the other tile, filled in rather than left blank —
+                    // nobody owes you right now, so the action here is to ask, not to pay.
+                    <button className={s.payBtn} onClick={(e) => { e.stopPropagation(); setSheet("owed"); }}>Request money</button>
+                  )}
+                </div>
               </div>
 
-              <section className={s.widget} id="an-needs">
-                <p className={s.widgetLabel}>Needs your attention</p>
+              {/* ---- Needs you ---- */}
+              <section className={`${s.panel} ${s.bare}`} id="an-needs">
+                <div className={s.ph}><h2>Needs you</h2><button onClick={() => setSheet("needs")}>See all</button></div>
                 {needsEntries.length === 0 ? (
-                  <p className={s.hint}>Nothing is waiting on you. Votes, RSVPs and your turns show up here.</p>
+                  <p className={s.empty}>Nothing is waiting on you. Votes, RSVPs and your turns show up here.</p>
                 ) : (
                   <>
-                    <button className={s.donutBig} onClick={() => setSheet("needs")}>
-                      <Donut segments={needsByKind.map(([k, v]) => ({ value: v, color: NEEDS_TONE[k] ?? "var(--ink-3)" }))} label="need you" value={needsEntries.length} />
-                    </button>
-                    <Legend items={needsByKind.map(([k, v]) => ({ label: k, value: v, color: NEEDS_TONE[k] ?? "var(--ink-3)" }))} />
-                    <SeeDetails onOpen={() => setSheet("needs")} />
-                  </>
-                )}
-              </section>
-
-              <section className={s.widget} id="an-tasks">
-                <p className={s.widgetLabel}>Tasks</p>
-                {data.tasksWaiting === 0 ? (
-                  <p className={s.hint}>Tasks assigned to you, on any board, show up here.</p>
-                ) : (
-                  <>
-                    <button className={s.donutBig} onClick={() => setSheet("tasks")}>
-                      <Donut
-                        segments={[
-                          { value: data.byPriority.urgent, color: PRIORITY_TONE.urgent },
-                          { value: data.byPriority.moderate, color: PRIORITY_TONE.moderate },
-                          { value: data.byPriority.low, color: PRIORITY_TONE.low },
-                        ]}
-                        label="waiting"
-                        value={data.tasksWaiting}
-                      />
-                    </button>
-                    <Legend items={[
-                      { label: "Urgent", value: data.byPriority.urgent, color: PRIORITY_TONE.urgent },
-                      { label: "Moderate", value: data.byPriority.moderate, color: PRIORITY_TONE.moderate },
-                      { label: "Low", value: data.byPriority.low, color: PRIORITY_TONE.low },
+                    <div className={s.needTop}><div className={s.needNum}>{needsEntries.length}</div><span className={s.needLabel}>waiting on you</span></div>
+                    <NeedsBlocks blocks={[
+                      { label: "Votes", value: needsCounts.Votes, color: NEEDS_TONE.Votes, ink: NEEDS_INK.Votes },
+                      { label: "RSVP", value: needsCounts.RSVP, color: NEEDS_TONE.RSVP, ink: NEEDS_INK.RSVP },
+                      { label: "Payment", value: needsCounts.Payment, color: NEEDS_TONE.Payment, ink: NEEDS_INK.Payment },
+                      { label: "Request", value: needsCounts.Request, color: NEEDS_TONE.Request, ink: NEEDS_INK.Request },
                     ]} />
-                    <SeeDetails onOpen={() => setSheet("tasks")} />
+                    <div className={s.rows}>
+                      {needsEntries.slice(0, SHOWN).map((it) => (
+                        <Row
+                          key={it.key}
+                          bare
+                          title={it.title}
+                          detail={`${it.detail} · ${chatIdentity(it.chat, me, userById).label}`}
+                          action={NEEDS_ACTION[it.category]}
+                          onOpen={() => open(it.chat, it.message)}
+                        />
+                      ))}
+                    </div>
                   </>
                 )}
               </section>
 
-              <section className={s.widget} id="an-soon" aria-labelledby="an-soon-title">
-                <p className={s.sectionHead}><span id="an-soon-title">Coming up</span><em>next 7 days</em></p>
-                {upcomingByDay.length === 0 ? (
-                  <p className={s.hint}>No events, plan stops, reminders or due tasks this week.</p>
+              {/* ---- Tasks ---- */}
+              <section className={s.panel} id="an-tasks">
+                <div className={s.ph}>
+                  <h2>Tasks</h2>
+                  {data.overdueTasks > 0 && <span className={s.overdue}>{data.overdueTasks} overdue</span>}
+                </div>
+                {data.byStage.todo + data.byStage.inProgress + data.byStage.done === 0 ? (
+                  <p className={s.empty}>Tasks assigned to you, on any board, show up here.</p>
                 ) : (
-                  <div className={s.list}>
-                    {upcomingByDay.map((g) => (
-                      <div key={g.day} className={s.dayGroup}>
-                        <p className={`${s.day} ${g.day === "Overdue" ? s.late : ""}`}>{g.day}</p>
-                        {g.items.map((u) => (
-                          <Row key={u.key} icon={u.icon} title={u.title} detail={u.sub} time={u.timed ? clock(u.at) : undefined} onOpen={() => open(u.chat, u.message)} />
-                        ))}
+                  <button className={s.tasksRow} onClick={() => setSheet("tasks")}>
+                    <span className={s.gaugeWrap}>
+                      <Gauge segments={[
+                        { value: data.byStage.todo, color: BLUE.a4 },
+                        { value: data.byStage.inProgress, color: BLUE.a2 },
+                        { value: data.byStage.done, color: BLUE.base },
+                      ]} />
+                      <span className={s.gc}><b>{data.byStage.todo + data.byStage.inProgress + data.byStage.done}</b><span>Your tasks</span></span>
+                    </span>
+                    <ul className={s.tl}>
+                      <li><i style={{ background: BLUE.a4 }} /><b>{data.byStage.todo}</b><span>To do</span></li>
+                      <li><i style={{ background: BLUE.a2 }} /><b>{data.byStage.inProgress}</b><span>In progress</span></li>
+                      <li><i style={{ background: BLUE.base }} /><b>{data.byStage.done}</b><span>Done</span></li>
+                    </ul>
+                  </button>
+                )}
+              </section>
+
+              {/* ---- Checklists ---- */}
+              <section className={`${s.panel} ${s.bare}`} id="an-checklists">
+                <div className={s.ph}><h2>Checklists</h2><span className={s.phHint}>{checklistList.length ? `${checklistList.length} list${checklistList.length === 1 ? "" : "s"}` : ""}</span></div>
+                {checklistList.length === 0 ? (
+                  <p className={s.empty}>Checklists from your chats will show up here.</p>
+                ) : (
+                  <>
+                    <div className={s.needTop}><div className={s.needNum}>{Math.round((listDone / Math.max(1, listTotal)) * 100)}%</div><span className={s.needLabel}>{listDone} of {listTotal} ticked</span></div>
+                    {openChecklists.length === 0 ? (
+                      <p className={s.empty}>Every list is done.</p>
+                    ) : (
+                      <div className={s.crows}>
+                        {openChecklists.slice(0, 3).map((it) => {
+                          const done = it.message.card.items.filter((i) => i.doneBy).length;
+                          const totalItems = it.message.card.items.length;
+                          return (
+                            <button key={it.message.id} className={s.crow} onClick={() => open(it.chat, it.message)}>
+                              <span className={s.cn}>{it.title}</span>
+                              <ChecklistTrack done={done} total={totalItems} />
+                              <span className={s.cc}>{done}<em>/{totalItems}</em></span>
+                            </button>
+                          );
+                        })}
                       </div>
+                    )}
+                    {checklistList.length > openChecklists.slice(0, 3).length && (
+                      <button className={s.seeall} onClick={() => setSheet("checklists")}>
+                        See all {checklistList.length} lists<span>{doneChecklists.length} done · {openChecklists.length} open</span>
+                      </button>
+                    )}
+                  </>
+                )}
+              </section>
+
+              {/* ---- This week ---- */}
+              <section className={s.panel} aria-labelledby="an-week-title">
+                <div className={s.ph}><h2 id="an-week-title">This week</h2></div>
+                <div className={s.week}>
+                  {data.week.map((x, i) => {
+                    const isToday = i === data.week.length - 1;
+                    const d = new Date(`${x.k}T12:00`);
+                    return (
+                      <div key={x.k} className={`${s.d} ${isToday ? s.dToday : ""}`}>
+                        {isToday ? "Today" : weekday(d.getTime())}
+                        <b>{d.getDate()}</b>
+                        <span className={s.dot}>{Array.from({ length: Math.min(2, x.n) }, (_, i2) => <i key={i2} />)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {upcomingShown.length === 0 ? (
+                  <p className={s.empty}>No events, plan stops, reminders or due tasks this week.</p>
+                ) : (
+                  <div className={s.evlist}>
+                    {upcomingShown.map((u, i) => (
+                      <button key={u.key} className={s.ev} onClick={() => open(u.chat, u.message)}>
+                        <span className={s.evt}>{u.timed ? clock(u.at) : ""}<small>{dayLabel(u.at, now)}</small></span>
+                        <span className={s.evtx}><b>{u.title}</b><small>{u.sub}</small></span>
+                        {i === 0 && u.at > now && <span className={s.soon}>{until(u.at - now)}</span>}
+                      </button>
                     ))}
                   </div>
                 )}
               </section>
 
-              <section className={s.widget} id="an-money">
-                <WidgetHead title="Money" onOpen={() => setSheet("money")} />
-                <div
-                  className={s.tapCard}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSheet("money")}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet("money"); } }}
-                >
-                  <div className={s.money}>
-                    <div>
-                      <span>You owe</span>
-                      <b style={{ color: data.youOwe ? "var(--warn)" : undefined }}>{money(data.youOwe)}</b>
-                    </div>
-                    <div>
-                      <span>Owed to you</span>
-                      <b>{money(data.owedToYou)}</b>
-                    </div>
-                  </div>
-                  <div className={s.chartCard}>
-                    <p className={s.chartLabel}>Spent, last 6 weeks</p>
-                    <BarChart
-                      bars={data.spendWeeks.map((v, i) => ({ key: String(i), label: i === 5 ? "This wk" : `${5 - i}w ago`, value: v, highlight: i === 5 }))}
-                      valueLabel={(n) => money(n)}
-                    />
-                  </div>
-                </div>
-              </section>
-
-              <section className={s.widget}>
-                <p className={s.widgetLabel}>Checklists</p>
-                {listTotal === 0 ? (
-                  <p className={s.hint}>Checklists from your chats, and how far along they are.</p>
-                ) : (
-                  <>
-                    <button className={s.donutBig} onClick={() => setSheet("checklists")}>
-                      <Donut segments={[{ value: listDone, color: TONES.sage }, { value: listLeft, color: "var(--fill-2)" }]} label="ticked" value={`${Math.round((listDone / listTotal) * 100)}%`} />
-                    </button>
-                    <Legend items={[{ label: "Done", value: listDone, color: TONES.sage }, { label: "Left", value: listLeft, color: "var(--fill-2)" }]} />
-                    <SeeDetails onOpen={() => setSheet("checklists")} />
-                  </>
-                )}
-              </section>
-
-              <section className={s.widget}>
-                <p className={s.widgetLabel}>Polls</p>
-                {pollRows.length === 0 ? (
-                  <p className={s.hint}>Polls from your chats, and how the vote is going.</p>
-                ) : (
-                  <>
-                    <button className={s.donutBig} onClick={() => setSheet("polls")}>
-                      <Donut
-                        segments={[
-                          { value: pollAwaiting.length, color: POLL_TONE.awaiting },
-                          { value: pollVotedOpen.length, color: POLL_TONE.voted },
-                          { value: pollClosed.length, color: POLL_TONE.closed },
-                        ]}
-                        label="awaiting"
-                        value={pollAwaiting.length}
-                      />
-                    </button>
-                    <Legend items={[
-                      { label: "Awaiting your vote", value: pollAwaiting.length, color: POLL_TONE.awaiting },
-                      { label: "You voted", value: pollVotedOpen.length, color: POLL_TONE.voted },
-                      { label: "Closed", value: pollClosed.length, color: POLL_TONE.closed },
-                    ]} />
-                    <SeeDetails onOpen={() => setSheet("polls")} />
-                  </>
-                )}
-              </section>
-
-              <section className={s.widget} aria-labelledby="an-week-title">
-                <p className={s.sectionHead}>
-                  <span id="an-week-title">This week</span>
-                  <em>{weekTotal} messages</em>
+              {/* ---- Messages ---- */}
+              <section className={s.panel} aria-labelledby="an-msg-title">
+                <div className={s.ph}><h2 id="an-msg-title">Messages</h2><span className={s.phHint}>Last 7 days</span></div>
+                <div className={s.msgTop}>
+                  <div className={s.needNum}>{weekTotal}</div>
                   <Trend current={weekTotal} previous={data.lastWeekMessages} />
-                </p>
-                <div className={s.chartCard}>
-                  <BarChart
-                    bars={data.week.map((x, i) => ({ key: x.k, label: i === data.week.length - 1 ? "Today" : weekday(new Date(`${x.k}T12:00`).getTime()), value: x.n, highlight: i === data.week.length - 1 }))}
-                    valueLabel={(n) => `${n} ${n === 1 ? "message" : "messages"}`}
-                  />
-                  {data.busiest && (
-                    <p className={s.note}>
-                      Busiest: <b>{chatIdentity(data.busiest.chat, me, userById).label}</b> with {data.busiest.n} {data.busiest.n === 1 ? "message" : "messages"}
-                    </p>
-                  )}
+                  <span className={s.avgLabel}>avg {avgPerDay.toFixed(1)}/day</span>
                 </div>
+                <MessagesChart
+                  bars={data.week.map((x, i) => ({ key: x.k, label: i === data.week.length - 1 ? "Today" : weekday(new Date(`${x.k}T12:00`).getTime()), value: x.n, highlight: i === data.week.length - 1 }))}
+                  avg={avgPerDay}
+                  valueLabel={(n) => `${n} ${n === 1 ? "message" : "messages"}`}
+                />
+                {data.busiest && (
+                  <p className={s.busy}>
+                    <span>Busiest chat</span><span><b>{chatIdentity(data.busiest.chat, me, userById).label}</b> · {data.busiest.n}</span>
+                  </p>
+                )}
               </section>
             </>
           )}
@@ -729,6 +896,7 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
                   title={it.title}
                   detail={`${it.detail} · ${chatIdentity(it.chat, me, userById).label}`}
                   detailColor="var(--warn)"
+                  action={NEEDS_ACTION[it.category]}
                   onOpen={() => close(() => open(it.chat, it.message))}
                 />
               ))}
@@ -748,84 +916,135 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
         </Sheet>
       )}
 
-      {sheet === "money" && (
-        <Sheet title="Money" onClose={() => setSheet(null)}>
+      {sheet === "spent" && (
+        <Sheet title={`Spent in ${monthName(data.heroNow)}`} onClose={() => setSheet(null)}>
+          {(close) => (
+            <>
+              <div className={s.chartCard}>
+                <p className={s.chartLabel}>Day by day</p>
+                <SpendChart cur={data.spendCurCum} prev={data.spendPrevCum} height={120} />
+              </div>
+              {(data.spentRows.length > 0 || data.spentOther > 0) ? (
+                <div className={s.list}>
+                  {data.spentRows.map((r) => (
+                    <Row
+                      key={r.key}
+                      icon={cardIcon(r.message.card!)}
+                      title={r.title}
+                      detail={r.detail}
+                      figure={money(r.amount)}
+                      onOpen={() => close(() => open(r.chat, r.message))}
+                    />
+                  ))}
+                  {data.spentOther > 0 && (
+                    <Row
+                      key="spent-other"
+                      icon={<IconMoneySend size={15} />}
+                      title="Everyday spending"
+                      detail="Estimated — coffee, transport, small bills"
+                      figure={money(data.spentOther)}
+                    />
+                  )}
+                </div>
+              ) : (
+                <p className={s.empty}>Nothing spent this month yet.</p>
+              )}
+            </>
+          )}
+        </Sheet>
+      )}
+
+      {sheet === "owe" && (
+        <Sheet title="You owe" onClose={() => setSheet(null)}>
           {(close) => (
             <>
               <div className={s.money}>
-                <div><span>You owe</span><b style={{ color: data.youOwe ? "var(--warn)" : undefined }}>{money(data.youOwe)}</b></div>
-                <div><span>Owed to you</span><b>{money(data.owedToYou)}</b></div>
+                <div><span>Total</span><b style={{ color: data.youOwe ? "var(--warn)" : undefined }}>{money(data.youOwe)}</b></div>
               </div>
-              {moneyRows.length > 0 && (
+              {data.oweRows.length > 0 ? (
                 <div className={s.list}>
-                  {moneyRows.map((it) => (
+                  {data.oweRows.map((r) => (
                     <Row
-                      key={it.message.id}
-                      icon={cardIcon(it.message.card!)}
-                      title={it.title}
-                      detail={it.detail}
-                      detailColor={statusColor(it)}
-                      figure={it.stats[0]?.text}
-                      onOpen={() => close(() => open(it.chat, it.message))}
+                      key={r.key}
+                      icon={cardIcon(r.message.card!)}
+                      title={r.title}
+                      detail={r.detail}
+                      figure={money(r.amount)}
+                      onOpen={() => close(() => open(r.chat, r.message))}
                     />
                   ))}
                 </div>
+              ) : (
+                <p className={s.empty}>You don&rsquo;t owe anyone right now.</p>
               )}
-              {openMoney.length > 0 && <p className={s.note}>{openMoney.length} open {openMoney.length === 1 ? "item" : "items"}</p>}
+            </>
+          )}
+        </Sheet>
+      )}
+
+      {sheet === "owed" && (
+        <Sheet title="Owed to you" onClose={() => setSheet(null)}>
+          {(close) => (
+            <>
+              <div className={s.money}>
+                <div><span>Total</span><b>{money(data.owedToYou)}</b></div>
+              </div>
+              {data.owedRows.length > 0 ? (
+                <div className={s.list}>
+                  {data.owedRows.map((r) => (
+                    <Row
+                      key={r.key}
+                      icon={cardIcon(r.message.card!)}
+                      title={r.title}
+                      detail={r.detail}
+                      figure={money(r.amount)}
+                      onOpen={() => close(() => open(r.chat, r.message))}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className={s.empty}>Nobody owes you money right now.</p>
+              )}
             </>
           )}
         </Sheet>
       )}
 
       {sheet === "checklists" && (
-        <Sheet title="Checklists" onClose={() => setSheet(null)}>
-          {(close) => checklistRows.length === 0 ? (
+        <Sheet title="All checklists" onClose={() => setSheet(null)}>
+          {(close) => checklistList.length === 0 ? (
             <p className={s.hint}>Checklists from your chats, and how far along they are.</p>
           ) : (
-            <div className={s.list}>
-              {(openChecklists.length ? openChecklists : checklistRows).map((it) => {
-                const done = it.message.card.items.filter((i) => i.doneBy).length;
-                const totalItems = it.message.card.items.length;
-                const pct = totalItems ? Math.round((done / totalItems) * 100) : 0;
-                return (
-                  <button key={it.message.id} className={s.row} onClick={() => close(() => open(it.chat, it.message))}>
-                    <span className={s.rowText}>
-                      <b>{it.title}</b>
-                      <small>{done === totalItems ? "All done" : `${totalItems - done} left`} · {chatIdentity(it.chat, me, userById).label}</small>
-                      <span className={s.bar} role="img" aria-label={`${done} of ${totalItems} done`}><i style={{ width: `${pct}%` }} /></span>
-                    </span>
-                    <span className={s.figure}>{pct}%</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </Sheet>
-      )}
-
-      {sheet === "polls" && (
-        <Sheet title="Polls" onClose={() => setSheet(null)}>
-          {(close) => pollRows.length === 0 ? (
-            <p className={s.hint}>Polls from your chats, and how the vote is going.</p>
-          ) : (
-            <div className={s.list}>
-              {pollGroups.map((g) => (
-                <div key={g.label} className={s.dayGroup}>
-                  <p className={s.day}>{g.label}</p>
-                  {g.rows.map((it) => (
-                    <Row
-                      key={it.message.id}
-                      icon={<IconPoll size={15} />}
-                      title={it.title}
-                      detail={`${it.detail} · ${chatIdentity(it.chat, me, userById).label}`}
-                      detailColor={statusColor(it)}
-                      figure={it.stats[0]?.text}
-                      onOpen={() => close(() => open(it.chat, it.message))}
-                    />
-                  ))}
-                </div>
-              ))}
-            </div>
+            <>
+              {openChecklists.length > 0 && <p className={s.shs}>In progress · {openChecklists.length}</p>}
+              <div className={s.crows}>
+                {openChecklists.map((it) => {
+                  const done = it.message.card.items.filter((i) => i.doneBy).length;
+                  const totalItems = it.message.card.items.length;
+                  return (
+                    <button key={it.message.id} className={s.crow} onClick={() => close(() => open(it.chat, it.message))}>
+                      <span className={s.cn}>{it.title}</span>
+                      <ChecklistTrack done={done} total={totalItems} />
+                      <span className={s.cc}>{done}<em>/{totalItems}</em></span>
+                    </button>
+                  );
+                })}
+              </div>
+              {doneChecklists.length > 0 && <p className={s.shs}>Done · {doneChecklists.length}</p>}
+              <div className={s.crows}>
+                {doneChecklists.map((it) => {
+                  const done = it.message.card.items.filter((i) => i.doneBy).length;
+                  const totalItems = it.message.card.items.length;
+                  return (
+                    <button key={it.message.id} className={s.crow} onClick={() => close(() => open(it.chat, it.message))}>
+                      <span className={s.cn}>{it.title}</span>
+                      <ChecklistTrack done={done} total={totalItems} />
+                      <span className={s.cc}>{done}<em>/{totalItems}</em></span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
         </Sheet>
       )}
