@@ -257,7 +257,7 @@ function NotificationsPage({ leaving, onBack }: { leaving: boolean; onBack: () =
   };
   return (
     <SubPage title="Notifications" onBack={onBack} leaving={leaving}>
-      <Group note={on ? "Banners show up even when NOD is in the background." : "No banners. Reminders, plan stops and tasks still show in the chat and on your Dashboard."}>
+      <Group note={on ? "Banners show up even when NOD is in the background." : "No banners. Reminders, plan stops and tasks still show in the chat and in Analytics."}>
         <Row icon={<Tile tone="clay"><IconBell size={16} /></Tile>} title="Allow notifications" trailing={<Toggle on={on} onChange={flip} label="Allow notifications" />} />
       </Group>
       <div className={on ? undefined : s.dimmed}>
@@ -444,7 +444,7 @@ function AboutPage({ leaving, onBack }: { leaving: boolean; onBack: () => void }
         <Row title="Chats and Spaces" sub="One-to-one, or a Space for any team or trip" trailing={<span />} />
         <Row title="Decide in the thread" sub="Polls, checklists, plans, boards, payments and invoices" trailing={<span />} />
         <Row title="Mind" sub="Your own collections, filled from any chat" trailing={<span />} />
-        <Row title="Dashboard" sub="Everything that needs you, in one place" trailing={<span />} />
+        <Row title="Analytics" sub="Your spending, and everything that needs you" trailing={<span />} />
       </Group>
     </SubPage>
   );

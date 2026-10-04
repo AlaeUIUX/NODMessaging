@@ -42,11 +42,13 @@ interface MenuState {
 
 const EDGE = 24;
 
-export default function ChatView({ chat, leaving, onBack }: {
+export default function ChatView({ chat, leaving, onBack, focusMessageId }: {
   chat: Chat;
   leaving: boolean;
   /** `immediate` when a swipe-back already animated the screen away. */
   onBack: (immediate?: boolean) => void;
+  /** Scrolled to and flashed once the thread has settled (e.g. opened from Analytics). */
+  focusMessageId?: string | null;
 }) {
   const {
     state, me, isOnline, lastReadAt, send, sendCard, cardOp, retry, toggleReaction, editMessage, deleteMessage,
@@ -317,6 +319,15 @@ export default function ChatView({ chat, leaving, onBack }: {
     el?.scrollIntoView({ behavior: smooth(), block: "center" });
     setHighlighted(messageId);
     setTimeout(() => setHighlighted(null), 1200);
+  }, []);
+
+  // Opened pointing at one message (Analytics, a jump from elsewhere): let the
+  // thread's own mount scroll (to the bottom) settle first, then jump to it.
+  useEffect(() => {
+    if (!focusMessageId) return;
+    const t = setTimeout(() => jumpTo(focusMessageId), 260);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Boards are read fresh in callbacks; the last one viewed here is remembered per chat.

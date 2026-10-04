@@ -1,0 +1,50 @@
+/* ==========================================================================
+   Widget page (Analytics v2): one card's own screen, pushed over the Inbox
+   the same way the Contact page is pushed over a thread.
+   ========================================================================== */
+
+.page {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: -12px 0 40px rgba(0, 0, 0, .12);
+  outline: none;
+  animation: widgetIn var(--t-slow) var(--ease-out) both;
+}
+.page.leaving { animation: widgetOut var(--t-mid) var(--ease-out) both; pointer-events: none; }
+@keyframes widgetIn { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes widgetOut { from { transform: none; } to { transform: translateX(100%); } }
+
+.head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: calc(var(--inset-top) + 8px) 16px 12px;
+}
+.headTitle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.headText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.headText b {
+  font: var(--t-headline);
+  letter-spacing: -.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.headText span { font: var(--t-footnote); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.headSpacer { width: 40px; flex-shrink: 0; }
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 16px calc(var(--inset-bottom) + 32px);
+  scrollbar-width: none;
+}
+.body::-webkit-scrollbar { display: none; }

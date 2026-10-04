@@ -403,7 +403,9 @@
    The card in the thread
    ========================================================================== */
 
-.bill { width: 290px; max-width: 100%; }
+/* 290px is right for a chat bubble; a page of its own (Analytics v2) sets
+   --bill-width: 100% on an ancestor so the card fills it instead. */
+.bill { width: var(--bill-width, 290px); max-width: 100%; }
 .billTotal { margin-top: 2px; }
 .billSettled .billTotal { color: var(--ink-2); }
 .settledTag { color: var(--bill-ok); display: inline-flex; align-items: center; gap: 3px; }

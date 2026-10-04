@@ -639,10 +639,6 @@
   overscroll-behavior: contain;
 }
 .inboxScroll::-webkit-scrollbar { display: none; }
-/* The dashboard has no inbox header: its greeting starts under the status bar and scrolls beneath it. */
-.dashBody { margin-top: 0; }
-.dashBody .inboxScroll { padding-top: calc(var(--inset-top) + 12px); }
-.dashBody .edgeTop { height: calc(var(--inset-top) + 36px); }
 
 .chips {
   display: flex;

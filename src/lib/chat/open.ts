@@ -5,7 +5,7 @@ import type { Message } from "./types";
 /**
  * One answer, for every card, to "is this still open, what's left, and does
  * it need you". The header's blue dot, the contact page's Live tab and the
- * Dashboard all read it, so a new card type only answers once, here.
+ * Analytics page all read it, so a new card type only answers once, here.
  */
 export interface OpenState {
   /** Still unfinished. */

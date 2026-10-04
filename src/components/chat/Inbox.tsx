@@ -15,12 +15,12 @@ import { InviteSheet } from "./Invite";
 import Settings from "./Settings";
 import { formatPhone } from "@/lib/chat/people";
 import NewChat from "./NewChat";
-import Dashboard from "./Dashboard";
+import AnalyticsTab from "./Analytics";
 import StatusBar from "./StatusBar";
 import styles from "./chat.module.css";
 
 type Filter = "all" | "unread" | "dms" | "spaces";
-type Tab = "chats" | "mind" | "dashboard" | "explore";
+type Tab = "chats" | "mind" | "analytics" | "explore";
 
 const REVEAL = 124;
 
@@ -42,7 +42,7 @@ function writeList(kind: "pinned" | "muted", userId: string, ids: Set<string>) {
 const TABS: { id: Tab; label: string; icon: string; w: number; h: number }[] = [
   { id: "chats", label: "Chats", icon: "/nod/chats.svg", w: 18, h: 18 },
   { id: "mind", label: "Mind", icon: "/nod/mind.svg", w: 16, h: 16 },
-  { id: "dashboard", label: "Dashboard", icon: "/nod/dashboard.svg", w: 16, h: 16 },
+  { id: "analytics", label: "Analytics", icon: "/nod/analytics.svg", w: 18, h: 18 },
   { id: "explore", label: "Explore", icon: "/nod/explore.svg", w: 16, h: 16 },
 ];
 
@@ -199,7 +199,12 @@ function toggle(set: Set<string>, id: string) {
   return next;
 }
 
-export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void; pushed: boolean }) {
+export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
+  onOpen: (chat: Chat, messageId?: string) => void;
+  pushed: boolean;
+  analyticsMode: "v1" | "v2";
+  onOpenWidget: (chat: Chat, message: Message) => void;
+}) {
   const { state, me, setMe, isOnline, lastReadAt, typingUsers } = useChat();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -286,18 +291,8 @@ export default function Inbox({ onOpen, pushed }: { onOpen: (chat: Chat) => void
     <div className={`${styles.screen} ${styles.inboxScreen} ${pushed ? styles.pushed : ""}`} data-inbox-screen inert={pushed}>
       <StatusBar />
 
-      {tab === "mind" ? <MindTab onOpenChat={onOpen} onSettings={openSettings} /> : tab === "dashboard" ? (
-        <div className={`${styles.inboxBody} ${styles.dashBody}`}>
-          <div className={styles.edgeTop} />
-          <div className={styles.inboxScroll}>
-            <Dashboard
-              onOpenChat={onOpen}
-              onSettings={openSettings}
-              onUnread={() => { setFilter("unread"); setTab("chats"); }}
-              onMind={() => setTab("mind")}
-            />
-          </div>
-        </div>
+      {tab === "mind" ? <MindTab onOpenChat={onOpen} onSettings={openSettings} /> : tab === "analytics" ? (
+        <AnalyticsTab onOpenChat={onOpen} mode={analyticsMode} onOpenWidget={onOpenWidget} onSettings={openSettings} />
       ) : (
       <>
       <header className={styles.profile}>

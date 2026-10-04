@@ -1002,26 +1002,26 @@ export function TaskFromMessage({ message, chat, onClose }: { message: Message; 
 }
 
 /* ---------------------------------------------------------------------------
-   Your tasks, across every board (Dashboard)
+   Your tasks, across every board (Analytics)
 --------------------------------------------------------------------------- */
 
 const MINE_SHOWN = 4;
 
-/** Everything assigned to you, across every chat's board (on the Dashboard). */
-export function MyTasks({ onOpenChat }: { onOpenChat: (chat: Chat) => void }) {
+/** Everything assigned to you, across every chat's board (in Analytics). A tap hands over the board too. */
+export function MyTasks({ onOpenChat }: { onOpenChat: (chat: Chat, board?: BoardMessage) => void }) {
   const { state, me } = useChat();
   const now = useNow(60_000);
   const [all, setAll] = useState(false);
 
   const items = useMemo(() => {
-    const out: { task: Task; chat: Chat; board: string; label: string }[] = [];
+    const out: { task: Task; chat: Chat; board: BoardMessage; label: string }[] = [];
     for (const chat of state.data.chats) {
       if (!chat.memberIds.includes(me)) continue;
       const label = chatIdentity(chat, me, userById).label;
       for (const board of projectsOf(state.data.messages[chat.id] ?? [])) {
         const done = doneColumn(board.card);
         for (const task of Object.values(board.card.tasks)) {
-          if (!task.deleted && task.column !== done && task.assignee === me) out.push({ task, chat, board: board.card.name, label });
+          if (!task.deleted && task.column !== done && task.assignee === me) out.push({ task, chat, board, label });
         }
       }
     }
@@ -1041,11 +1041,11 @@ export function MyTasks({ onOpenChat }: { onOpenChat: (chat: Chat) => void }) {
       ) : (
         <div className={s.mineList}>
           {shown.map(({ task, chat, board, label }) => (
-            <button key={`${chat.id}-${task.id}`} className={s.mineRow} onClick={() => onOpenChat(chat)}>
+            <button key={`${chat.id}-${task.id}`} className={s.mineRow} onClick={() => onOpenChat(chat, board)}>
               <span className={s.mineDot} aria-hidden="true" />
               <span className={s.mineText}>
                 <b>{task.title}</b>
-                <small>{label === board ? label : `${label} · ${board}`}</small>
+                <small>{label === board.card.name ? label : `${label} · ${board.card.name}`}</small>
               </span>
               {task.due !== null && <DueChip due={task.due} now={now} />}
             </button>
