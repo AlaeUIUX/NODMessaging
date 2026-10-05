@@ -1,0 +1,261 @@
+/* ==========================================================================
+   Groups: the banner, channel chips, invitations, roles and settings
+   ========================================================================== */
+
+/* ---- the banner: cover (or a wash of the group's colour), picture, name ---- */
+
+.banner { position: relative; border-radius: 22px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--e1); }
+.cover {
+  height: 112px;
+  background-color: var(--tone);
+  background-image: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, #fff 26%, transparent), transparent 60%);
+  background-size: cover;
+  background-position: center;
+}
+.bannerBody { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0 16px 16px; }
+.bannerAvatar { margin-top: -38px; margin-bottom: 8px; border-radius: 24px; box-shadow: 0 0 0 4px var(--surface); }
+.bannerAvatar > * { display: flex; }
+.bannerName { font: var(--t-title3); font-weight: var(--w-emph); letter-spacing: -.01em; color: var(--ink); overflow-wrap: anywhere; }
+.bannerDesc { margin: 2px 0 0; font: var(--t-subhead); color: var(--ink-2); text-wrap: pretty; }
+.bannerCompact .cover { height: 84px; }
+.bannerCompact .bannerAvatar { margin-top: -28px; border-radius: 18px; }
+.bannerCompact .bannerBody > button { position: absolute; top: 12px; right: 14px; }
+
+/* the editable look: tap the cover or the picture */
+.look { display: flex; flex-direction: column; gap: 6px; }
+.lookPreview { position: relative; }
+.coverBtn, .photoBtn {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  background: rgba(12, 10, 9, .45);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  font: var(--t-footnote);
+  font-weight: var(--w-emph);
+}
+.coverBtn { top: 10px; right: 10px; height: 30px; padding: 0 12px; border-radius: var(--r-pill); }
+.photoBtn { top: 128px; left: 74px; width: 30px; height: 30px; justify-content: center; border-radius: var(--r-pill); background: var(--surface); color: var(--ink); box-shadow: 0 0 0 3px var(--surface), var(--e1); }
+.coverBtn:active, .photoBtn:active { transform: scale(.94); }
+.removePhoto { align-self: flex-start; margin-top: 2px; }
+.covers { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px; }
+.covers::-webkit-scrollbar { display: none; }
+.coverPick, .coverUpload {
+  flex: 0 0 72px;
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+  transition: transform var(--t-fast), box-shadow var(--t-fast);
+}
+.coverUpload { display: grid; place-items: center; color: var(--ink-2); background: color-mix(in srgb, var(--ink) 6%, transparent); box-shadow: inset 0 0 0 1.5px var(--line-2); }
+.coverPick:active, .coverUpload:active { transform: scale(.95); }
+.coverOn { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ink); }
+
+.stepBack { align-self: flex-start; padding: 4px 0; border: none; background: none; color: var(--accent); font: var(--t-subhead); font-weight: var(--w-control); cursor: pointer; }
+
+/* ---- channel chips, under the chat header ---- */
+
+.channelBar {
+  position: absolute;
+  top: calc(var(--inset-top) + 96px);
+  left: 0;
+  right: 0;
+  z-index: 29;
+}
+.channelScroll {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 16px 8px;
+  scroll-padding-inline: 16px;
+  /* Fades at the edges say there's more to scroll to. */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 24px), transparent);
+}
+.channelScroll::-webkit-scrollbar { display: none; }
+.chip {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  backdrop-filter: blur(12px) saturate(160%);
+  box-shadow: 0 0 0 .5px var(--line), var(--e1);
+  color: var(--ink-2);
+  font: var(--t-subhead);
+  font-weight: var(--w-control);
+  cursor: pointer;
+  transition: transform var(--t-fast), background var(--t-fast), color var(--t-fast);
+}
+.chip:active { transform: scale(.95); }
+.chip svg { color: inherit; opacity: .7; }
+.chipOn { background: var(--ink); color: var(--bg); box-shadow: var(--e1); }
+.hash { opacity: .55; font-weight: var(--w-emph); }
+.chipNote { font-size: 11px; }
+.chipDot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: var(--r-pill); background: var(--accent); box-shadow: 0 0 0 2px var(--bg); }
+.chipAdd { width: 32px; padding: 0; justify-content: center; }
+
+/* ---- channel and role editors ---- */
+
+.channelField {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 14px;
+  height: 52px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), var(--e1);
+}
+.channelField:focus-within { box-shadow: 0 0 0 2px var(--accent), var(--e1); }
+.channelField span { font: var(--t-title3); color: var(--ink-3); }
+.channelField input { flex: 1; min-width: 0; border: none; outline: none; background: none; color: var(--ink); font: var(--t-title3); font-weight: var(--w-emph); }
+.bad { color: var(--danger) !important; }
+.lockedChoice { display: inline-flex; align-items: center; gap: 4px; opacity: .65; cursor: default; }
+.roleDot { display: inline-block; width: 9px; height: 9px; border-radius: var(--r-pill); vertical-align: 0; }
+.hint { align-self: center; font: var(--t-footnote); color: var(--ink-3); }
+.permRow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+.permRow + .permRow { border-top: 1px solid var(--line); }
+.memberHead { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0; }
+.memberHead small { font: var(--t-footnote); color: var(--ink-3); }
+
+/* ---- role badges ---- */
+
+.badges { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; flex-shrink: 0; max-width: 46%; }
+.badge {
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--role) 14%, transparent);
+  color: color-mix(in srgb, var(--role) 82%, var(--ink));
+  font: var(--t-caption1);
+  font-weight: var(--w-emph);
+  white-space: nowrap;
+}
+.waiting { font: var(--t-footnote); font-weight: var(--w-emph); color: var(--ink-3); }
+
+/* ---- an invitation, in New chat ---- */
+
+.invitation { display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 14px; }
+.invitationText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.invitationText > span { font: var(--t-subhead); color: var(--ink-2); line-height: 1.3; }
+.invitationText b { font-weight: var(--w-emph); color: color-mix(in srgb, var(--tone) 78%, var(--ink)); }
+.invitationText small { font: var(--t-footnote); color: var(--ink-3); }
+.invitationActions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.ignore { height: 32px; padding: 0 10px; border: none; border-radius: var(--r-pill); background: none; color: var(--ink-3); font: var(--t-footnote); font-weight: var(--w-emph); cursor: pointer; }
+.ignore:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink-2); }
+
+/* ---- group settings ---- */
+
+.settings.settings.settings { z-index: 50; }
+.settingsBanner { margin-bottom: -6px; }
+.tileHash { font: var(--t-headline); font-weight: var(--w-emph); line-height: 1; }
+.channelRow { padding: 0 12px 0 0; }
+.rowMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 6px 11px 14px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rowMain > svg { flex-shrink: 0; color: var(--ink-3); }
+.fixed { font: var(--t-footnote); color: var(--ink-3); padding-right: 4px; }
+
+/* ---- the group page (contact page for a group) ---- */
+
+/* Clear over the cover at rest; frosted once something scrolls under it. */
+.groupTop.groupTop { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; transition: background var(--t-mid), backdrop-filter var(--t-mid); }
+.groupTop.groupTopScrolled {
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 .5px 0 var(--line);
+}
+.groupHead { padding: 4px 12px 18px; }
+/* The cover is its own rounded panel, like a Discord server's banner. */
+.pageCover {
+  height: 136px;
+  border-radius: 24px;
+  background-color: var(--tone);
+  background-image: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, #fff 24%, transparent), transparent 60%);
+  background-size: cover;
+  background-position: center;
+  box-shadow: inset 0 0 0 .5px color-mix(in srgb, #000 10%, transparent);
+}
+.groupHeadBody { display: flex; flex-direction: column; align-items: flex-start; padding: 0 8px; }
+.groupHeadAvatar { margin: -36px 0 0 8px; border-radius: 22px; box-shadow: 0 0 0 4px var(--bg); }
+.groupHeadAvatar > * { display: flex; }
+.groupName { margin: 10px 0 0; font: var(--t-title2); font-weight: var(--w-emph); letter-spacing: -.02em; overflow-wrap: anywhere; }
+.groupMeta { margin: 2px 0 0; font: var(--t-subhead); color: var(--ink-3); }
+.pageDesc { margin: 8px 0 0; font: var(--t-subhead); color: var(--ink-2); text-wrap: pretty; }
+.groupActions { display: flex; gap: 8px; width: 100%; margin-top: 16px; }
+.searchPill, .iconPill {
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+  font: var(--t-subhead);
+  font-weight: var(--w-control);
+  cursor: pointer;
+  transition: transform var(--t-fast), background var(--t-fast);
+}
+.searchPill { flex: 1; }
+.iconPill { padding: 0 16px; }
+.searchPill:active, .iconPill:active { transform: scale(.97); }
+.searchPill[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.channelItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 10px 14px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.channelItem:active { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.channelIcon, .inviteIcon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font: var(--t-title3);
+  font-weight: var(--w-emph);
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
+  color: color-mix(in srgb, var(--tone) 80%, var(--ink));
+}
+.inviteIcon { border-radius: var(--r-pill); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+
+/* An icon beside the label on a wide button (they stack by default). */
+.rowBtn.rowBtn { flex-direction: row; gap: 8px; }

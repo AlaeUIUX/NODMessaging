@@ -15,7 +15,7 @@ import s from "./account.module.css";
    =========================================================================== */
 
 /** A QR-looking pattern made from your username: the three corner squares, and a stable scatter of dots. */
-function QrPattern({ seed }: { seed: string }) {
+export function QrPattern({ seed }: { seed: string }) {
   const n = 25;
   let h = 2166136261;
   for (const ch of seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);

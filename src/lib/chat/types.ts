@@ -230,6 +230,60 @@ export interface Chat {
   memberIds: string[];
   /** Groups only; DMs take their colour from the other member. */
   tone?: AvatarTone;
+  /** Groups (and their channels): the group's picture, a small square data URL. */
+  photo?: string;
+  /** A group: its look, roles, channels and invitations. Its own thread is the first channel (#general). */
+  group?: GroupInfo;
+  /** A channel: the group it belongs to. Channels are chats of their own, listed under the group. */
+  groupId?: string;
+  /** Deleted (a group, or a removed channel): kept for its history, shown nowhere. */
+  removedAt?: number;
+}
+
+/* ---------------------------------------------------------------------------
+   Groups: channels, roles and invitations (see lib/chat/groups.ts)
+--------------------------------------------------------------------------- */
+
+export type GroupPermission = "manageGroup" | "manageChannels" | "manageRoles" | "invite";
+
+export interface GroupRole {
+  id: string;
+  name: string;
+  tone: AvatarTone;
+  permissions: GroupPermission[];
+}
+
+export interface GroupChannel {
+  /** The channel's chat id; the first channel is the group's own chat. */
+  id: string;
+  /** Lowercase, no spaces: shown as #name. */
+  name: string;
+  topic?: string;
+  /** Who can see it: these roles (and admins). Empty: everyone in the group. */
+  roles: string[];
+  /** Who can post: these roles (and admins). Empty: everyone who can see it. */
+  postRoles: string[];
+}
+
+export interface GroupInvite { userId: string; by: string; at: number }
+
+export interface GroupInfo {
+  description: string;
+  /** A wide picture (data URL or image URL) behind the group's name. */
+  cover?: string;
+  /** Admin and Member first, then custom roles. */
+  roles: GroupRole[];
+  /** The roles each person has on top of Member. */
+  memberRoles: Record<string, string[]>;
+  channels: GroupChannel[];
+  /** Waiting for an answer. */
+  invites: GroupInvite[];
+  /** The invite link: nod.app/g/<code>. */
+  inviteCode: string;
+  createdBy: string;
+  createdAt: number;
+  /** Listed on Explore: anyone can find it and join. `members` is the total shown there. */
+  discover?: { topics: string[]; members: number };
 }
 
 export interface ChatState {

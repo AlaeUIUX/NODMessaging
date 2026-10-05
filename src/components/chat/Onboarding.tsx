@@ -27,7 +27,7 @@ import s from "./account.module.css";
 type Step = "welcome" | "phone" | "code" | "profile" | "contacts";
 
 const SLIDES = [
-  { title: "Talk it through", body: "Chat one to one, or start a Space for a team, a trip or a project.", art: <ArtChat /> },
+  { title: "Talk it through", body: "Chat one to one, or start a group for a team, a trip or a project.", art: <ArtChat /> },
   { title: "Decide in the thread", body: "Polls, checklists, plans, boards and payments live right in the conversation.", art: <ArtPoll /> },
   { title: "Keep what matters", body: "Save anything from a chat into Mind: your own collections of stacks, notes and links.", art: <ArtMind /> },
   { title: "See what needs you", body: "Analytics gathers your spending, votes, tasks and what’s coming up this week.", art: <ArtDash /> },

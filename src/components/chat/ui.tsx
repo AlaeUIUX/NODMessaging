@@ -177,7 +177,8 @@ export function Sheet({
   onClose: () => void;
   /** Runs the moment the sheet starts closing (Cancel, scrim, Escape), before the exit animation. */
   onClosing?: () => void;
-  action?: { label: string; disabled?: boolean; onClick: () => void; href?: string };
+  /** The top-right action closes the sheet, then runs; `keepOpen` runs it in place (a step that moves on). */
+  action?: { label: string; disabled?: boolean; onClick: () => void; href?: string; keepOpen?: boolean };
   /** A function child receives `close(after)`, which animates out, then runs `after`. */
   children: ReactNode | ((close: (after?: () => void) => void) => ReactNode);
   footer?: ReactNode;
@@ -231,7 +232,7 @@ export function Sheet({
             <button
               className={styles.bsheetAction}
               disabled={action.disabled}
-              onClick={() => close(action.onClick)}
+              onClick={() => (action.keepOpen ? action.onClick() : close(action.onClick))}
             >
               {action.label}
             </button>

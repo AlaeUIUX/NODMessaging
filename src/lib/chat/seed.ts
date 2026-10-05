@@ -1,3 +1,4 @@
+import { ADMIN, baseRoles } from "./groups";
 import { msg } from "./seedkit";
 import { billSeed } from "./seed-bill";
 import { planSeed } from "./seed-plan";
@@ -12,9 +13,85 @@ export const USERS: User[] = [
   { id: "salman", name: "Salman", fullName: "Salman", tone: "plum", username: "salman", phone: "+436604445566" },
 ];
 
+const DAY = 24 * 60 * 60 * 1000;
+const cover = (q: string) => `https://images.unsplash.com/${q}?w=900&q=70&fm=jpg`;
+const TEAM = ["me", "charles", "reema", "jamshad", "salman"];
+
+/**
+ * NOD Team shows what a group can be: roles (Admin, Design, Engineering), a
+ * read-only #announcements for admins, and a #design only Design can see.
+ * Admins (Alae and Charles) see every channel.
+ */
+const NOD_TEAM: Chat = {
+  id: "general", name: "NOD Team", kind: "group", memberIds: TEAM, tone: "ochre",
+  group: {
+    description: "The people building NOD. Launch planning, design reviews and the occasional lunch vote.",
+    cover: cover("photo-1522071820081-009f0129c71c"),
+    roles: [
+      ...baseRoles(),
+      { id: "design", name: "Design", tone: "plum", permissions: [] },
+      { id: "eng", name: "Engineering", tone: "denim", permissions: [] },
+    ],
+    memberRoles: { me: [ADMIN, "design"], charles: [ADMIN, "eng"], reema: ["design"], jamshad: ["eng"], salman: [] },
+    channels: [
+      { id: "general", name: "general", topic: "Everything NOD", roles: [], postRoles: [] },
+      { id: "general--announcements", name: "announcements", topic: "News from the team leads", roles: [], postRoles: [ADMIN] },
+      { id: "general--design", name: "design", topic: "Type, colour and the new inbox", roles: ["design"], postRoles: [] },
+    ],
+    invites: [],
+    inviteCode: "nodteam",
+    createdBy: "charles",
+    createdAt: Date.now() - 60 * DAY,
+  },
+};
+
+/** Reema's group, with an invitation waiting for Alae: accept it from the inbox. */
+const VIENNA: Chat = {
+  id: "vienna", name: "Weekend in Vienna", kind: "group", memberIds: ["reema", "salman"], tone: "sage",
+  group: {
+    description: "Coffee houses, the Naschmarkt and one very long museum day. November, dates TBC.",
+    cover: cover("photo-1516550893923-42d28e5677af"),
+    roles: baseRoles(),
+    memberRoles: { reema: [ADMIN] },
+    channels: [{ id: "vienna", name: "general", roles: [], postRoles: [] }],
+    invites: [{ userId: "me", by: "reema", at: Date.now() - 3 * 60 * 60 * 1000 }],
+    inviteCode: "vienna",
+    createdBy: "reema",
+    createdAt: Date.now() - 2 * DAY,
+  },
+};
+
+/** Public groups, found on Explore. Nobody in the demo has invited Alae; anyone can join. */
+const publicGroup = (id: string, name: string, tone: Chat["tone"], members: string[], admin: string, description: string, cover: string, topics: string[], total: number): Chat => ({
+  id, name, kind: "group", memberIds: members, tone,
+  group: {
+    description, cover: `https://images.unsplash.com/${cover}?w=900&q=70&fm=jpg`,
+    roles: baseRoles(), memberRoles: { [admin]: [ADMIN] },
+    channels: [{ id, name: "general", roles: [], postRoles: [] }],
+    invites: [], inviteCode: id, createdBy: admin, createdAt: Date.now() - 120 * DAY,
+    discover: { topics, members: total },
+  },
+});
+const PUBLIC_GROUPS: Chat[] = [
+  publicGroup("pub-german", "German Learners Vienna", "sage", ["jamshad", "salman"], "salman",
+    "Stammtisch on Thursdays, flashcard swaps every day. All levels welcome.", "photo-1512820790803-83ca734da794", ["german", "language", "vienna"], 1240),
+  publicGroup("pub-design", "Product Designers DACH", "plum", ["reema", "charles"], "reema",
+    "Crits, jobs and the odd meetup for product designers in Germany, Austria and Switzerland.", "photo-1497366216548-37526070297c", ["design", "work"], 3400),
+  publicGroup("pub-coffee", "Vienna Coffee Club", "ochre", ["salman"], "salman",
+    "One new café a week, and a Saturday walk to try it together.", "photo-1495474472287-4d71bcdd2085", ["coffee", "vienna", "food"], 860),
+  publicGroup("pub-founders", "Indie Founders", "denim", ["charles"], "charles",
+    "Small teams shipping real things. Weekly wins, honest numbers.", "photo-1522071820081-009f0129c71c", ["startups", "work"], 2100),
+  publicGroup("pub-hikers", "Alps Weekend Hikers", "graphite", ["jamshad"], "jamshad",
+    "Day hikes and hut weekends from Vienna. Routes for every pace.", "photo-1506905925346-21bda4d32df4", ["hiking", "travel"], 540),
+];
+
 export const CHATS: Chat[] = [
   { id: "dm", name: "Charles", kind: "dm", memberIds: ["me", "charles"] },
-  { id: "general", name: "NOD Team", kind: "group", memberIds: ["me", "charles", "reema", "jamshad", "salman"], tone: "ochre" },
+  NOD_TEAM,
+  { id: "general--announcements", name: "NOD Team · #announcements", kind: "group", groupId: "general", memberIds: TEAM, tone: "ochre" },
+  { id: "general--design", name: "NOD Team · #design", kind: "group", groupId: "general", memberIds: ["me", "charles", "reema"], tone: "ochre" },
+  VIENNA,
+  ...PUBLIC_GROUPS,
   { id: "reema", name: "Reema", kind: "dm", memberIds: ["me", "reema"] },
   { id: "jamshad", name: "Jamshad", kind: "dm", memberIds: ["me", "jamshad"] },
   { id: "salman", name: "Salman", kind: "dm", memberIds: ["me", "salman"] },
@@ -253,7 +330,34 @@ export function buildSeedState(now = Date.now()): ChatState {
   ];
 
   // Feature demos (plans, bills, boards) live in their own seed files and slot into their chats by time.
-  const messages: Record<string, Message[]> = { dm, general, reema, jamshad, salman };
+  // NOD Team's other channels, and Reema's Vienna group.
+  const announcements: Message[] = [
+    msg({ id: "an-1", chatId: "general--announcements", authorId: "charles", body: "📣 Launch moves to Thursday the 15th. Thanks everyone for the push this week.", createdAt: now - 26 * HOUR }),
+    msg({ id: "an-2", chatId: "general--announcements", authorId: "me", body: "Design freeze is Monday. Anything after that goes into 1.1 ✨", createdAt: now - 3 * HOUR, status: "read" }),
+  ];
+  const design: Message[] = [
+    msg({ id: "de-1", chatId: "general--design", authorId: "reema", body: "Type scale v2 is up: tighter headings, Geist all the way.", createdAt: now - 7 * HOUR }),
+    msg({ id: "de-2", chatId: "general--design", authorId: "me", body: "Love it. Can we try 15px for body text?", createdAt: now - 6 * HOUR, status: "read" }),
+    msg({ id: "de-3", chatId: "general--design", authorId: "reema", body: "On it. Mock coming after lunch 🎨", createdAt: now - 6 * HOUR + 120_000 }),
+  ];
+  const vienna: Message[] = [
+    msg({ id: "vi-1", chatId: "vienna", authorId: "reema", body: "Who's in for Vienna in November? Thinking Friday to Sunday.", createdAt: now - 4 * HOUR }),
+    msg({ id: "vi-2", chatId: "vienna", authorId: "salman", body: "In! I'll look at trains.", createdAt: now - 3 * HOUR - 20 * 60 * 1000 }),
+  ];
+
+  // Something to read once you join a public group.
+  const pub = (id: string, chatId: string, authorId: string, body: string, ago: number) => msg({ id, chatId, authorId, body, createdAt: now - ago });
+  const publicThreads: Record<string, Message[]> = {
+    "pub-german": [pub("pg-1", "pub-german", "salman", "Stammtisch this Thursday at Café Ritter, 7pm. Beginners very welcome 🇩🇪", 9 * HOUR), pub("pg-2", "pub-german", "jamshad", "Bringing my separable-verbs flashcards. Who wants to swap?", 7 * HOUR)],
+    "pub-design": [pub("pd-1", "pub-design", "reema", "Crit night next Tuesday: bring one screen you're unsure about.", 20 * HOUR), pub("pd-2", "pub-design", "charles", "Sharing our token naming doc in a sec.", 18 * HOUR)],
+    "pub-coffee": [pub("pc-1", "pub-coffee", "salman", "This week: Café Sperl. Saturday 10am, meet by the door ☕", 30 * HOUR)],
+    "pub-founders": [pub("pf-1", "pub-founders", "charles", "Win of the week: first paying team on NOD 🎉 What's yours?", 2 * DAY)],
+    "pub-hikers": [pub("ph-1", "pub-hikers", "jamshad", "Schneeberg on Sunday if the weather holds. 5h loop, steady pace.", 3 * DAY)],
+  };
+
+  const messages: Record<string, Message[]> = {
+    dm, general, reema, jamshad, salman, "general--announcements": announcements, "general--design": design, vienna, ...publicThreads,
+  };
   for (const m of [...planSeed(now), ...billSeed(now), ...projectSeed(now)]) {
     (messages[m.chatId] ??= []).push(m);
   }
@@ -269,5 +373,6 @@ export function buildSeedState(now = Date.now()): ChatState {
 }
 
 // v7/v8 added the plan, bill and board demos; existing threads keep theirs and gain these
-// (v8 again, for anyone who loaded v7 before the demos were filled in). v9 adds the Analytics demos.
-export const CURRENT_VERSION = 9;
+// (v8 again, for anyone who loaded v7 before the demos were filled in). v9 adds the Analytics demos,
+// v10 groups: NOD Team's roles and channels, and the Vienna invitation. v11 public groups for Explore.
+export const CURRENT_VERSION = 11;

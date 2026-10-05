@@ -1,0 +1,231 @@
+/* ==========================================================================
+   Explore: public collections, friends' activity, groups, things to save
+   ========================================================================== */
+
+.stack { display: flex; flex-direction: column; gap: 26px; padding-top: 6px; }
+.section { display: flex; flex-direction: column; gap: 12px; }
+.sectionHead { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 0 2px; }
+.sectionHead > span { display: flex; flex-direction: column; gap: 1px; }
+.sectionHead b { font: var(--t-title3); font-weight: var(--w-emph); letter-spacing: -.01em; color: var(--ink); }
+.sectionHead small { font: var(--t-footnote); color: var(--ink-3); }
+.more { flex-shrink: 0; padding: 4px 2px; border: none; background: none; color: var(--accent); font: var(--t-subhead); font-weight: var(--w-control); cursor: pointer; }
+
+.byline { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font: var(--t-footnote); color: var(--ink-3); }
+.byline > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reason {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: calc(100% - 20px);
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  background: rgba(12, 10, 9, .48);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: #fff;
+  font: var(--t-caption1);
+  font-weight: var(--w-emph);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The wide buttons stack a label over a note; these sit an icon beside their label. */
+.btn.btn { margin: 0; min-height: 44px; height: 44px; flex-direction: row; align-items: center; justify-content: center; gap: 6px; }
+.rowBtn.rowBtn { flex-direction: row; gap: 8px; }
+
+/* ---- the top pick: a collection, with its cover and two actions ---- */
+
+.hero { border-radius: 26px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--e2); }
+.heroCover {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 168px;
+  border: none;
+  padding: 0;
+  background-color: var(--tone);
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+}
+.heroBody { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 0 16px 16px; }
+.heroEmoji {
+  width: 52px;
+  height: 52px;
+  margin-top: -26px;
+  margin-bottom: 6px;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 0 0 4px var(--surface), var(--e1);
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+}
+.heroName { font: var(--t-title3); font-weight: var(--w-emph); letter-spacing: -.01em; color: var(--ink); }
+.heroDesc { margin: 0 0 4px; font: var(--t-subhead); color: var(--ink-2); text-wrap: pretty; }
+.heroActions { display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px; width: 100%; margin-top: 12px; }
+
+/* ---- collection cards: a cover with the next cards peeking above, like a stack in Mind ---- */
+
+.colGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px 10px; padding-top: 8px; }
+.colCard { position: relative; min-width: 0; }
+.colMain { width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 0; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.colMain:active { transform: scale(.98); }
+.colCover {
+  position: relative;
+  display: block;
+  aspect-ratio: 4 / 3;
+  margin-bottom: 6px;
+  border-radius: 18px;
+  background-color: var(--tone);
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 18%, transparent), var(--e1);
+}
+.colCover::before, .colCover::after {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 14%, transparent);
+  clip-path: inset(-2px -2px 0 -2px);
+}
+.colCover::before { left: 9px; right: 9px; height: 5px; background: color-mix(in srgb, var(--tone) 22%, var(--card-bg)); }
+.colCover::after { left: 18px; right: 18px; height: 4px; bottom: calc(100% + 5px); background: color-mix(in srgb, var(--tone) 34%, var(--card-bg)); }
+.colEmoji {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: var(--e1);
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+}
+.colName { font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.colReason { font: var(--t-caption1); color: color-mix(in srgb, var(--tone) 70%, var(--ink-2)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* the round + (and its done tick), on covers and tiles */
+.plus {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--e1);
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-spring), background var(--t-fast);
+}
+.plus:active { transform: scale(.88); }
+.plusDone, .plusDone:disabled { background: var(--accent); color: var(--bg); cursor: default; animation: popDone var(--t-slow) var(--ease-spring); }
+@keyframes popDone { from { transform: scale(.6); } to { transform: none; } }
+
+/* ---- things to save: a masonry of Mind tiles ---- */
+
+.masonry { columns: 2; column-gap: 10px; }
+.masonry > * { break-inside: avoid; margin-bottom: 12px; }
+.item { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.itemMain { cursor: pointer; border-radius: var(--r-md); }
+.itemMain:active { transform: scale(.98); }
+.itemPlus { top: 6px; right: 6px; width: 30px; height: 30px; }
+.itemReason { padding: 0 4px; font: var(--t-caption1); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- groups ---- */
+
+.rail { display: flex; gap: 10px; margin: 0 -16px; padding: 4px 16px 10px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; scroll-padding-inline: 16px; }
+.rail::-webkit-scrollbar { display: none; }
+.groupCard {
+  flex: 0 0 214px;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  border-radius: 22px;
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), var(--e1);
+}
+.groupMain { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 0 0 10px; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.groupCover { display: block; width: 100%; height: 78px; background-color: var(--tone); background-size: cover; background-position: center; }
+.groupAvatar { margin: -22px 0 6px 12px; border-radius: 15px; box-shadow: 0 0 0 3px var(--surface); }
+.groupAvatar > * { display: flex; }
+.groupName { padding: 0 12px; font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.groupMeta { padding: 0 12px; font: var(--t-footnote); color: var(--ink-3); }
+.groupReason { padding: 2px 12px 0; font: var(--t-caption1); font-weight: var(--w-emph); color: color-mix(in srgb, var(--tone) 70%, var(--ink-2)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.join.join { min-height: 36px; height: 36px; margin: 0 12px 12px; width: auto; flex-direction: row; align-items: center; justify-content: center; gap: 5px; font: var(--t-subhead); font-weight: var(--w-emph); }
+.joined, .joined:disabled { opacity: 1; color: var(--ok, #1FA855); background: color-mix(in srgb, var(--ok, #1FA855) 10%, transparent); }
+
+.groupList { display: flex; flex-direction: column; gap: 10px; }
+.groupRow { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 10px; border-radius: 20px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--e1); }
+.groupRowMain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 0; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.groupThumb { width: 64px; height: 64px; flex-shrink: 0; border-radius: 16px; background-color: var(--tone); background-size: cover; background-position: center; }
+.groupRowText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.groupRowText b { font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.groupRowText small { font: var(--t-footnote); color: var(--ink-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.groupRowText em { font-style: normal; font: var(--t-caption1); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.joinPill { flex-shrink: 0; height: 32px; padding: 0 14px; border: none; border-radius: var(--r-pill); background: var(--ink); color: var(--bg); font: var(--t-footnote); font-weight: var(--w-emph); cursor: pointer; }
+.joinPill.joined { background: color-mix(in srgb, var(--ok, #1FA855) 12%, transparent); color: var(--ok, #1FA855); }
+
+.groupFacts { display: flex; flex-wrap: wrap; gap: 12px; font: var(--t-footnote); color: var(--ink-2); }
+.groupFacts span { display: inline-flex; align-items: center; gap: 5px; }
+.topic { cursor: default; background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.faces { display: flex; align-items: center; gap: 0; }
+.faces > span + span { margin-left: -8px; box-shadow: 0 0 0 2px var(--bg); border-radius: var(--r-pill); }
+.faces small { margin-left: 10px; font: var(--t-footnote); color: var(--ink-2); }
+
+/* ---- friends lately: who did what, and the things themselves ---- */
+
+.feed { display: flex; flex-direction: column; gap: 18px; }
+.activity { display: flex; flex-direction: column; gap: 10px; }
+.activityHead { display: flex; align-items: flex-start; gap: 10px; }
+.activityText { flex: 1; min-width: 0; padding-top: 5px; font: var(--t-subhead); color: var(--ink-2); line-height: 1.35; }
+.activityText b { color: var(--ink); font-weight: var(--w-emph); }
+.activityText small { color: var(--ink-3); font: var(--t-footnote); }
+.inline { display: inline; padding: 0; border: none; background: none; color: var(--ink); font: inherit; font-weight: var(--w-emph); cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--ink) 20%, transparent); text-underline-offset: 3px; }
+.strip { display: flex; gap: 8px; margin: 0 -16px; padding: 0 16px 4px 58px; overflow-x: auto; scrollbar-width: none; }
+.strip::-webkit-scrollbar { display: none; }
+.mini { position: relative; flex: 0 0 112px; }
+.miniMain { width: 112px; height: 112px; padding: 0; border: none; border-radius: 16px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--e1); cursor: pointer; display: block; }
+.miniMain img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.miniCard { position: relative; display: flex; flex-direction: column; justify-content: flex-end; gap: 3px; width: 100%; height: 100%; padding: 10px; text-align: left; font: var(--t-footnote); font-weight: var(--w-control); color: var(--ink); overflow: hidden; background: color-mix(in srgb, var(--tone) 13%, var(--surface)); }
+.miniCard i { position: absolute; left: 10px; top: 10px; font-style: normal; font-size: 18px; line-height: 1; }
+.miniCard em { font-style: normal; font: var(--t-caption2, var(--t-caption1)); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+.miniPlus { top: 6px; right: 6px; width: 28px; height: 28px; }
+.activityGroup { display: flex; align-items: center; gap: 12px; margin-left: 42px; padding: 8px; border: none; border-radius: 18px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--e1); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.activityGroup .groupThumb { width: 48px; height: 48px; border-radius: 12px; }
+
+/* ---- sheets ---- */
+
+.suggested { flex-shrink: 0; padding: 3px 9px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font: var(--t-caption1); font-weight: var(--w-emph); }
+.fromRow { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: none; border-radius: 18px; background: color-mix(in srgb, var(--ink) 4%, transparent); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+
+/* ---- a public collection, opened ---- */
+
+.page.page { z-index: 40; background: var(--bg); }
+.pageBar { position: absolute; top: var(--inset-top); left: 12px; right: 12px; z-index: 30; display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; height: 56px; }
+.pageBar b { font: var(--t-headline); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; }
+.pageScroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: calc(var(--inset-top) + 60px) 16px calc(var(--inset-bottom) + 40px); }
+.pageScroll::-webkit-scrollbar { display: none; }
+.pageCover { height: 168px; border-radius: 24px; background-color: var(--tone); background-size: cover; background-position: center; box-shadow: inset 0 0 0 .5px color-mix(in srgb, #000 10%, transparent); }
+.pageHead { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0 6px 6px; }
+.pageEmoji { width: 60px; height: 60px; margin-top: -30px; margin-left: 4px; border-radius: 18px; background: var(--surface); box-shadow: 0 0 0 4px var(--bg), var(--e1); display: grid; place-items: center; font-size: 30px; }
+.pageHead h2 { margin: 8px 0 0; font: var(--t-title2); font-weight: var(--w-emph); letter-spacing: -.02em; }
+.pageHead p { margin: 4px 0; font: var(--t-subhead); color: var(--ink-2); text-wrap: pretty; }
+.pageHead .btn { width: 100%; margin-top: 10px; }
+.hint { align-self: center; font: var(--t-footnote); color: var(--ink-3); text-align: center; }
+.pageStack { margin-top: 22px; }
+.stackHead { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; padding: 0 4px; font: var(--t-subhead); color: var(--ink); }
+.stackHead em { font-style: normal; color: var(--ink-3); font: var(--t-footnote); }

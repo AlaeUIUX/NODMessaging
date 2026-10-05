@@ -27,5 +27,5 @@ export function chatIdentity(chat: Chat, me: string, users: (id: string) => User
     const other = users(chat.memberIds.find((id) => id !== me) ?? chat.memberIds[0]);
     return { label: other.fullName, tone: other.tone, glyph: initials(other.fullName), photo: other.photo };
   }
-  return { label: chat.name, tone: chat.tone ?? "graphite", glyph: initials(chat.name), photo: undefined as string | undefined };
+  return { label: chat.name, tone: chat.tone ?? "graphite", glyph: initials(chat.name), photo: chat.photo };
 }

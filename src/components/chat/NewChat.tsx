@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { initials } from "@/lib/chat/avatar";
-import { getPrefs, usePrefs } from "@/lib/chat/account";
+import { usePrefs } from "@/lib/chat/account";
 import { ADDRESS_BOOK, allPeople, formatPhone, type AddressEntry } from "@/lib/chat/people";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Chat, User } from "@/lib/chat/types";
 import Avatar from "./Avatar";
+import { InvitationRow } from "./Groups";
 import { IconCheck, IconChevron, IconContacts, IconSearch, IconShare, IconUserGroup } from "./Icons";
 import { getPermission, PermissionAlert, setPermission, Sheet } from "./ui";
 import styles from "./chat.module.css";
@@ -16,24 +17,25 @@ import s from "./account.module.css";
  * WhatsApp-style "New chat": quick actions first, then frequently contacted,
  * then the people you know A–Z, and the contacts you could invite. With
  * contacts allowed, NOD matches your address book; search reaches anyone on
- * NOD by name, @username or number. "New group" is a second step.
+ * NOD by name, @username or number. "New group" opens the group maker.
  */
 
 const digits = (v: string) => v.replace(/\D/g, "");
 
-export default function NewChat({ onOpen, onClose, onInvite, onToast }: {
+export default function NewChat({ onOpen, onClose, onInvite, onNewGroup, onToast, invitations = [], onJoined }: {
   onOpen: (chat: Chat) => void;
   onClose: () => void;
   onInvite: () => void;
+  onNewGroup: () => void;
   onToast: (text: string) => void;
+  /** Groups waiting for an answer: listed first, under Invitations. */
+  invitations?: Chat[];
+  onJoined?: (group: Chat) => void;
 }) {
-  const { state, me, createGroup, openDm, isOnline } = useChat();
+  const { state, me, openDm, isOnline } = useChat();
   const meUser = userById(me);
   const [prefs, setPrefs] = usePrefs(me);
-  const [step, setStep] = useState<"pick" | "group">("pick");
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
-  const [groupName, setGroupName] = useState("");
   const [perm, setPerm] = useState(getPermission("contacts"));
   const [asking, setAsking] = useState(false);
   const allowed = perm === "granted";
@@ -77,12 +79,8 @@ export default function NewChat({ onOpen, onClose, onInvite, onToast }: {
     return acc;
   }, {});
 
-  const closed = (id: string) => getPrefs(id).spaceInvites === "nobody";
   const presence = (u: User, note?: string) => {
-    const status = step === "group" && closed(u.id) ? "Doesn’t take Space invites"
-      : isOnline(u.id) ? "Active now"
-      : step === "group" ? (selected.includes(u.id) ? "Added" : "Tap to add")
-      : note ?? "Tap to message";
+    const status = isOnline(u.id) ? "Active now" : note ?? "Tap to message";
     return u.username ? `@${u.username} · ${status}` : status;
   };
 
@@ -90,12 +88,7 @@ export default function NewChat({ onOpen, onClose, onInvite, onToast }: {
     <button
       key={u.id}
       className={styles.contactRow}
-      disabled={step === "group" && closed(u.id)}
       onClick={() => {
-        if (step === "group") {
-          setSelected((x) => (x.includes(u.id) ? x.filter((y) => y !== u.id) : [...x, u.id]));
-          return;
-        }
         // Anyone on NOD: the chat starts if there isn't one yet.
         const chat = dmWith(u.id) ?? openDm(u.id);
         close(() => onOpen(chat));
@@ -103,11 +96,6 @@ export default function NewChat({ onOpen, onClose, onInvite, onToast }: {
     >
       <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={40} shape="circle" online={isOnline(u.id)} />
       <span className={styles.contactText}><b>{u.fullName}</b><small>{presence(u, note)}</small></span>
-      {step === "group" && (
-        <span className={`${styles.pickCircle} ${selected.includes(u.id) ? styles.pickOn : ""}`}>
-          {selected.includes(u.id) && <IconCheck size={12} />}
-        </span>
-      )}
     </button>
   );
 
@@ -136,52 +124,19 @@ export default function NewChat({ onOpen, onClose, onInvite, onToast }: {
     }} />
   );
 
-  if (step === "group") {
-    return (
-      <Sheet
-        title="New group"
-        onClose={onClose}
-        action={{
-          label: "Create",
-          disabled: !groupName.trim() || selected.length === 0,
-          onClick: () => onOpen(createGroup(groupName, selected)),
-        }}
-      >
-        {(close) => (
-          <>
-            <input
-              className={styles.bigInput}
-              data-autofocus
-              placeholder="Group name"
-              value={groupName}
-              onChange={(e) => setGroupName(e.target.value)}
-            />
-            {selected.length > 0 && (
-              <div className={styles.memberPick}>
-                {selected.map((id) => {
-                  const u = userById(id);
-                  return (
-                    <button key={id} className={styles.memberOn} onClick={() => setSelected((x) => x.filter((y) => y !== id))}>
-                      <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={40} shape="circle" />
-                      <span>{u.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <p className={styles.sheetLabel}>Members · {selected.length} of {contacts.length}</p>
-            <div className={styles.listGroup}>{contacts.map((u) => person(u, close))}</div>
-          </>
-        )}
-      </Sheet>
-    );
-  }
-
   return (
     <>
       <Sheet title="New chat" onClose={onClose}>
         {(close) => (
           <>
+            {invitations.length > 0 && !q && (
+              <>
+                <p className={styles.sheetLabel}>Invitations · {invitations.length}</p>
+                <div className={styles.listGroup}>
+                  {invitations.map((g) => <InvitationRow key={g.id} group={g} onJoin={() => close(() => onJoined?.(g))} />)}
+                </div>
+              </>
+            )}
             <label className={styles.sheetSearch}>
               <IconSearch size={18} />
               <input placeholder="Search name, @username or number" value={query} onChange={(e) => setQuery(e.target.value)} data-autofocus />
@@ -189,7 +144,7 @@ export default function NewChat({ onOpen, onClose, onInvite, onToast }: {
 
             {!q && (
               <div className={styles.listGroup}>
-                <button className={styles.actionRow} onClick={() => setStep("group")}>
+                <button className={styles.actionRow} onClick={() => close(onNewGroup)}>
                   <span className={styles.actionIcon}><IconUserGroup size={20} /></span>
                   <span className={styles.contactText}><b>New group</b><small>Chat with several people at once</small></span>
                   <IconChevron size={16} />

@@ -595,6 +595,27 @@
   transition: transform var(--t-fast) var(--ease-out);
 }
 .plusBtn:active { transform: scale(.9); }
+.plusBtn { position: relative; }
+/* Something's waiting behind + (an invitation to a group). */
+.plusBadge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--danger);
+  color: #fff;
+  font: var(--t-caption2, 11px/18px system-ui);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--bg);
+  animation: badgePop var(--t-slow) var(--ease-spring) both;
+}
+@keyframes badgePop { from { transform: scale(0); } to { transform: none; } }
 .searchBar {
   height: 44px;
   display: flex;
@@ -4838,4 +4859,37 @@ a.bsheetAction { text-decoration: none !important; }
   text-overflow: ellipsis;
   border-bottom: 1px solid var(--line);
   margin-bottom: 4px;
+}
+
+/* ==========================================================================
+   Groups in the chat: room for the channel chips, switching in place, read-only channels
+   ========================================================================== */
+
+.chatWithChannels .thread { padding-top: calc(var(--inset-top) + 150px); }
+.chatWithChannels .edgeTop { height: calc(var(--inset-top) + 170px); }
+/* Another channel of the same group: swapped in place, not pushed */
+.chatScreen.chatInstant { animation: none; }
+.chatInstant .thread { animation: channelIn var(--t-mid) var(--ease-out) both; }
+@keyframes channelIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+img.spaceAvatar { object-fit: cover; }
+.readOnlyBar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--inset-bottom, 0px) + 18px);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 10px 18px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  box-shadow: 0 0 0 .5px var(--line), var(--e2);
+  font: var(--t-footnote);
+  font-weight: var(--w-control);
+  color: var(--ink-2);
+  text-align: center;
 }

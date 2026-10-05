@@ -29,13 +29,13 @@ import s from "./account.module.css";
 
 type Page = "profile" | "notifications" | "privacy" | "chats" | "language" | "storage" | "about";
 
-function Tile({ tone, children }: { tone: AvatarTone | "accent" | "danger"; children: React.ReactNode }) {
+export function Tile({ tone, children }: { tone: AvatarTone | "accent" | "danger"; children: React.ReactNode }) {
   const bg = tone === "accent" ? "var(--accent)" : tone === "danger" ? "var(--danger)" : TONES[tone];
   // The accent turns light in dark mode, so its icon takes the background colour instead of white.
   return <span className={s.tile} style={{ background: bg, color: tone === "accent" ? "var(--bg)" : undefined }}>{children}</span>;
 }
 
-function Row({ icon, title, sub, value, onClick, trailing, danger }: {
+export function Row({ icon, title, sub, value, onClick, trailing, danger }: {
   icon?: React.ReactNode; title: string; sub?: string; value?: string; onClick?: () => void; trailing?: React.ReactNode; danger?: boolean;
 }) {
   const inner = (
@@ -54,7 +54,7 @@ function Row({ icon, title, sub, value, onClick, trailing, danger }: {
     : <div className={s.row}>{inner}</div>;
 }
 
-function Group({ label, note, children }: { label?: string; note?: string; children: React.ReactNode }) {
+export function Group({ label, note, children }: { label?: string; note?: string; children: React.ReactNode }) {
   return (
     <section className={s.group}>
       {label && <p className={s.groupLabel}>{label}</p>}
@@ -65,7 +65,7 @@ function Group({ label, note, children }: { label?: string; note?: string; child
 }
 
 /** A page that slides in over Settings, with Back and an optional action. */
-function SubPage({ title, onBack, action, children, leaving }: { title: string; onBack: () => void; action?: React.ReactNode; children: React.ReactNode; leaving?: boolean }) {
+export function SubPage({ title, onBack, action, children, leaving }: { title: string; onBack: () => void; action?: React.ReactNode; children: React.ReactNode; leaving?: boolean }) {
   return (
     <div className={`${styles.screen} ${styles.chatScreen} ${s.settings} ${s.subPage} ${leaving ? styles.leaving : ""}`}>
       <StatusBar />
@@ -311,7 +311,7 @@ function PrivacyPage({ leaving, onBack, onToast }: { leaving: boolean; onBack: (
         <Row title="Read receipts" trailing={<Toggle on={prefs.readReceipts} onChange={(v) => set({ readReceipts: v })} label="Read receipts" />} />
         <Row title="Typing indicator" sub="Let people see when you’re writing" trailing={<Toggle on={prefs.typing} onChange={(v) => set({ typing: v })} label="Typing indicator" />} />
       </Group>
-      <Group label="Who can add me to Spaces" note={prefs.spaceInvites === "everyone" ? "Anyone you chat with can add you to a new Space." : "People can’t add you to a new Space; you’re left out when they make one."}>
+      <Group label="Who can invite me to groups" note={prefs.spaceInvites === "everyone" ? "Anyone can invite you to a group. You choose whether to join." : "Nobody can invite you to a group. You can still join with an invite link."}>
         <div className={s.segRow}><Segmented value={prefs.spaceInvites} options={[{ id: "everyone", label: "Everyone" }, { id: "nobody", label: "Nobody" }]} onChange={(v) => set({ spaceInvites: v })} /></div>
       </Group>
       <Group label="App permissions" note="What you allowed when NOD asked. Reset one and NOD asks again next time it needs it.">
@@ -441,7 +441,7 @@ function AboutPage({ leaving, onBack }: { leaving: boolean; onBack: () => void }
         <small>Interactive prototype · 0.1.0</small>
       </div>
       <Group>
-        <Row title="Chats and Spaces" sub="One-to-one, or a Space for any team or trip" trailing={<span />} />
+        <Row title="Chats and groups" sub="One-to-one, or a group with channels for any team or trip" trailing={<span />} />
         <Row title="Decide in the thread" sub="Polls, checklists, plans, boards, payments and invoices" trailing={<span />} />
         <Row title="Mind" sub="Your own collections, filled from any chat" trailing={<span />} />
         <Row title="Analytics" sub="Your spending, and everything that needs you" trailing={<span />} />

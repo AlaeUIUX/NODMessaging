@@ -84,6 +84,8 @@ export interface Collection {
   chatIds: string[];
   /** How the top level is laid out: stacks and items share it, like inside a stack. */
   view?: MindView;
+  /** Added from Explore: the public collection it came from, and who made it. */
+  from?: { id: string; by: string };
 }
 
 export interface Mind {

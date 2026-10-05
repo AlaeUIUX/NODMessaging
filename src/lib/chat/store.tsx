@@ -17,12 +17,13 @@ import { releaseMedia } from "./media";
 import { reduceCardOp, tasksIn, unclaimedItems } from "./ops";
 import { accountIds, addAccount, getPrefs, initAccounts } from "./account";
 import { allPeople, enablePeople, personById, usePeopleVersion } from "./people";
+import { addMember, canPost, cancelInvite, groupInfo, groupOf, invite, newGroupInfo, syncChannels } from "./groups";
 import { buildSeedState, CHATS } from "./seed";
 import { localStorageAdapter, readKey } from "./storage";
 import {
   createBroadcastTransport, NULL_TRANSPORT, PRESENCE_INTERVAL_MS, PRESENCE_TIMEOUT_MS, samePeers, type Peer,
 } from "./transport";
-import type { Attachment, Card, CardOp, Chat, ChatState, ChatTransport, DeliveryStatus, Message, TransportEvent } from "./types";
+import type { Attachment, AvatarTone, Card, CardOp, Chat, ChatState, ChatTransport, DeliveryStatus, Message, TransportEvent } from "./types";
 
 /**
  * One id per browsing context, fixed at module load — two tabs get different
@@ -151,16 +152,19 @@ function reducer(state: State, action: Action): State {
         m.id === action.messageId ? { ...m, pinned: action.pinned } : m,
       );
 
-    case "add-chat":
-      if (state.data.chats.some((c) => c.id === action.chat.id)) return state;
+    case "add-chat": {
+      // Upsert: a group edited in one tab (name, roles, members) replaces the old copy everywhere.
+      const known = state.data.chats.find((c) => c.id === action.chat.id);
+      if (known && JSON.stringify(known) === JSON.stringify(action.chat)) return state;
       return {
         ...state,
         data: {
           ...state.data,
-          chats: [...state.data.chats, action.chat],
+          chats: known ? state.data.chats.map((c) => (c.id === action.chat.id ? action.chat : c)) : [...state.data.chats, action.chat],
           messages: { ...state.data.messages, [action.chat.id]: state.data.messages[action.chat.id] ?? [] },
         },
       };
+    }
 
     case "card":
       return mapMessages(state, action.chatId, (m) => (m.id === action.messageId ? { ...m, card: action.card } : m));
@@ -242,8 +246,16 @@ interface ChatContextValue {
   send: (chatId: string, body: string, opts?: { replyToId?: string | null; attachments?: Attachment[] }) => void;
   /** Sends a structured message; `summary` is what previews and quotes show. Returns its id. */
   sendCard: (chatId: string, card: Card, summary: string) => string;
-  /** Creates a group with the current user in it, and returns it. People who don't take Space invites are left out. */
-  createGroup: (name: string, memberIds: string[]) => Chat;
+  /** Creates a group (with #general) run by the current user, invites people to it, and returns it. */
+  createGroup: (input: NewGroup) => Chat;
+  /** Applies an edit to a group (see lib/chat/groups.ts) and brings its channels in line, here and in every tab. */
+  updateGroup: (groupId: string, edit: (group: Chat) => Chat) => void;
+  /** Invites people (who take group invites) to a group; returns how many were invited. */
+  inviteToGroup: (groupId: string, userIds: string[]) => number;
+  /** The signed-in person's answer to an invitation. */
+  respondInvite: (groupId: string, accept: boolean) => void;
+  /** Joins through an invite link's code; the group, or null if there's none. */
+  joinByCode: (code: string) => Chat | null;
   /** The direct chat with someone, started if there isn't one yet. */
   openDm: (userId: string) => Chat;
   /** Changes when anyone's profile does (name, photo…), so views that show people re-render. */
@@ -266,6 +278,18 @@ interface ChatContextValue {
 }
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+export interface NewGroup { name: string; description: string; tone: AvatarTone; photo?: string; cover?: string; invite: string[] }
+
+/** A plain text message, for simulated people. */
+function textFrom(chatId: string, authorId: string, body: string): Message {
+  const id = `sim-${newId()}`;
+  return {
+    id, clientId: id, chatId, authorId, kind: "text", body, createdAt: Date.now(), status: "delivered", reactions: [],
+    replyToId: null, editedAt: null, editHistory: [], pinned: false, deletedAt: null, attachments: [],
+  };
+}
+const HELLOS = ["Thanks for the invite 👋", "Hi everyone!", "Happy to be here 🙌", "Hey all, thanks for adding me"];
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
@@ -440,9 +464,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           break;
         case "chat":
           // Known right away, so a message that follows in the same tick passes the membership check.
-          if (!latest.current.chats.some((c) => c.id === event.chat.id)) {
-            latest.current = { ...latest.current, chats: [...latest.current.chats, event.chat] };
-          }
+          latest.current = {
+            ...latest.current,
+            chats: latest.current.chats.some((c) => c.id === event.chat.id)
+              ? latest.current.chats.map((c) => (c.id === event.chat.id ? event.chat : c))
+              : [...latest.current.chats, event.chat],
+          };
           dispatch({ type: "add-chat", chat: event.chat });
           break;
         case "typing":
@@ -557,7 +584,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const simulate = useCallback(
     (sent: Message) => {
       const chat = chatOf(sent.chatId);
-      const counterpart = chat?.memberIds.find((id) => id !== sent.authorId) ?? "charles";
+      // In a channel, only someone who may post there answers (nobody, in an admins-only channel run by you).
+      const group = chat?.kind === "group" ? groupOf(latest.current.chats, chat) : null;
+      const info = group ? groupInfo(group) : null;
+      const channel = info?.channels.find((c) => c.id === sent.chatId);
+      const others = chat ? chat.memberIds.filter((id) => id !== sent.authorId) : ["charles"];
+      const counterpart = (info && channel ? others.filter((id) => canPost(info, channel, id)) : others)[0];
+      if (!counterpart) {
+        others.forEach((uid, i) => later(() => receipt(sent.chatId, sent.id, "read", uid), 1400 + i * 1300));
+        return;
+      }
       const typing = (isTyping: boolean) => {
         dispatch({ type: "typing", chatId: sent.chatId, userId: counterpart, isTyping });
         publish({ type: "typing", chatId: sent.chatId, userId: counterpart, isTyping });
@@ -739,21 +775,90 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [cardOp, chatOf, later, updateCard],
   );
 
-  const createGroup = useCallback<ChatContextValue["createGroup"]>(
-    (name, memberIds) => {
-      const tones = ["plum", "sage", "denim", "clay", "ochre"] as const;
-      const chat: Chat = {
-        id: `group-${Date.now().toString(36)}`,
-        name: name.trim() || "New group",
-        kind: "group",
-        memberIds: [meRef.current, ...memberIds.filter((id) => id !== meRef.current && getPrefs(id).spaceInvites !== "nobody")],
-        tone: tones[Math.floor(Math.random() * tones.length)],
+  /** Puts chats in place here and in every other tab. */
+  const putChats = useCallback((chats: Chat[]) => {
+    for (const chat of chats) {
+      latest.current = {
+        ...latest.current,
+        chats: latest.current.chats.some((c) => c.id === chat.id)
+          ? latest.current.chats.map((c) => (c.id === chat.id ? chat : c))
+          : [...latest.current.chats, chat],
       };
       dispatch({ type: "add-chat", chat });
       publish({ type: "chat", chat });
+    }
+  }, [publish]);
+
+  const updateGroup = useCallback<ChatContextValue["updateGroup"]>(
+    (groupId, edit) => {
+      const current = chatOf(groupId);
+      if (!current) return;
+      const next = edit(current);
+      putChats([next, ...syncChannels(next, latest.current.chats)]);
+    },
+    [chatOf, putChats],
+  );
+
+  const inviteToGroup = useCallback<ChatContextValue["inviteToGroup"]>(
+    (groupId, userIds) => {
+      const by = meRef.current;
+      const group = chatOf(groupId);
+      if (!group) return 0;
+      // People who said no to group invites (Settings › Privacy) can't be invited.
+      const asked = userIds.filter((u) => !group.memberIds.includes(u) && getPrefs(u).spaceInvites !== "nobody");
+      if (!asked.length) return 0;
+      updateGroup(groupId, (g) => invite(g, asked, by));
+      // Simulated people (no tab of their own) say yes after a moment, and say hello in #general.
+      asked.forEach((u, i) => {
+        if (peersRef.current.some((p) => p.userId === u)) return;
+        later(() => {
+          const g = chatOf(groupId);
+          if (!g || g.removedAt || !groupInfo(g).invites.some((x) => x.userId === u)) return;
+          updateGroup(groupId, (x) => addMember(x, u));
+          const hello = textFrom(groupId, u, HELLOS[(i + u.length) % HELLOS.length]);
+          dispatch({ type: "append", message: hello });
+          publish({ type: "message", message: hello });
+          signal("in");
+        }, 4000 + i * 2500);
+      });
+      return asked.length;
+    },
+    [chatOf, later, publish, updateGroup],
+  );
+
+  const createGroup = useCallback<ChatContextValue["createGroup"]>(
+    (input) => {
+      const who = meRef.current;
+      const draft: Chat = {
+        id: `group-${Date.now().toString(36)}`,
+        name: input.name.trim() || "New group",
+        kind: "group",
+        memberIds: [who],
+        tone: input.tone,
+        ...(input.photo ? { photo: input.photo } : {}),
+        group: newGroupInfo(who, input.description.trim(), input.cover),
+      };
+      const chat: Chat = { ...draft, group: groupInfo(draft) };
+      putChats([chat]);
+      if (input.invite.length) inviteToGroup(chat.id, input.invite);
       return chat;
     },
-    [publish],
+    [inviteToGroup, putChats],
+  );
+
+  const respondInvite = useCallback<ChatContextValue["respondInvite"]>(
+    (groupId, accept) => updateGroup(groupId, (g) => (accept ? addMember(g, meRef.current) : cancelInvite(g, meRef.current))),
+    [updateGroup],
+  );
+
+  const joinByCode = useCallback<ChatContextValue["joinByCode"]>(
+    (code) => {
+      const group = latest.current.chats.find((c) => c.kind === "group" && !c.groupId && !c.removedAt && c.group?.inviteCode === code);
+      if (!group) return null;
+      if (!group.memberIds.includes(meRef.current)) updateGroup(group.id, (g) => addMember(g, meRef.current));
+      return chatOf(group.id) ?? group;
+    },
+    [chatOf, updateGroup],
   );
 
   const openDm = useCallback<ChatContextValue["openDm"]>(
@@ -907,11 +1012,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ChatContextValue>(
     () => ({
-      state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, openDm, retry,
+      state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, updateGroup, inviteToGroup, respondInvite, joinByCode, openDm, retry,
       toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead,
       peopleVersion: `${peopleReady ? 1 : 0}:${peopleVersion}`,
     }),
-    [state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, openDm, retry,
+    [state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, updateGroup, inviteToGroup, respondInvite, joinByCode, openDm, retry,
       toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead, peopleReady, peopleVersion],
   );
 

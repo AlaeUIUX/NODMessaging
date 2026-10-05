@@ -94,7 +94,7 @@ function exec(command: string, value?: string) {
  * already scrolls natively) and scrolled with a vertical wheel. A drag never
  * triggers the button it started on.
  */
-function DragScroll({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
+export function DragScroll({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef({ x: 0, left: 0, down: false, moved: false });
   const [dragging, setDragging] = useState(false);

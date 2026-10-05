@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { chatIdentity, initials, TONES } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
+import { groupInfo, landingChannel, visibleChannels } from "@/lib/chat/groups";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
@@ -15,11 +16,13 @@ import { InviteSheet } from "./Invite";
 import Settings from "./Settings";
 import { formatPhone } from "@/lib/chat/people";
 import NewChat from "./NewChat";
+import { NewGroupSheet } from "./Groups";
 import AnalyticsTab from "./Analytics";
+import ExploreTab from "./Explore";
 import StatusBar from "./StatusBar";
 import styles from "./chat.module.css";
 
-type Filter = "all" | "unread" | "dms" | "spaces";
+type Filter = "all" | "unread" | "dms" | "groups";
 type Tab = "chats" | "mind" | "analytics" | "explore";
 
 const REVEAL = 124;
@@ -210,6 +213,7 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
   const [filter, setFilter] = useState<Filter>("all");
   const [tab, setTab] = useState<Tab>("chats");
   const [newChat, setNewChat] = useState(false);
+  const [newGroup, setNewGroup] = useState(false);
   const [pinned, setPinned] = useState<Set<string>>(() => new Set(["dm"]));
   const [muted, setMuted] = useState<Set<string>>(() => new Set());
   const searchRef = useRef<HTMLInputElement>(null);
@@ -218,12 +222,12 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
   const [adding, setAdding] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean } | null>(null);
-  const flash = (text: string) => {
+  const flash = useCallback((text: string) => {
     const id = Date.now();
     setToast({ text, id });
     setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), 2200);
     setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 2420);
-  };
+  }, []);
   const openSettings = () => setSettings({ leaving: false });
   const closeSettings = () => {
     setSettings((x) => (x ? { leaving: true } : x));
@@ -244,16 +248,38 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
   const toggleMuted = (id: string) => setMuted((s) => { const next = toggle(s, id); writeList("muted", me, next); return next; });
 
   // Only chats this person is in: signed in as Reema, the Alae–Charles DM isn't yours to read.
+  // A group is one row for all the channels you can see: their unread add up, the newest message shows.
   const rows = useMemo(() => {
-    return state.data.chats.filter((chat) => chat.memberIds.includes(me)).map((chat) => {
-      const messages = state.data.messages[chat.id] ?? [];
-      const last = messages[messages.length - 1];
-      const lastRead = lastReadAt(chat.id);
-      const unreadMsgs = messages.filter((m) => m.authorId !== me && m.createdAt > lastRead);
-      const mentioned = unreadMsgs.some((m) => m.body.includes(`@${userById(me).name}`));
-      return { chat, last, unread: unreadMsgs.length, mentioned };
+    const chats = state.data.chats;
+    return chats.filter((chat) => chat.memberIds.includes(me) && !chat.groupId && !chat.removedAt).map((chat) => {
+      const threads = chat.kind === "group"
+        ? visibleChannels(chat, me).map((c) => chats.find((x) => x.id === c.id && !x.removedAt && x.memberIds.includes(me))).filter(Boolean) as Chat[]
+        : [chat];
+      let last: Message | undefined;
+      let unread = 0;
+      let mentioned = false;
+      for (const t of threads) {
+        const messages = state.data.messages[t.id] ?? [];
+        const tail = messages[messages.length - 1];
+        if (tail && (!last || tail.createdAt > last.createdAt)) last = tail;
+        const lastRead = lastReadAt(t.id);
+        const unreadMsgs = messages.filter((m) => m.authorId !== me && m.createdAt > lastRead);
+        unread += unreadMsgs.length;
+        mentioned ||= unreadMsgs.some((m) => m.body.includes(`@${userById(me).name}`));
+      }
+      // Which channel the newest message is in, when there's more than one to tell apart.
+      const channel = chat.kind === "group" && threads.length > 1 && last && last.chatId !== chat.id
+        ? groupInfo(chat).channels.find((c) => c.id === last!.chatId)?.name
+        : undefined;
+      return { chat, last, unread, mentioned, channel };
     });
   }, [state.data, me, lastReadAt]);
+  // Groups that invited you: a red badge on + until you answer them (in New chat › Invitations).
+  const invites = useMemo(
+    () => state.data.chats.filter((c) => c.kind === "group" && !c.groupId && !c.removedAt && !c.memberIds.includes(me) && c.group?.invites.some((i) => i.userId === me)),
+    [state.data.chats, me],
+  );
+  const openRow = (chat: Chat) => onOpen(chat.kind === "group" ? landingChannel(state.data.chats, chat, me) : chat);
 
   // Conversations (and their clock-relative labels) exist only once local
   // storage has loaded; rendering the seed on the server would mismatch.
@@ -266,7 +292,7 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
     .filter(({ chat, last, unread }) => {
       if (filter === "unread" && unread === 0) return false;
       if (filter === "dms" && chat.kind !== "dm") return false;
-      if (filter === "spaces" && chat.kind !== "group") return false;
+      if (filter === "groups" && chat.kind !== "group") return false;
       if (!query.trim()) return true;
       const q = query.toLowerCase();
       return chatIdentity(chat, me, userById).label.toLowerCase().includes(q) || preview(last, me).toLowerCase().includes(q);
@@ -283,7 +309,7 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
     { id: "all", label: "All" },
     { id: "unread", label: "Unread", badge: unreadChats ? String(unreadChats) : undefined },
     { id: "dms", label: "DMs" },
-    { id: "spaces", label: "Spaces", badge: spaceMention ? "@" : undefined },
+    { id: "groups", label: "Groups", badge: spaceMention ? "@" : undefined },
   ];
 
   return (
@@ -293,6 +319,8 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
 
       {tab === "mind" ? <MindTab onOpenChat={onOpen} onSettings={openSettings} /> : tab === "analytics" ? (
         <AnalyticsTab onOpenChat={onOpen} mode={analyticsMode} onOpenWidget={onOpenWidget} onSettings={openSettings} />
+      ) : tab === "explore" ? (
+        <ExploreTab onOpenChat={onOpen} onSettings={openSettings} />
       ) : (
       <>
       <header className={styles.profile}>
@@ -311,7 +339,8 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
               </span>
             </div>
           </div>
-          <button className={styles.plusBtn} aria-label="New message" onClick={() => setNewChat(true)}>
+          <button className={styles.plusBtn} aria-label={invites.length ? `New message, ${invites.length} ${invites.length === 1 ? "invitation" : "invitations"}` : "New message"} onClick={() => setNewChat(true)}>
+            {ready && invites.length > 0 && <span className={styles.plusBadge}>{invites.length}</span>}
             <span className={styles.maskIcon} style={{ width: 16, height: 16, ["--src" as string]: "url(/nod/plus.svg)" }} aria-hidden="true" />
           </button>
         </div>
@@ -327,13 +356,6 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
       </header>
 
       <div className={styles.inboxBody}>
-          {tab === "explore" ? (
-            <div className={styles.tabEmpty}>
-              <Logo size={40} />
-              <h2>Explore</h2>
-              <p>Discover public spaces and people on NOD.</p>
-            </div>
-          ) : (
           <div className={styles.inboxScroll}>
             {tab === "chats" && (
               <div className={styles.chips} role="tablist">
@@ -353,7 +375,7 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
             )}
 
             <div className={styles.rows} key={`${tab}-${filter}`}>
-              {visible.map(({ chat, last, unread, mentioned }, i) => {
+              {visible.map(({ chat, last, unread, mentioned, channel }, i) => {
                 const id = chatIdentity(chat, me, userById);
                 const other = chat.kind === "dm" ? chat.memberIds.find((m) => m !== me) : undefined;
                 const online = !!other && isOnline(other);
@@ -363,14 +385,17 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
                 return (
                   <div key={chat.id} className={styles.rowEnter} style={{ ["--i" as string]: i }}>
                     <SwipeRow
-                      onTap={() => onOpen(chat)}
+                      onTap={() => openRow(chat)}
                       pinned={pinned.has(chat.id)}
                       muted={isMuted}
                       onPin={() => togglePinned(chat.id)}
                       onMute={() => toggleMuted(chat.id)}
                     >
                       {chat.kind === "group" ? (
-                        <span className={styles.spaceAvatar} style={{ background: TONES[id.tone] }}><Logo size={36} /></span>
+                        id.photo
+                          // eslint-disable-next-line @next/next/no-img-element
+                          ? <img className={styles.spaceAvatar} src={id.photo} alt="" />
+                          : <span className={styles.spaceAvatar} style={{ background: TONES[id.tone] }}><Logo size={36} /></span>
                       ) : (
                         <Avatar glyph={id.glyph} tone={id.tone} photo={id.photo} size={56} shape="circle" online={online} />
                       )}
@@ -383,7 +408,7 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
                                 {chat.kind === "group" ? `${userById(typing[0]).name} is typing` : "typing"}
                                 <span className={styles.ellipsis}><i>.</i><i>.</i><i>.</i></span>
                               </span>
-                            ) : emojify(preview(last, me))}
+                            ) : emojify(`${channel ? `#${channel} · ` : ""}${preview(last, me)}`)}
                           </span>
                         </div>
                         <div className={styles.rowSide}>
@@ -421,7 +446,6 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
               ))}
             </div>
           </div>
-          )}
       </div>
 
       </>
@@ -429,7 +453,23 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
 
       <div className={styles.edgeBottom} />
       <NavDock tab={tab} onTab={setTab} />
-      {newChat && <NewChat onClose={() => setNewChat(false)} onOpen={onOpen} onInvite={() => setInviting(true)} onToast={flash} />}
+      {newChat && (
+        <NewChat
+          onClose={() => setNewChat(false)}
+          onOpen={onOpen}
+          onInvite={() => setInviting(true)}
+          onNewGroup={() => setNewGroup(true)}
+          onToast={flash}
+          invitations={invites}
+          onJoined={(g) => { flash(`Welcome to ${g.name}`); openRow(g); }}
+        />
+      )}
+      {newGroup && (
+        <NewGroupSheet
+          onClose={() => setNewGroup(false)}
+          onCreated={(chat) => { setNewGroup(false); setFilter("all"); onOpen(chat); }}
+        />
+      )}
       {settings && (
         <Settings
           leaving={settings.leaving}

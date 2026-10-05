@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   // Makes the generated link-preview image an absolute URL.
   metadataBase: new URL("https://nod-messaging.vercel.app"),
   title: "NOD — Where projects get talked through",
-  description: "NOD is a messenger for people who run projects: Spaces for every team, polls, checklists and payments right in the thread, and Mind to keep what matters.",
+  description: "NOD is a messenger for people who run projects: groups with channels for every team, polls, checklists and payments right in the thread, and Mind to keep what matters.",
 };
 
 // On a phone the app is the whole page: draw under the notch and home bar

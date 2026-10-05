@@ -44,7 +44,7 @@ export default function Image() {
           <span style={{ color: "#79716B" }}>Keep what matters.</span>
         </div>
         <span style={{ fontSize: 30, color: "#57534E" }}>
-          A Space for every team, polls, checklists and payments in the thread, and Mind to keep what you need.
+          A group for every team, polls, checklists and payments in the thread, and Mind to keep what you need.
         </span>
       </div>
     ),

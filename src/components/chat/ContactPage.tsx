@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { chatIdentity, initials } from "@/lib/chat/avatar";
+import { chatIdentity, initials, TONES } from "@/lib/chat/avatar";
+import { can, groupInfo, groupOf, roleNames, visibleChannels } from "@/lib/chat/groups";
 import { stripFormatting } from "@/lib/chat/markdown";
+import { readMuted, writeMuted } from "@/lib/chat/mutes";
 import { openItems, type OpenState } from "@/lib/chat/open";
 import { sortStops } from "@/lib/chat/ops";
 import { useChat, userById } from "@/lib/chat/store";
@@ -10,35 +12,21 @@ import type { Attachment, Card, Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import {
   IconBack, IconBell, IconBellOff, IconBoard, IconCalendar, IconChecklist, IconClose, IconCompose, IconFile, IconGame,
-  IconImage, IconLink, IconLocation, IconMoneyReceive, IconOpen, IconPoll, IconReceipt, IconRoute, IconSearch, IconSparkles,
+  IconImage, IconLink, IconLocation, IconLock, IconMoneyReceive, IconOpen, IconPoll, IconReceipt, IconRoute, IconSearch,
+  IconSettings, IconSparkles, IconUserAdd,
 } from "./Icons";
+import { RoleBadges } from "./Groups";
 import { FileRow, Photo } from "./Media";
 import StatusBar from "./StatusBar";
 import { reducedMotion, relative, useChatUi, useDialog, useNow } from "./ui";
 import styles from "./chat.module.css";
 import s from "./contact.module.css";
+import gs from "./groups.module.css";
 
 export type ContactTab = "live" | "media" | "files" | "links";
 
 const LEAVE_MS = 220;
 const EDGE = 24;
-
-/* ---------------------------------------------------------------------------
-   Mutes are the inbox's list (nod.chat.muted.<me>): same key, same shape.
---------------------------------------------------------------------------- */
-
-const mutedKey = (me: string) => `nod.chat.muted.${me}`;
-function readMuted(me: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(mutedKey(me)) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
-}
-function writeMuted(me: string, ids: string[]) {
-  try { localStorage.setItem(mutedKey(me), JSON.stringify(ids)); } catch { /* private mode */ }
-}
 
 /* ---------------------------------------------------------------------------
    Formatting
@@ -143,14 +131,22 @@ function snippet(text: string, q: string): ReactNode {
  * The person (DM) or Space behind a chat: Live items, media, files and links
  * in tabs; for a Space, its members in their own section below.
  */
-export default function ContactPage({ chat, startTab, onClose, onJump }: {
+export default function ContactPage({ chat: opened, startTab, onClose, onJump, onSwitchChannel, onInvite, onSettings }: {
   chat: Chat;
   startTab: ContactTab;
   onClose: () => void;
   /** Closes the page and scrolls the thread to this message. */
   onJump: (messageId: string) => void;
+  /** Groups: open another channel. */
+  onSwitchChannel?: (channelId: string) => void;
+  onInvite?: () => void;
+  onSettings?: () => void;
 }) {
   const { state, me, isOnline, updateCard, cardOp } = useChat();
+  // A group's page is about the group; the shared tabs are about this channel.
+  const chat = state.data.chats.find((c) => c.id === opened.id) ?? opened;
+  const group = chat.kind === "group" ? groupOf(state.data.chats, chat) : null;
+  const gInfo = group ? groupInfo(group) : null;
   const ui = useChatUi();
   const rootRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLElement>(null);
@@ -162,20 +158,27 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
   const [tab, setTab] = useState<ContactTab>(startTab);
   const [leaving, setLeaving] = useState(false);
   const [compact, setCompact] = useState(false);
+  // Groups: the bar is clear over the cover at rest, and frosts once anything scrolls under it.
+  const [scrolled, setScrolled] = useState(false);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   // Only mounted after a tap, never prerendered, so reading storage here is safe.
-  const [muted, setMuted] = useState(() => readMuted(me).includes(chat.id));
+  // A group is muted as a whole, the way its inbox row is.
+  const muteId = group?.id ?? chat.id;
+  const [muted, setMuted] = useState(() => readMuted(me).includes(muteId));
   const now = useNow(30_000);
 
   const messages = useMemo(
     () => (state.data.messages[chat.id] ?? []).filter((m) => !m.deletedAt),
     [state.data.messages, chat.id],
   );
-  const identity = chatIdentity(chat, me, userById);
+  const identity = chatIdentity(group ?? chat, me, userById);
   const other = isGroup ? undefined : chat.memberIds.find((id) => id !== me);
   const online = !!other && isOnline(other);
-  const presence = isGroup ? `${chat.memberIds.length} members` : online ? "Active now" : "Active recently";
+  const channels = group ? visibleChannels(group, me) : [];
+  const presence = group
+    ? `${group.memberIds.length} ${group.memberIds.length === 1 ? "member" : "members"}${channels.length > 1 ? ` · ${channels.length} channels` : ""}`
+    : online ? "Active now" : "Active recently";
   const nameOf = (id: string) => (id === me ? "You" : userById(id).name);
 
   const live = useMemo(() => openItems(messages, me, now), [messages, me, now]);
@@ -248,10 +251,8 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
   };
 
   const toggleMute = () => {
-    const list = readMuted(me).filter((id) => id !== chat.id);
-    writeMuted(me, muted ? list : [...list, chat.id]);
-    // The inbox keeps its own copy of the list; tell it to read the new one.
-    window.dispatchEvent(new Event("nod:muted"));
+    const list = readMuted(me).filter((id) => id !== muteId);
+    writeMuted(me, muted ? list : [...list, muteId]);
     setMuted(!muted);
     ui.toast(muted ? "Notifications on" : `Muted ${isGroup ? identity.label : identity.label.split(" ")[0]}`);
   };
@@ -517,19 +518,47 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
       onPointerCancel={onPointerUp}
     >
       <StatusBar />
-      <header ref={topRef} className={`${s.top} ${compact ? s.topCompact : ""}`}>
+      <header ref={topRef} className={`${s.top} ${compact ? s.topCompact : ""} ${group ? gs.groupTop : ""} ${group && scrolled ? gs.groupTopScrolled : ""}`}>
         <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => close()} aria-label="Back to chat">
           <IconBack />
         </button>
         <span className={s.topTitle} aria-hidden={!compact}>{identity.label}</span>
-        <span className={s.topSpacer} />
+        {group && onSettings ? (
+          // Everyone in a group has settings (notifications, members, leaving); admins get the rest there too.
+          <button className={`${styles.circleBtn} ${styles.glass}`} onClick={onSettings} aria-label="Group settings">
+            <IconSettings />
+          </button>
+        ) : <span className={s.topSpacer} />}
       </header>
 
-      <div ref={scrollRef} className={s.scroll}>
+      <div ref={scrollRef} className={s.scroll} onScroll={group ? (e) => setScrolled(e.currentTarget.scrollTop > 4) : undefined}>
+        {group ? (
+          // Like a Discord server: the cover is its own rounded panel under the bar, never behind it.
+          <div className={gs.groupHead}>
+            <div className={gs.pageCover} style={{ ["--tone" as string]: TONES[identity.tone], ...(gInfo?.cover ? { backgroundImage: `url(${gInfo.cover})` } : {}) }} aria-hidden="true" />
+            <div className={gs.groupHeadBody}>
+              <span className={gs.groupHeadAvatar}><Avatar glyph={identity.glyph} tone={identity.tone} photo={identity.photo} size={72} /></span>
+              <h2 ref={heroNameRef} className={gs.groupName}>{identity.label}</h2>
+              <p className={gs.groupMeta}>{presence}</p>
+              {gInfo?.description && <p className={gs.pageDesc}>{gInfo.description}</p>}
+              <div className={gs.groupActions}>
+                <button className={gs.searchPill} onClick={() => (searching ? endSearch() : setSearching(true))} aria-pressed={searching}>
+                  <IconSearch size={17} /><span>Search</span>
+                </button>
+                {gInfo && onInvite && can(gInfo, me, "invite") && (
+                  <button className={gs.iconPill} onClick={onInvite} aria-label="Invite people">
+                    <IconUserAdd size={19} /><span>Invite</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className={s.hero}>
           <Avatar glyph={identity.glyph} tone={identity.tone} photo={identity.photo} size={96} online={online} />
           <h2 ref={heroNameRef} className={s.name}>{identity.label}</h2>
           <p className={`${s.presence} ${online ? s.online : ""}`}>{presence}</p>
+          {gInfo?.description && <p className={gs.pageDesc}>{gInfo.description}</p>}
           <div className={s.actions}>
             <button className={s.action} onClick={() => close()}>
               <IconCompose size={20} /><span>Message</span>
@@ -542,6 +571,7 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
             </button>
           </div>
         </div>
+        )}
 
         <div ref={tabsAnchorRef} />
         {searching ? (
@@ -572,9 +602,9 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
           </>
         ) : (
           <>
-            {/* Its own block, so the sticky tabs let go before the Space's sections below. */}
+            {/* Its own block, so the sticky tabs let go before the group's sections below. */}
             <section className={s.tabbed} aria-label="Shared in this chat">
-            {/* In a Space the tabs are one block among the Space's sections: they scroll with the page. */}
+            {/* In a group the tabs are one block among the group's sections: they scroll with the page. */}
             <div className={`${s.stick} ${isGroup ? s.flat : ""}`}>
               <div className={s.tabs} role="tablist" aria-label="Details" style={{ ["--n" as string]: tabs.length }}>
                 <span className={s.lens} style={{ transform: `translateX(${tabIndex * 100}%)` }} aria-hidden="true" />
@@ -598,7 +628,25 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
               {panels[tab]}
             </div>
             </section>
-            {isGroup && <SpaceMembers chat={chat} />}
+            {group && channels.length > 1 && (
+              <section className={s.space} aria-labelledby="group-channels">
+                <h3 id="group-channels" className={s.spaceHead}>Channels <em>{channels.length}</em></h3>
+                <ul className={`${s.list} ${s.group}`}>
+                  {channels.map((c) => (
+                    <li key={c.id}>
+                      <button className={gs.channelItem} onClick={() => (c.id === chat.id ? close() : onSwitchChannel?.(c.id))} aria-current={c.id === chat.id ? "page" : undefined}>
+                        <span className={gs.channelIcon} style={{ ["--tone" as string]: TONES[identity.tone] }}>{c.roles.length ? <IconLock size={14} /> : "#"}</span>
+                        <span className={s.memberText}>
+                          <b>#{c.name}{c.id === chat.id && <em> · You’re here</em>}</b>
+                          <span>{[c.topic, c.roles.length ? `${roleNames(gInfo!, c.roles)} only` : "", c.postRoles.length ? `${roleNames(gInfo!, c.postRoles)} post` : ""].filter(Boolean).join(" · ") || "Everyone"}</span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {group && <SpaceMembers chat={group} onInvite={gInfo && can(gInfo, me, "invite") ? onInvite : undefined} />}
           </>
         )}
       </div>
@@ -606,11 +654,8 @@ export default function ContactPage({ chat, startTab, onClose, onJump }: {
   );
 }
 
-/**
- * A Space's people, apart from the shared-content tabs. This is where roles
- * and permissions will live, and the Space's channels will sit alongside it.
- */
-function SpaceMembers({ chat }: { chat: Chat }) {
+/** A group's people, with their roles, apart from the shared-content tabs. */
+function SpaceMembers({ chat, onInvite }: { chat: Chat; onInvite?: () => void }) {
   const { me, isOnline } = useChat();
   const members = [...chat.memberIds].sort((a, b) =>
     a === me ? -1 : b === me ? 1 : Number(isOnline(b)) - Number(isOnline(a)) || userById(a).fullName.localeCompare(userById(b).fullName));
@@ -621,6 +666,14 @@ function SpaceMembers({ chat }: { chat: Chat }) {
         Members <em>{members.length}{online ? ` · ${online} online` : ""}</em>
       </h3>
       <ul className={`${s.list} ${s.group}`}>
+        {onInvite && (
+          <li>
+            <button className={gs.channelItem} onClick={onInvite}>
+              <span className={gs.inviteIcon}><IconUserAdd size={18} /></span>
+              <span className={s.memberText}><b>Invite people</b><span>Send invitations or share the link</span></span>
+            </button>
+          </li>
+        )}
         {members.map((id) => {
           const u = userById(id);
           const on = id !== me && isOnline(id);
@@ -629,8 +682,9 @@ function SpaceMembers({ chat }: { chat: Chat }) {
               <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={40} shape="circle" online={on} />
               <span className={s.memberText}>
                 <b>{u.fullName}{id === me && <em> · You</em>}</b>
-                <span className={on ? s.online : undefined}>{on ? "Active now" : `@${u.name}`}</span>
+                <span className={on ? s.online : undefined}>{on ? "Active now" : u.username ? `@${u.username}` : u.name}</span>
               </span>
+              <RoleBadges group={chat} userId={id} />
             </li>
           );
         })}

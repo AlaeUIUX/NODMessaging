@@ -201,6 +201,8 @@ function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
 function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
   const [openChat, setOpenChat] = useState<Chat | null>(null);
   const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
+  // A channel switch swaps the chat in place, without sliding a new screen in.
+  const [instant, setInstant] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [banner, setBanner] = useState<Banner | null>(null);
   const [widget, setWidget] = useState<{ chat: Chat; message: Message } | null>(null);
@@ -210,7 +212,7 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
   const deviceRef = useRef<HTMLDivElement>(null);
   // Another identity: whatever chat was open belongs to the previous one.
   const [shownFor, setShownFor] = useState<string | null>(null);
-  const { state, saveFailed, me, setMe } = useChat();
+  const { state, saveFailed, me, setMe, joinByCode } = useChat();
   const accounts = useAccounts();
   // Nobody signed in on this device: the app starts at its welcome.
   const signedIn = !!accounts?.includes(me);
@@ -250,6 +252,9 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
     };
   }, []);
 
+  // The open chat as it is now: leaving a group (or losing a channel) closes it.
+  const openLive = openChat ? state.data.chats.find((c) => c.id === openChat.id) ?? openChat : null;
+
   // Say so once if storage fills up: nothing new would survive a reload.
   const [storageWarned, setStorageWarned] = useState(false);
   if (saveFailed && !storageWarned) {
@@ -266,8 +271,17 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
     setLeaving(false);
     setOpenChat(chat);
+    setInstant(false);
     // Cleared when not given, so reopening the same chat later doesn't replay an old jump.
     setFocusMessageId(messageId ?? null);
+  }, []);
+
+  // Another channel of the open group: same history entry, no slide.
+  const switchChannel = useCallback((chat: Chat) => {
+    setOpenChat(chat);
+    setInstant(true);
+    setFocusMessageId(null);
+    if (window.history.state?.nodChat) window.history.replaceState({ ...window.history.state, nodChat: chat.id }, "");
   }, []);
 
   // Analytics v2: an item's own page, pushed over the tabs like a chat.
@@ -324,6 +338,18 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
       window.history.pushState({ nodChat: chat.id }, "");
     }
   };
+  // An invite link (nod.app/g/<code>, here ?join=<code>) joins the group and opens it, once loaded and signed in.
+  const joined = useRef(false);
+  useEffect(() => {
+    if (joined.current || !state.hydrated || !signedIn) return;
+    const code = new URLSearchParams(window.location.search).get("join");
+    if (!code) return;
+    joined.current = true;
+    const group = joinByCode(code);
+    if (group) setTimeout(() => open(group), 300);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.hydrated, signedIn, joinByCode]);
+
   const back = (immediate?: boolean) => {
     if (!window.history.state?.nodChat) { hide(immediate); return; }
     popImmediate.current = !!immediate;
@@ -367,8 +393,16 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
                 analyticsMode={analyticsMode}
                 onOpenWidget={onOpenWidget}
               />
-              {openChat && openChat.memberIds.includes(me) && (
-                <ChatView key={openChat.id} chat={openChat} leaving={leaving} onBack={back} focusMessageId={focusMessageId} />
+              {openLive && openLive.memberIds.includes(me) && !openLive.removedAt && (
+                <ChatView
+                  key={openLive.id}
+                  chat={openLive}
+                  leaving={leaving}
+                  onBack={back}
+                  focusMessageId={focusMessageId}
+                  onSwitchChannel={switchChannel}
+                  instant={instant}
+                />
               )}
               {widget && (
                 <WidgetPage
@@ -491,7 +525,7 @@ export default function ChatApp() {
           <p className={styles.pill}><span>New</span>Mind: keep anything from any chat</p>
           <h1 className={styles.heroTitle}>Talk it through.<br /><em>Keep what matters.</em></h1>
           <p className={styles.heroLede}>
-            Run your projects from the conversation. A Space for every team, polls, checklists and payments in the thread, and Mind to keep what you need.
+            Run your projects from the conversation. A group for every team, polls, checklists and payments in the thread, and Mind to keep what you need.
           </p>
           <div className={styles.heroCtas}>
             <a className={styles.cta} href="#demo">Try the live demo <IconArrowRight size={16} /></a>
@@ -511,7 +545,7 @@ export default function ChatApp() {
           </div>
           <div data-float className={`${styles.floatCard} ${styles.fcRightTop} ${styles.glass}`}>
             <span className={styles.fcIcon}><IconUserGroup size={16} /></span>
-            <div><b>A Space for every project</b><span>One group per team, client or launch.</span></div>
+            <div><b>A group for every project</b><span>Channels for each topic, roles for who sees what.</span></div>
           </div>
           <div data-float className={`${styles.floatCard} ${styles.fcRightBottom} ${styles.glass}`}>
             <span className={styles.fcIcon}><IconMoneyReceive size={16} /></span>

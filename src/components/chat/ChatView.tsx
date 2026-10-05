@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { chatIdentity } from "@/lib/chat/avatar";
+import { can, canPost, groupInfo, groupOf, roleNames, visibleChannels, writeLastChannel } from "@/lib/chat/groups";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { allPeople } from "@/lib/chat/people";
 import { useChat, userById } from "@/lib/chat/store";
@@ -19,6 +20,7 @@ import MessageRow, { type BubblePos } from "./MessageRow";
 import { ArtifactGallery, SketchBuilder, WheelBuilder } from "./Artifacts";
 import { BillFlow } from "./Bill";
 import ContactPage, { type ContactTab } from "./ContactPage";
+import { ChannelBar, ChannelSheet, GroupSettings, InvitePeopleSheet } from "./Groups";
 import { PlanBuilder } from "./Plans";
 import { ProjectBoard, ProjectBuilder, TaskFromMessage } from "./Project";
 import { openItems, openState } from "@/lib/chat/open";
@@ -42,13 +44,17 @@ interface MenuState {
 
 const EDGE = 24;
 
-export default function ChatView({ chat, leaving, onBack, focusMessageId }: {
+export default function ChatView({ chat: opened, leaving, onBack, focusMessageId, onSwitchChannel, instant }: {
   chat: Chat;
   leaving: boolean;
   /** `immediate` when a swipe-back already animated the screen away. */
   onBack: (immediate?: boolean) => void;
   /** Scrolled to and flashed once the thread has settled (e.g. opened from Analytics). */
   focusMessageId?: string | null;
+  /** A group's channel chip was tapped: show that channel instead. */
+  onSwitchChannel?: (chat: Chat) => void;
+  /** Shown in place (a channel switch), without sliding in. */
+  instant?: boolean;
 }) {
   const {
     state, me, isOnline, lastReadAt, send, sendCard, cardOp, retry, toggleReaction, editMessage, deleteMessage,
@@ -74,9 +80,23 @@ export default function ChatView({ chat, leaving, onBack, focusMessageId }: {
   const cameraInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  // The live chat: a group renamed, or someone joining, shows straight away.
+  const chat = state.data.chats.find((c) => c.id === opened.id) ?? opened;
+  // In a group, this chat is one of its channels (#general is the group's own chat).
+  const group = chat.kind === "group" ? groupOf(state.data.chats, chat) : null;
+  const gInfo = group ? groupInfo(group) : null;
+  const channel = gInfo?.channels.find((c) => c.id === chat.id) ?? null;
+  const channels = group ? visibleChannels(group, me) : [];
+  const manageChannels = !!gInfo && can(gInfo, me, "manageChannels");
+  const showChannels = !!group && !!channel && (channels.length > 1 || manageChannels);
+  const canWrite = !gInfo || !channel || canPost(gInfo, channel, me);
+  const [groupSettings, setGroupSettings] = useState<{ leaving: boolean } | null>(null);
+  const [pendingChannel, setPendingChannel] = useState<string | null>(null);
+
   const messages = useMemo(() => state.data.messages[chat.id] ?? [], [state.data.messages, chat.id]);
   const typing = typingUsers(chat.id).filter((id) => id !== me);
-  const identity = chatIdentity(chat, me, userById);
+  // A channel wears its group's name and picture.
+  const identity = chatIdentity(group ?? chat, me, userById);
   const other = chat.kind === "dm" ? chat.memberIds.find((id) => id !== me) : undefined;
   const online = !!other && isOnline(other);
   const members = useMemo(() => allPeople().filter((u) => chat.memberIds.includes(u.id) && u.id !== me), [chat, me]);
@@ -88,6 +108,38 @@ export default function ChatView({ chat, leaving, onBack, focusMessageId }: {
   const openBoardMessage = boardId ? boards.find((b) => b.id === boardId) : undefined;
   useBackLayer("nodContact", contact !== null, () => setContact(null));
   useBackLayer("nodBoard", !!openBoardMessage, () => setBoardId(null));
+
+  // Unread in the other channels, for the dots on their chips.
+  const channelUnread: Record<string, number> = {};
+  for (const c of channels) {
+    const read = lastReadAt(c.id);
+    channelUnread[c.id] = (state.data.messages[c.id] ?? []).filter((m) => m.authorId !== me && m.createdAt > read).length;
+  }
+  const switchChannel = (id: string) => {
+    if (!group || id === chat.id) return;
+    const target = state.data.chats.find((c) => c.id === id);
+    if (!target) return;
+    writeLastChannel(me, group.id, id);
+    onSwitchChannel?.(target);
+  };
+  const groupId = group?.id;
+  const inChannel = !!channel;
+  useEffect(() => {
+    if (groupId && inChannel) writeLastChannel(me, groupId, chat.id);
+  }, [groupId, inChannel, me, chat.id]);
+  // A channel just made from the + chip: open it once it exists.
+  useEffect(() => {
+    if (!pendingChannel || !state.data.chats.some((c) => c.id === pendingChannel)) return;
+    const id = pendingChannel;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPendingChannel(null);
+    switchChannel(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingChannel, state.data.chats]);
+  const closeGroupSettings = () => {
+    setGroupSettings((x) => (x ? { leaving: true } : x));
+    setTimeout(() => setGroupSettings((x) => (x?.leaving ? null : x)), 220);
+  };
 
   // Frozen on open so the divider doesn't chase incoming messages.
   const [firstUnreadId] = useState(() => {
@@ -405,7 +457,7 @@ export default function ChatView({ chat, leaving, onBack, focusMessageId }: {
   const presence = typing.length
     ? chat.kind === "group" ? `${userById(typing[0]).name} is typing…` : "typing…"
     : chat.kind === "group"
-      ? `${chat.memberIds.length} members`
+      ? `${chat.memberIds.length} ${chat.memberIds.length === 1 ? "member" : "members"}`
       : online ? "Active now" : "Active recently";
 
   const sheetMessage = sheetFor ? messages.find((m) => m.id === sheetFor) : undefined;
@@ -415,7 +467,7 @@ export default function ChatView({ chat, leaving, onBack, focusMessageId }: {
     <ChatUiProvider value={ui}>
     <div
       ref={screenRef}
-      className={`${styles.screen} ${styles.chatScreen} ${leaving ? styles.leaving : ""}`}
+      className={`${styles.screen} ${styles.chatScreen} ${showChannels ? styles.chatWithChannels : ""} ${instant ? styles.chatInstant : ""} ${leaving ? styles.leaving : ""}`}
       data-chat-screen
       onPointerDownCapture={onEdgeDown}
       onPointerMove={onEdgeMove}
@@ -464,16 +516,28 @@ export default function ChatView({ chat, leaving, onBack, focusMessageId }: {
         </div>
       </header>
 
+      {showChannels && group && (
+        <ChannelBar
+          group={group}
+          current={chat.id}
+          unread={channelUnread}
+          onSwitch={switchChannel}
+          onAdd={manageChannels ? () => setOverlaySheet(<ChannelSheet groupId={group.id} onClose={closeSheet} onCreated={setPendingChannel} onToast={flash} />) : undefined}
+        />
+      )}
+
       <MessageList
         chatId={chat.id}
         messages={messages}
         meId={me}
         isGroupChat={chat.kind === "group"}
         intro={{
-          title: identity.label,
-          subtitle: chat.kind === "group"
-            ? chat.memberIds.map((id) => (id === me ? "You" : userById(id).name)).join(", ")
-            : `You and ${firstName} are connected on NOD`,
+          title: showChannels && channel ? `#${channel.name}` : identity.label,
+          subtitle: showChannels && channel?.topic
+            ? channel.topic
+            : chat.kind === "group"
+              ? chat.memberIds.map((id) => (id === me ? "You" : userById(id).name)).join(", ")
+              : `You and ${firstName} are connected on NOD`,
           glyph: identity.glyph,
           tone: identity.tone,
           photo: identity.photo,
@@ -504,11 +568,16 @@ export default function ChatView({ chat, leaving, onBack, focusMessageId }: {
       <div className={styles.edgeBottom} />
 
       <div ref={composerRef}>
+        {!canWrite && gInfo && channel ? (
+          <div className={styles.readOnlyBar}>
+            <span>📣 Only {roleNames(gInfo, channel.postRoles)} can post in #{channel.name}</span>
+          </div>
+        ) : (
         <Composer
           chatId={chat.id}
           meId={me}
           members={members}
-          placeholder={chat.kind === "group" ? `Message ${identity.label}` : `Message ${firstName}`}
+          placeholder={chat.kind === "group" ? `Message ${showChannels && channel ? `#${channel.name}` : identity.label}` : `Message ${firstName}`}
           replyTo={replyTo}
           editing={editing}
           onCancelReply={() => setReplyTo(null)}
@@ -530,6 +599,7 @@ export default function ChatView({ chat, leaving, onBack, focusMessageId }: {
           onQuick={(k) => void startFlow(k)}
           incoming={incoming}
         />
+        )}
       </div>
 
       <input ref={photoInput} type="file" accept="image/*" multiple hidden onChange={(e) => { pickFiles(e.target.files); e.target.value = ""; }} />
@@ -617,6 +687,18 @@ export default function ChatView({ chat, leaving, onBack, focusMessageId }: {
           startTab={contact}
           onClose={() => setContact(null)}
           onJump={(id) => { setContact(null); setTimeout(() => jumpTo(id), 260); }}
+          onSwitchChannel={group ? (id) => { setContact(null); switchChannel(id); } : undefined}
+          onInvite={group ? () => setOverlaySheet(<InvitePeopleSheet groupId={group.id} onClose={closeSheet} onToast={flash} />) : undefined}
+          onSettings={group ? () => setGroupSettings({ leaving: false }) : undefined}
+        />
+      )}
+      {groupSettings && group && (
+        <GroupSettings
+          groupId={group.id}
+          leaving={groupSettings.leaving}
+          onBack={closeGroupSettings}
+          onToast={flash}
+          onLeft={() => { setGroupSettings(null); setContact(null); onBack(); }}
         />
       )}
       {openBoardMessage && (
