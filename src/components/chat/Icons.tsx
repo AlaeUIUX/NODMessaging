@@ -76,6 +76,7 @@ export const IconUserGroup = make(UserGroupIcon);
 export const IconBrush = make(PaintBrush01Icon);
 export const IconGame = make(GameController03Icon);
 export const IconWheel = make(PieChartIcon);
+export const IconChartType = make(PieChartIcon);
 export const IconSparkles = make(SparklesIcon);
 export const IconUndo = make(Undo02Icon);
 export const IconHeart = make(FavouriteIcon);

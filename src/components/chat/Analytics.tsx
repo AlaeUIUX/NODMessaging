@@ -5,7 +5,10 @@ import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { chatIdentity, initials } from "@/lib/chat/avatar";
-import { DEFAULT_SECTION_ORDER, readSectionOrder, SECTION_LABELS, writeSectionOrder, type SectionId } from "@/lib/chat/layout";
+import {
+  ALL_SECTIONS, readChartStyles, readSectionOrder, SECTION_LABELS, STYLE_OPTIONS, writeChartStyle, writeSectionOrder,
+  type ChartStyle, type SectionId,
+} from "@/lib/chat/layout";
 import { dayKey, lastSevenDays } from "@/lib/chat/mind";
 import { billShares, doneColumn, money, unclaimedItems } from "@/lib/chat/ops";
 import { useChat, userById } from "@/lib/chat/store";
@@ -13,8 +16,8 @@ import type { Card, Chat, Message } from "@/lib/chat/types";
 import { outcome } from "./Artifacts";
 import Avatar from "./Avatar";
 import {
-  IconBell, IconBoard, IconCalendar, IconChecklist, IconChevron, IconClock, IconDrag, IconLocation, IconMoneyReceive,
-  IconMoneySend, IconPoll, IconReceipt, IconRoute,
+  IconBell, IconBoard, IconCalendar, IconChartType, IconChecklist, IconChevron, IconClock, IconClose,
+  IconDrag, IconLocation, IconMoneyReceive, IconMoneySend, IconPlus, IconPoll, IconReceipt, IconRoute,
 } from "./Icons";
 import Logo from "./Logo";
 import { MyTasks } from "./Project";
@@ -353,6 +356,37 @@ function SpendChart({ cur, prev, height = 140 }: { cur: number[]; prev: number[]
   );
 }
 
+/** A single smoothed line through a week of values — Messages' "Line" style, the simpler single-series sibling of SpendChart (no current/previous comparison). */
+function LineChart({ bars }: { bars: { key: string; label: string; value: number; highlight?: boolean }[] }) {
+  const width = 346;
+  const height = 120;
+  const pad = 18;
+  const n = Math.max(bars.length, 2);
+  const max = Math.max(1, ...bars.map((b) => b.value));
+  const x = (i: number) => (i / (n - 1)) * (width - 8);
+  const y = (v: number) => height - pad - (v / max) * (height - pad * 2 - 14);
+  const pts = bars.map((b, i): [number, number] => [x(i), y(b.value)]);
+  const path = smoothPath(pts);
+  const last = pts[pts.length - 1];
+  return (
+    <div>
+      <svg viewBox={`0 0 ${width} ${height}`} className={s.lineSvg} preserveAspectRatio="none">
+        {path && <path d={`${path} L${last[0]},${height} L0,${height}Z`} fill="var(--accent)" opacity={0.08} />}
+        {path && <path d={path} fill="none" stroke="var(--ink)" strokeWidth={2} strokeLinecap="round" />}
+        {pts.map(([px, py], i) => (
+          <text key={bars[i].key} x={px} y={py - 10} textAnchor="middle" className={s.lineValue}>{bars[i].value}</text>
+        ))}
+        {pts.map(([px, py], i) => (
+          <circle key={bars[i].key} cx={px} cy={py} r={bars[i].highlight ? 4.5 : 3} fill={bars[i].highlight ? "var(--accent)" : "var(--ink)"} stroke="var(--bg)" strokeWidth={2} />
+        ))}
+      </svg>
+      <div className={s.lineLabels}>
+        {bars.map((b) => <small key={b.key}>{b.label}</small>)}
+      </div>
+    </div>
+  );
+}
+
 /** A segmented half-gauge — the mockup's own arc math, fed real stage counts. */
 function Gauge({ segments, size = 160 }: { segments: { value: number; color: string }[]; size?: number }) {
   const total = Math.max(1, segments.reduce((n, seg) => n + seg.value, 0));
@@ -408,11 +442,11 @@ function NeedsBlocks({ blocks }: { blocks: { label: string; value: number; color
 }
 
 /** Bars with always-visible value labels (no tap needed) plus a dashed average line. */
-function MessagesChart({ bars, avg, valueLabel }: { bars: { key: string; label: string; value: number; highlight?: boolean }[]; avg: number; valueLabel: (n: number) => string }) {
-  const max = Math.max(1, avg, ...bars.map((b) => b.value));
+function MessagesChart({ bars, avg, valueLabel }: { bars: { key: string; label: string; value: number; highlight?: boolean }[]; avg?: number; valueLabel: (n: number) => string }) {
+  const max = Math.max(1, avg ?? 0, ...bars.map((b) => b.value));
   return (
     <div className={s.msgBars}>
-      <span className={s.avgLine} style={{ bottom: `${Math.min(100, (avg / max) * 100)}%` }} aria-hidden="true" />
+      {avg !== undefined && <span className={s.avgLine} style={{ bottom: `${Math.min(100, (avg / max) * 100)}%` }} aria-hidden="true" />}
       {bars.map((b) => (
         <div key={b.key} className={s.msgCol} role="img" aria-label={`${b.label}: ${valueLabel(b.value)}`}>
           <em>{b.value}</em>
@@ -424,8 +458,8 @@ function MessagesChart({ bars, avg, valueLabel }: { bars: { key: string; label: 
   );
 }
 
-/** One row in the reorder sheet. dnd-kit's `useSortable` supplies the drag transform/listeners — no hand-rolled pointer tracking. */
-function ReorderRow({ id, label }: { id: SectionId; label: string }) {
+/** One row already on the dashboard. dnd-kit's `useSortable` supplies the drag transform/listeners — no hand-rolled pointer tracking. */
+function ReorderRow({ id, label, onRemove }: { id: SectionId; label: string; onRemove: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   return (
     <div
@@ -434,6 +468,7 @@ function ReorderRow({ id, label }: { id: SectionId; label: string }) {
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
       <span className={s.reorderLabel}>{label}</span>
+      <button className={s.reorderRemove} aria-label={`Remove ${label}`} onClick={onRemove}><IconClose size={14} /></button>
       <button className={s.reorderHandle} aria-label={`Drag to reorder ${label}`} {...attributes} {...listeners}>
         <IconDrag size={18} />
       </button>
@@ -441,13 +476,24 @@ function ReorderRow({ id, label }: { id: SectionId; label: string }) {
   );
 }
 
-/** A settings-style list of section names with drag handles — reordering the Analytics dashboard, not the dashboard itself. */
+/** One row not yet on the dashboard — plain, not draggable. */
+function AddRow({ label, onAdd }: { label: string; onAdd: () => void }) {
+  return (
+    <div className={s.reorderRow}>
+      <span className={s.reorderLabel}>{label}</span>
+      <button className={s.reorderAdd} aria-label={`Add ${label}`} onClick={onAdd}><IconPlus size={14} /></button>
+    </div>
+  );
+}
+
+/** Add, remove and reorder the Analytics dashboard's sections — starts from nothing; this is the only way sections get on (or off) it. */
 function ReorderSheet({ order, onClose, onChange }: {
   order: SectionId[];
   onClose: () => void;
   onChange: (next: SectionId[]) => void;
 }) {
   const [list, setList] = useState(order);
+  const available = ALL_SECTIONS.filter((id) => !list.includes(id));
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -464,21 +510,63 @@ function ReorderSheet({ order, onClose, onChange }: {
     setList(next);
     onChange(next);
   };
+  const add = (id: SectionId) => {
+    const next = [...list, id];
+    setList(next);
+    onChange(next);
+  };
+  const remove = (id: SectionId) => {
+    const next = list.filter((x) => x !== id);
+    setList(next);
+    onChange(next);
+  };
 
   return (
-    <Sheet
-      title="Reorder sections"
-      onClose={onClose}
-      action={{ label: "Reset", onClick: () => { setList(DEFAULT_SECTION_ORDER); onChange(DEFAULT_SECTION_ORDER); } }}
-    >
-      <p className={s.hint}>Drag a section to change where it appears on your dashboard.</p>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        <SortableContext items={list} strategy={verticalListSortingStrategy}>
+    <Sheet title="Customize dashboard" onClose={onClose}>
+      {list.length > 0 && (
+        <>
+          <p className={s.day}>On your dashboard</p>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+            <SortableContext items={list} strategy={verticalListSortingStrategy}>
+              <div>
+                {list.map((id) => <ReorderRow key={id} id={id} label={SECTION_LABELS[id]} onRemove={() => remove(id)} />)}
+              </div>
+            </SortableContext>
+          </DndContext>
+        </>
+      )}
+      {available.length > 0 && (
+        <>
+          <p className={s.day}>Add a section</p>
           <div>
-            {list.map((id) => <ReorderRow key={id} id={id} label={SECTION_LABELS[id]} />)}
+            {available.map((id) => <AddRow key={id} label={SECTION_LABELS[id]} onAdd={() => add(id)} />)}
           </div>
-        </SortableContext>
-      </DndContext>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+/** Pick how one section's chart is drawn. Stays open after a tap so a few styles can be tried in a row — the real section updates live behind the (dimmed) sheet. */
+function ChartStyleSheet({ id, current, onClose, onChange }: {
+  id: SectionId;
+  current: ChartStyle;
+  onClose: () => void;
+  onChange: (style: ChartStyle) => void;
+}) {
+  const options = STYLE_OPTIONS[id] ?? [];
+  return (
+    <Sheet title={`${SECTION_LABELS[id]} style`} onClose={onClose}>
+      <div className={s.list}>
+        {options.map((opt) => (
+          <Row
+            key={opt.style}
+            title={opt.label}
+            figure={current === opt.style ? "✓" : undefined}
+            onOpen={() => onChange(opt.style)}
+          />
+        ))}
+      </div>
     </Sheet>
   );
 }
@@ -503,20 +591,25 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
   const greetingWord = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const [allNeeds, setAllNeeds] = useState(false);
   const [sheet, setSheet] = useState<SheetKind>(null);
-  const [order, setOrder] = useState<SectionId[]>(DEFAULT_SECTION_ORDER);
+  const [order, setOrder] = useState<SectionId[]>([]);
   const [reordering, setReordering] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [chartStyles, setChartStyles] = useState<Partial<Record<SectionId, ChartStyle>>>({});
+  const [stylingId, setStylingId] = useState<SectionId | null>(null);
   const open = (chat: Chat, message: Message) => (mode === "v2" ? onOpenWidget(chat, message) : onOpenChat(chat, message.id));
 
-  // Read after mount (and per person): the prerendered HTML uses the default order.
+  // Read after mount (and per person): the prerendered HTML uses the default order/styles.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setOrder(readSectionOrder(me));
+    setChartStyles(readChartStyles(me));
   }, [me]);
 
   const data = useMemo(() => {
     const items: ActivityItem[] = [];
     const upcoming: Upcoming[] = [];
     const perDay = new Map(lastSevenDays().map((k) => [k, 0]));
+    const spendPerDay = new Map(lastSevenDays().map((k) => [k, 0]));
     const perChat = new Map<string, number>();
     const horizon = now + WEEK;
 
@@ -554,6 +647,8 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
       const day = new Date(at).getDate();
       if (mk === thisMonth && day >= 1 && day <= curDays) spendCurDaily[day - 1] += cents;
       else if (mk === lastMonth && day >= 1 && day <= prevDaysTotal) spendPrevDaily[day - 1] += cents;
+      const dk = dayKey(at);
+      if (spendPerDay.has(dk)) spendPerDay.set(dk, spendPerDay.get(dk)! + cents);
     };
 
     for (const chat of state.data.chats) {
@@ -682,11 +777,12 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
     // just because this prototype's history is thin on most days.
     const week = [...perDay.entries()].map(([k, n], i) => ({ k, n: n + dummyMessages(i) }));
     const dummyWeekTotal = week.reduce((total, _, i) => total + dummyMessages(i), 0);
+    const weekSpend = [...spendPerDay.entries()].map(([k, n], i) => ({ k, n: n + dummyBaseline(i) }));
 
     return {
       items, upcoming, youOwe, owedToYou, spent, spentLastMonth, lastWeekMessages: lastWeekMessages + dummyWeekTotal, accessRequests, owedByIds,
       byStage, overdueTasks, tasksWaiting: byStage.todo + byStage.inProgress,
-      spendCurCum, spendPrevCum, heroNow, week, spentOther,
+      spendCurCum, spendPrevCum, heroNow, week, weekSpend, spentOther,
       spentRows: spentRows.sort((a, b) => b.amount - a.amount),
       oweRows: oweRows.sort((a, b) => b.amount - a.amount),
       owedRows: owedRows.sort((a, b) => b.amount - a.amount),
@@ -717,11 +813,29 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
   const NEEDS_INK: Record<NeedsCategory, boolean> = { Votes: false, RSVP: false, Payment: true, Request: true };
 
   const upcomingShown = data.upcoming.slice(0, 5);
+  const dayItems = selectedDay ? data.upcoming.filter((u) => dayKey(u.at) === selectedDay) : upcomingShown;
+  // Forward-looking (today + next 6 days), unlike `data.week` (the trailing 7 days
+  // used for message density) — this is the range `data.upcoming` itself covers, so
+  // every tab a person can tap here actually lines up with real upcoming work.
+  const agendaDays = Array.from({ length: 7 }, (_, i) => {
+    const t = now + i * DAY;
+    const k = dayKey(t);
+    return { k, date: t, n: data.upcoming.filter((u) => dayKey(u.at) === k).length };
+  });
   const weekTotal = data.week.reduce((n, x) => n + x.n, 0);
   const avgPerDay = weekTotal / 7;
-  const total = data.items.length;
 
   const spendDelta = data.spentLastMonth ? data.spent - data.spentLastMonth : null;
+
+  const heroStyle = chartStyles.hero ?? "default";
+  const needsStyle = chartStyles.needs ?? "default";
+  const tasksStyle = chartStyles.tasks ?? "default";
+  const messagesStyle = chartStyles.messages ?? "default";
+  const styleBtn = (id: SectionId) => (
+    <button className={s.editBtn} aria-label={`${SECTION_LABELS[id]} style`} onClick={(e) => { e.stopPropagation(); setStylingId(id); }}>
+      <IconChartType size={16} />
+    </button>
+  );
 
   const sectionNodes: Record<SectionId, ReactNode> = {
     hero: (
@@ -733,7 +847,10 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
         onClick={() => setSheet("spent")}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet("spent"); } }}
       >
-        <span className={s.heroLabel}>Spent in {monthName(data.heroNow)}</span>
+        <div className={s.heroTop}>
+          <span className={s.heroLabel}>Spent in {monthName(data.heroNow)}</span>
+          {styleBtn("hero")}
+        </div>
         <div className={s.heroNum}><BigMoney cents={data.spent} /></div>
         {spendDelta !== null && (
           <p className={s.heroDelta}>
@@ -741,10 +858,17 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
             {" "}{spendDelta <= 0 ? "less" : "more"} than {prevMonthName(data.heroNow)}
           </p>
         )}
-        <div className={s.spendWrap}>
-          <SpendChart cur={data.spendCurCum} prev={data.spendPrevCum} />
-          <div className={s.xaxis}><span>1 {monthName(data.heroNow).slice(0, 3)}</span><span>15</span><b>Today</b></div>
-        </div>
+        {heroStyle === "bar" ? (
+          <MessagesChart
+            bars={data.weekSpend.map((x, i) => ({ key: x.k, label: i === data.weekSpend.length - 1 ? "Today" : weekday(new Date(`${x.k}T12:00`).getTime()), value: Math.round(x.n / 100), highlight: i === data.weekSpend.length - 1 }))}
+            valueLabel={(n) => money(n * 100)}
+          />
+        ) : (
+          <div className={s.spendWrap}>
+            <SpendChart cur={data.spendCurCum} prev={data.spendPrevCum} />
+            <div className={s.xaxis}><span>1 {monthName(data.heroNow).slice(0, 3)}</span><span>15</span><b>Today</b></div>
+          </div>
+        )}
       </section>
     ),
     balances: (
@@ -787,18 +911,30 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
     ),
     needs: (
       <section className={`${s.panel} ${s.bare}`} id="an-needs">
-        <div className={s.ph}><h2>Needs you</h2><button onClick={() => setSheet("needs")}>See all</button></div>
+        <div className={s.ph}><h2>Needs you</h2><span className={s.headActions}>{styleBtn("needs")}<button onClick={() => setSheet("needs")}>See all</button></span></div>
         {needsEntries.length === 0 ? (
           <p className={s.empty}>Nothing is waiting on you. Votes, RSVPs and your turns show up here.</p>
         ) : (
           <>
             <div className={s.needTop}><div className={s.needNum}>{needsEntries.length}</div><span className={s.needLabel}>waiting on you</span></div>
-            <NeedsBlocks blocks={[
-              { label: "Votes", value: needsCounts.Votes, color: NEEDS_TONE.Votes, ink: NEEDS_INK.Votes },
-              { label: "RSVP", value: needsCounts.RSVP, color: NEEDS_TONE.RSVP, ink: NEEDS_INK.RSVP },
-              { label: "Payment", value: needsCounts.Payment, color: NEEDS_TONE.Payment, ink: NEEDS_INK.Payment },
-              { label: "Request", value: needsCounts.Request, color: NEEDS_TONE.Request, ink: NEEDS_INK.Request },
-            ]} />
+            {needsStyle === "circular" ? (
+              <div className={s.gaugeWrapFull}>
+                <Gauge segments={[
+                  { value: needsCounts.Votes, color: NEEDS_TONE.Votes },
+                  { value: needsCounts.RSVP, color: NEEDS_TONE.RSVP },
+                  { value: needsCounts.Payment, color: NEEDS_TONE.Payment },
+                  { value: needsCounts.Request, color: NEEDS_TONE.Request },
+                ]} />
+                <span className={s.gc}><b>{needsEntries.length}</b><span>waiting on you</span></span>
+              </div>
+            ) : (
+              <NeedsBlocks blocks={[
+                { label: "Votes", value: needsCounts.Votes, color: NEEDS_TONE.Votes, ink: NEEDS_INK.Votes },
+                { label: "RSVP", value: needsCounts.RSVP, color: NEEDS_TONE.RSVP, ink: NEEDS_INK.RSVP },
+                { label: "Payment", value: needsCounts.Payment, color: NEEDS_TONE.Payment, ink: NEEDS_INK.Payment },
+                { label: "Request", value: needsCounts.Request, color: NEEDS_TONE.Request, ink: NEEDS_INK.Request },
+              ]} />
+            )}
             <div className={s.rows}>
               {needsEntries.slice(0, SHOWN).map((it) => (
                 <Row
@@ -819,10 +955,21 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
       <section className={s.panel} id="an-tasks">
         <div className={s.ph}>
           <h2>Tasks</h2>
-          {data.overdueTasks > 0 && <span className={s.overdue}>{data.overdueTasks} overdue</span>}
+          <span className={s.headActions}>
+            {data.overdueTasks > 0 && <span className={s.overdue}>{data.overdueTasks} overdue</span>}
+            {styleBtn("tasks")}
+          </span>
         </div>
         {data.byStage.todo + data.byStage.inProgress + data.byStage.done === 0 ? (
           <p className={s.empty}>Tasks assigned to you, on any board, show up here.</p>
+        ) : tasksStyle === "bar" ? (
+          <button className={`${s.tasksRow} ${s.tasksRowBar}`} onClick={() => setSheet("tasks")}>
+            <NeedsBlocks blocks={[
+              { label: "To do", value: data.byStage.todo, color: BLUE.a4, ink: true },
+              { label: "In progress", value: data.byStage.inProgress, color: BLUE.a2 },
+              { label: "Done", value: data.byStage.done, color: BLUE.base },
+            ]} />
+          </button>
         ) : (
           <button className={s.tasksRow} onClick={() => setSheet("tasks")}>
             <span className={s.gaugeWrap}>
@@ -844,7 +991,7 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
     ),
     checklists: (
       <section className={`${s.panel} ${s.bare}`} id="an-checklists">
-        <div className={s.ph}><h2>Checklists</h2><span className={s.phHint}>{checklistList.length ? `${checklistList.length} list${checklistList.length === 1 ? "" : "s"}` : ""}</span></div>
+        <div className={s.ph}><h2>Checklists</h2><span className={s.headActions}><span className={s.phHint}>{checklistList.length ? `${checklistList.length} list${checklistList.length === 1 ? "" : "s"}` : ""}</span>{styleBtn("checklists")}</span></div>
         {checklistList.length === 0 ? (
           <p className={s.empty}>Checklists from your chats will show up here.</p>
         ) : (
@@ -878,25 +1025,32 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
     ),
     week: (
       <section className={s.panel} aria-labelledby="an-week-title">
-        <div className={s.ph}><h2 id="an-week-title">This week</h2></div>
+        <div className={s.ph}><h2 id="an-week-title">This week</h2>{styleBtn("week")}</div>
         <div className={s.week}>
-          {data.week.map((x, i) => {
-            const isToday = i === data.week.length - 1;
-            const d = new Date(`${x.k}T12:00`);
+          {agendaDays.map(({ k, date, n }, i) => {
+            const isToday = i === 0;
+            const isSelected = selectedDay === k;
             return (
-              <div key={x.k} className={`${s.d} ${isToday ? s.dToday : ""}`}>
-                {isToday ? "Today" : weekday(d.getTime())}
-                <b>{d.getDate()}</b>
-                <span className={s.dot}>{Array.from({ length: Math.min(2, x.n) }, (_, i2) => <i key={i2} />)}</span>
-              </div>
+              <button
+                key={k}
+                className={`${s.d} ${isToday ? s.dToday : isSelected ? s.dSelected : ""}`}
+                aria-pressed={isSelected}
+                onClick={() => setSelectedDay((cur) => (cur === k ? null : k))}
+              >
+                {isToday ? "Today" : weekday(date)}
+                <b>{new Date(date).getDate()}</b>
+                <span className={s.dot}>{Array.from({ length: Math.min(2, n) }, (_, i2) => <i key={i2} />)}</span>
+              </button>
             );
           })}
         </div>
-        {upcomingShown.length === 0 ? (
-          <p className={s.empty}>No events, plan stops, reminders or due tasks this week.</p>
+        {dayItems.length === 0 ? (
+          <p className={s.empty}>
+            {selectedDay ? `Nothing due or planned on ${dayLabel(new Date(`${selectedDay}T12:00`).getTime(), now)}.` : "No events, plan stops, reminders or due tasks this week."}
+          </p>
         ) : (
           <div className={s.evlist}>
-            {upcomingShown.map((u, i) => (
+            {dayItems.map((u, i) => (
               <button key={u.key} className={s.ev} onClick={() => open(u.chat, u.message)}>
                 <span className={s.evt}>{u.timed ? clock(u.at) : ""}<small>{dayLabel(u.at, now)}</small></span>
                 <span className={s.evtx}><b>{u.title}</b><small>{u.sub}</small></span>
@@ -909,17 +1063,23 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
     ),
     messages: (
       <section className={s.panel} aria-labelledby="an-msg-title">
-        <div className={s.ph}><h2 id="an-msg-title">Messages</h2><span className={s.phHint}>Last 7 days</span></div>
+        <div className={s.ph}><h2 id="an-msg-title">Messages</h2><span className={s.headActions}><span className={s.phHint}>Last 7 days</span>{styleBtn("messages")}</span></div>
         <div className={s.msgTop}>
           <div className={s.needNum}>{weekTotal}</div>
           <Trend current={weekTotal} previous={data.lastWeekMessages} />
           <span className={s.avgLabel}>avg {avgPerDay.toFixed(1)}/day</span>
         </div>
-        <MessagesChart
-          bars={data.week.map((x, i) => ({ key: x.k, label: i === data.week.length - 1 ? "Today" : weekday(new Date(`${x.k}T12:00`).getTime()), value: x.n, highlight: i === data.week.length - 1 }))}
-          avg={avgPerDay}
-          valueLabel={(n) => `${n} ${n === 1 ? "message" : "messages"}`}
-        />
+        {messagesStyle === "line" ? (
+          <LineChart
+            bars={data.week.map((x, i) => ({ key: x.k, label: i === data.week.length - 1 ? "Today" : weekday(new Date(`${x.k}T12:00`).getTime()), value: x.n, highlight: i === data.week.length - 1 }))}
+          />
+        ) : (
+          <MessagesChart
+            bars={data.week.map((x, i) => ({ key: x.k, label: i === data.week.length - 1 ? "Today" : weekday(new Date(`${x.k}T12:00`).getTime()), value: x.n, highlight: i === data.week.length - 1 }))}
+            avg={avgPerDay}
+            valueLabel={(n) => `${n} ${n === 1 ? "message" : "messages"}`}
+          />
+        )}
         {data.busiest && (
           <p className={s.busy}>
             <span>Busiest chat</span><span><b>{chatIdentity(data.busiest.chat, me, userById).label}</b> · {data.busiest.n}</span>
@@ -938,7 +1098,7 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
             <b className={s.greetingText}>{greetingWord}, {meUser.name}</b>
           </div>
           <div className={s.headActions}>
-            <button className={s.editBtn} onClick={() => setReordering(true)} aria-label="Reorder sections">
+            <button className={s.editBtn} onClick={() => setReordering(true)} aria-label="Customize dashboard">
               <IconDrag size={18} />
             </button>
             <button className={styles.profileAvatar} onClick={onOpenProfile} aria-label="Your profile" style={{ border: "none", background: "none", padding: 0, cursor: "pointer" }}>
@@ -951,11 +1111,14 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
 
       <div className={styles.inboxBody}>
         <div className={styles.inboxScroll}>
-          {total === 0 ? (
-            <div className={styles.mindStarter}>
-              <Logo size={36} />
-              <h2>Nothing here yet</h2>
-              <p>Polls, checklists, bills, plans and boards you create in any chat will show up here.</p>
+          {order.length === 0 ? (
+            <div className={s.emptyWrap}>
+              <div className={styles.mindStarter}>
+                <Logo size={36} />
+                <h2>Make it yours</h2>
+                <p>Add the sections you care about, then drag to put them in the order you want.</p>
+                <button className={styles.mindPrimary} onClick={() => setReordering(true)}>Add a section</button>
+              </div>
             </div>
           ) : (
             <>
@@ -1136,6 +1299,18 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenPro
           order={order}
           onClose={() => setReordering(false)}
           onChange={(next) => { setOrder(next); writeSectionOrder(me, next); }}
+        />
+      )}
+
+      {stylingId && (
+        <ChartStyleSheet
+          id={stylingId}
+          current={chartStyles[stylingId] ?? "default"}
+          onClose={() => setStylingId(null)}
+          onChange={(style) => {
+            writeChartStyle(me, stylingId, style);
+            setChartStyles((cur) => ({ ...cur, [stylingId]: style }));
+          }}
         />
       )}
     </>
