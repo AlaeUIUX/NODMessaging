@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Message } from "@/lib/chat/types";
-import { IconBookmark, IconCopy, IconEdit, IconPin, IconPlus, IconReply, IconTask, IconTrash } from "./Icons";
+import { IconBookmark, IconCopy, IconEdit, IconHeart, IconPin, IconPlus, IconReply, IconTask, IconTrash } from "./Icons";
 import { BubbleBody, bubbleClass, haptic, type BubblePos } from "./MessageRow";
 import { Emoji } from "@/lib/chat/emoji";
 import { reducedMotion, useDialog } from "./ui";
@@ -41,6 +41,8 @@ interface Props {
   onCopy: () => void;
   onEdit: () => void;
   onPin: () => void;
+  favourite: boolean;
+  onFavourite: () => void;
   onSave: () => void;
   onTask: () => void;
   onDelete: () => void;
@@ -51,7 +53,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 
 export default function MessageOverlay({
   message, isMine, pos, rect, bounds, armed, meId,
-  onReact, onReply, onCopy, onEdit, onPin, onSave, onTask, onDelete, onClose,
+  onReact, onReply, onCopy, onEdit, onPin, favourite, onFavourite, onSave, onTask, onDelete, onClose,
 }: Props) {
   const [closing, setClosing] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -80,6 +82,7 @@ export default function MessageOverlay({
     ...(message.kind === "text" && message.body ? [{ id: "copy", label: "Copy", icon: <IconCopy />, run: onCopy }] : []),
     ...(isMine && message.kind === "text" ? [{ id: "edit", label: "Edit", icon: <IconEdit />, run: onEdit }] : []),
     { id: "pin", label: message.pinned ? "Unpin" : "Pin", icon: <IconPin />, run: onPin },
+    { id: "favourite", label: favourite ? "Unfavourite" : "Favourite", icon: <IconHeart />, run: onFavourite },
     { id: "save", label: "Save to Mind", icon: <IconBookmark />, run: onSave },
     ...(message.card?.type !== "project" ? [{ id: "task", label: "Make a task", icon: <IconTask />, run: onTask }] : []),
     ...(isMine ? ["sep" as const, { id: "delete", label: "Delete", icon: <IconTrash />, danger: true, run: onDelete }] : []),

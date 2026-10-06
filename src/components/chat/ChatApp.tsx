@@ -11,6 +11,7 @@ import ChatView from "./ChatView";
 import { IconArrowRight, IconChecklist, IconMoneyReceive, IconMoon, IconPin, IconSun, IconUserGroup } from "./Icons";
 import Inbox from "./Inbox";
 import Logo from "./Logo";
+import ProfilePage from "./Profile";
 import StageField from "./StageField";
 import { getPermission, useBackLayer } from "./ui";
 import WidgetPage from "./WidgetPage";
@@ -210,8 +211,11 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
   const [banner, setBanner] = useState<Banner | null>(null);
   const [widget, setWidget] = useState<{ chat: Chat; message: Message } | null>(null);
   const [widgetLeaving, setWidgetLeaving] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileLeaving, setProfileLeaving] = useState(false);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const widgetLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const profileLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deviceRef = useRef<HTMLDivElement>(null);
   const { state, saveFailed } = useChat();
   const latestChats = useRef(state.data.chats);
@@ -287,6 +291,25 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
   }, []);
   useBackLayer("nodWidget", !!widget, hideWidgetImmediate);
 
+  const showProfile = useCallback(() => {
+    if (profileLeaveTimer.current) clearTimeout(profileLeaveTimer.current);
+    setProfileLeaving(false);
+    setProfileOpen(true);
+  }, []);
+  const closeProfile = useCallback(() => {
+    setProfileLeaving(true);
+    profileLeaveTimer.current = setTimeout(() => {
+      setProfileOpen(false);
+      setProfileLeaving(false);
+    }, LEAVE_MS);
+  }, []);
+  const hideProfileImmediate = useCallback(() => {
+    if (profileLeaveTimer.current) clearTimeout(profileLeaveTimer.current);
+    setProfileOpen(false);
+    setProfileLeaving(false);
+  }, []);
+  useBackLayer("nodProfile", profileOpen, hideProfileImmediate);
+
   const hide = useCallback((immediate?: boolean) => {
     if (immediate) {
       // A swipe-back already slid the screen away; just unmount it.
@@ -310,6 +333,7 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
   const open = (chat: Chat, messageId?: string) => {
     // A banner tap (or an Analytics widget's "show in chat") while a widget page is open replaces it.
     hideWidgetImmediate();
+    hideProfileImmediate();
     show(chat, messageId);
     if (window.history.state?.nodChat) {
       // Switching chats (a banner tap) while a contact page or board is open: this entry now
@@ -355,9 +379,10 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
           <div className={styles.island} />
           <Inbox
             onOpen={open}
-            pushed={(!!openChat && !leaving) || (!!widget && !widgetLeaving)}
+            pushed={(!!openChat && !leaving) || (!!widget && !widgetLeaving) || (profileOpen && !profileLeaving)}
             analyticsMode={analyticsMode}
             onOpenWidget={onOpenWidget}
+            onOpenProfile={showProfile}
           />
           {openChat && <ChatView key={openChat.id} chat={openChat} leaving={leaving} onBack={back} focusMessageId={focusMessageId} />}
           {widget && (
@@ -370,6 +395,9 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
               onCloseInstant={hideWidgetImmediate}
               onOpenChat={open}
             />
+          )}
+          {profileOpen && (
+            <ProfilePage leaving={profileLeaving} onClose={closeProfile} onOpenChat={open} />
           )}
           <ReminderWatcher onBanner={showBanner} />
           {banner && (

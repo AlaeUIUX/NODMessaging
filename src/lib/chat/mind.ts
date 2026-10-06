@@ -109,7 +109,7 @@ export interface Mind {
 }
 
 /** Bump whenever the seed data itself changes, so anyone who already has a Mind picks up the new demo content (Reset-demo-data's automatic cousin — this only replaces stale seed content, per person, on their next load). */
-export const MIND_VERSION = 6;
+export const MIND_VERSION = 7;
 
 /* ---------------------------------------------------------------------------
    Dates
@@ -154,7 +154,8 @@ export function blankPage(title: string, emoji: string, tone: string, defaultKin
    Seeds — plain folders, filled the way a person would fill them
 --------------------------------------------------------------------------- */
 
-type Item = Omit<Block, "id" | "createdAt" | "tags"> & { tags?: string[] };
+/** A stable `id` is only needed when some other seed item references this one back (e.g. a `savedFrom` copy elsewhere) — otherwise `build()` auto-generates one. */
+type Item = Omit<Block, "id" | "createdAt" | "tags"> & { id?: string; tags?: string[] };
 type SeedPage = Omit<Page, "id" | "sections" | "parentId" | "views" | "tone"> & { tone?: string; views?: MindView[]; sections: { title: string; emoji: string; collapsed?: boolean; items: Item[] }[]; children?: SeedPage[] };
 type SeedCollection = Omit<Collection, "id" | "pages" | "vault"> & { id: string; pages: SeedPage[]; vault: Item[] };
 
@@ -163,7 +164,7 @@ function build(collections: SeedCollection[], current: string | null): Mind {
   let n = 0;
   let t = Date.now();
   const add = (it: Item) => {
-    const id = `b${(++n).toString(36)}`;
+    const id = it.id ?? `b${(++n).toString(36)}`;
     t -= 41 * 60_000;
     blocks[id] = { ...it, tags: it.tags ?? [], id, createdAt: t };
     return id;
@@ -261,7 +262,12 @@ function alaeMind(): Mind {
     },
     {
       id: "c-work", name: "Work", emoji: "💼", tone: "#3E67A6", chatIds: ["general", "dm"],
-      vault: [],
+      vault: [
+        {
+          kind: "link", title: "Competitor teardown: linear.app", source: "linear.app", url: "https://linear.app", tags: ["work"],
+          savedFrom: { userId: "charles", blockId: "charles-link-linear" },
+        },
+      ],
       pages: [
         { title: "Spaces launch", emoji: "🚀", view: "list", defaultKind: "todo", sections: [
           { title: "From the team chat", emoji: "💬", items: [
@@ -295,6 +301,38 @@ function alaeMind(): Mind {
         ]) },
       ],
     },
+    {
+      // A whole folder saved from Explore (Petra's), not just one item — mirrors
+      // `toggleSaveExploreCollection`'s copy: same pages/blocks, fresh ids, only
+      // the collection itself carries `savedFrom`.
+      id: "c-vienna-coffee-saved", name: "Vienna coffee spots", emoji: "☕", tone: "#86507A", chatIds: [],
+      vault: [],
+      savedFrom: { userId: "petra", collectionId: "c-vienna-coffee" },
+      pages: [
+        { title: "Classics", emoji: "☕", view: "shelf", views: ["shelf", "list"], defaultKind: "link", sections: one([
+          { kind: "link", title: "Café Sperl", source: "cafesperl.at", url: "https://cafesperl.at", tags: ["vienna", "cafe", "travel"] },
+          { kind: "link", title: "Café Central", source: "cafecentral.wien", url: "https://cafecentral.wien", tags: ["vienna", "cafe", "travel"] },
+          { kind: "link", title: "Kleines Café", source: "", url: "", tags: ["vienna", "cafe", "travel"] },
+        ]) },
+        { title: "Newer favourites", emoji: "🌱", view: "shelf", views: ["shelf", "list"], defaultKind: "link", sections: one([
+          { kind: "link", title: "Balthasar (specialty roast)", source: "balthasar.at", url: "https://balthasar.at", tags: ["vienna", "cafe", "travel"] },
+        ]) },
+      ],
+    },
+    {
+      id: "c-inspo", name: "Inspiration", emoji: "💡", tone: "#86507A", chatIds: [],
+      vault: [
+        {
+          kind: "image", title: "Green velvet chair", image: photo("photo-1586023492125-27b2c045efd7"), source: "pinterest.com",
+          savedFrom: { userId: "reema", blockId: "reema-img-chair" },
+        },
+        {
+          kind: "link", title: "Oak side table", source: "hay.com", url: "https://hay.com",
+          savedFrom: { userId: "reema", blockId: "reema-link-oak-table" },
+        },
+      ],
+      pages: [],
+    },
   ], "c-german");
 }
 
@@ -318,6 +356,7 @@ function charlesMind(): Mind {
             public: { image: photo("photo-1467232004584-a241de8bcf5d"), category: "Work", publishedAt: Date.now() - 30 * 60_000, savedBy: [] },
           },
           {
+            id: "charles-link-linear",
             kind: "link", title: "Competitor teardown: linear.app", source: "linear.app", url: "https://linear.app", tags: ["work"],
             public: { image: photo("photo-1615874959474-d609969a20ed"), category: "Work", publishedAt: Date.now() - 3 * 60 * 60_000, savedBy: ["me"] },
           },
@@ -380,6 +419,7 @@ function reemaMind(): Mind {
       id: "c-home", name: "Home ideas", emoji: "🏡", tone: "#5B8A6B", chatIds: ["reema"],
       vault: [
         {
+          id: "reema-img-chair",
           ...img("photo-1586023492125-27b2c045efd7", "Green velvet chair"),
           public: { image: photo("photo-1586023492125-27b2c045efd7"), category: "Home", publishedAt: Date.now() - 2 * 60 * 60_000, savedBy: ["me", "charles"] },
         },
@@ -393,6 +433,7 @@ function reemaMind(): Mind {
           { kind: "palette", title: "Sage & oak", colors: ["#8A9A7B", "#C9B79C", "#EDE6DA", "#5B4636", "#2F3A2F"] },
           img("photo-1493663284031-b7e3aefcae8e", "Teal cushions"),
           {
+            id: "reema-link-oak-table",
             kind: "link", title: "Oak side table", source: "hay.com", url: "https://hay.com",
             public: { image: photo("photo-1493663284031-b7e3aefcae8e"), category: "Home", publishedAt: Date.now() - 26 * 60 * 60_000, savedBy: ["me"] },
           },
@@ -470,7 +511,7 @@ function petraMind(): Mind {
     {
       id: "c-vienna-coffee", name: "Vienna coffee spots", emoji: "☕", tone: "#86507A", chatIds: [],
       vault: [],
-      public: { image: photo("photo-1445116572660-236099ec97a0"), category: "Travel", publishedAt: Date.now() - 8 * DAY, savedBy: [] },
+      public: { image: photo("photo-1445116572660-236099ec97a0"), category: "Travel", publishedAt: Date.now() - 8 * DAY, savedBy: ["me"] },
       pages: [
         { title: "Classics", emoji: "☕", view: "shelf", views: ["shelf", "list"], defaultKind: "link", sections: one([
           { kind: "link", title: "Café Sperl", source: "cafesperl.at", url: "https://cafesperl.at", tags: ["vienna", "cafe", "travel"] },

@@ -236,7 +236,7 @@ function DiscoverCardView({ r, now, onOpen, onPrimaryAction, primaryOn }: {
 }
 
 /** A published folder, read-only: every page it holds, flattened. Following or copying it (from Explore) is how it becomes yours. */
-function CollectionViewSheet({ userId, collection, me, following, onClose, onToggleFollow, onCopy }: {
+export function CollectionViewSheet({ userId, collection, me, following, onClose, onToggleFollow, onCopy }: {
   userId: string; collection: Collection; me: string; following: boolean;
   onClose: () => void; onToggleFollow: () => void; onCopy: () => void;
 }) {
@@ -251,7 +251,7 @@ function CollectionViewSheet({ userId, collection, me, following, onClose, onTog
         </span>
         <span className={styles.contactText}>
           <b>{collection.name}</b>
-          <small>Published by {mine ? "you" : publisher.name}</small>
+          <small>{collection.savedFrom ? `Saved from ${userById(collection.savedFrom.userId).name}` : `Published by ${mine ? "you" : publisher.name}`}</small>
         </span>
       </div>
       {!mine && (
@@ -418,7 +418,7 @@ export default function ExploreTab({ onOpenChat }: { onOpenChat: (chat: Chat, me
             </div>
           ) : (
             <>
-              <FeaturedCarousel items={resolved} now={now} onOpen={openCard} />
+              {/* <FeaturedCarousel items={resolved} now={now} onOpen={openCard} /> */}
               <CategoryRow categories={categoryList} active={categoryFilter} onPick={setCategoryFilter} />
               {coldStart && (
                 <p className={s.coldPrompt}>Make a collection in Mind and picks made for you start showing up here.</p>

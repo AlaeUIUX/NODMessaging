@@ -320,3 +320,51 @@
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--line), var(--e1);
 }
+
+/* ---- Header actions (reorder-sections entry point, next to the avatar) ---- */
+.headActions { display: flex; align-items: center; gap: 10px; }
+.editBtn {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--fill);
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.editBtn:active { transform: scale(.92); }
+
+/* ---- Reorder-sections sheet: a fixed-height row per section, with a drag handle ---- */
+.reorderRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 4px;
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+.reorderRow + .reorderRow { margin-top: 4px; }
+.reorderLabel { flex: 1; font: var(--t-body); font-weight: var(--w-control); }
+.reorderHandle {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.reorderDragging { position: relative; z-index: 5; box-shadow: 0 8px 20px rgba(0, 0, 0, .14), 0 0 0 1px var(--line); background: var(--surface); }
+.reorderDragging .reorderHandle { cursor: grabbing; }

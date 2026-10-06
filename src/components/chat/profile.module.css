@@ -1,0 +1,19 @@
+.header { display: flex; align-items: center; gap: 14px; padding: 4px 0 24px; }
+.headerText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.headerText b { font: var(--t-headline); font-weight: var(--w-emph); letter-spacing: -.01em; }
+.headerText small { font: var(--t-footnote); color: var(--ink-3); }
+
+.chatRow { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 0; }
+.chatRow + .chatRow { border-top: 1px solid var(--line); }
+.chatTap {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px;
+  border: none; background: none; padding: 0; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
+}
+.chatText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.chatText b { font: var(--t-body); font-weight: var(--w-control); }
+.chatText small { font: var(--t-footnote); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.unfav {
+  flex-shrink: 0; width: 32px; height: 32px; border: none; border-radius: var(--r-pill); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, #E0527A 16%, transparent); color: #E0527A;
+}

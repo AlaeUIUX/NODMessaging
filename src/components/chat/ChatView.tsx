@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { chatIdentity } from "@/lib/chat/avatar";
+import { readFavouriteMessages, toggleFavouriteMessage } from "@/lib/chat/favourites";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { USERS } from "@/lib/chat/seed";
 import { useChat, userById } from "@/lib/chat/store";
@@ -68,6 +69,7 @@ export default function ChatView({ chat, leaving, onBack, focusMessageId }: {
   const [alert, setAlert] = useState<{ kind: PermissionKind; resolve: (ok: boolean) => void } | null>(null);
   const [incoming, setIncoming] = useState<{ files: File[]; id: number } | null>(null);
   const [contact, setContact] = useState<ContactTab | null>(null);
+  const [favMessages, setFavMessages] = useState(() => readFavouriteMessages(me));
   // The open board, by message id: a chat can hold several.
   const [boardId, setBoardId] = useState<string | null>(null);
   const photoInput = useRef<HTMLInputElement>(null);
@@ -560,6 +562,12 @@ export default function ChatView({ chat, leaving, onBack, focusMessageId }: {
           onEdit={() => { setEditing(menuMessage); setReplyTo(null); }}
           onDelete={() => { deleteMessage(menuMessage); flash("Message deleted"); }}
           onPin={() => { togglePin(menuMessage); flash(menuMessage.pinned ? "Unpinned" : "Pinned"); }}
+          favourite={favMessages.has(`${chat.id}:${menuMessage.id}`)}
+          onFavourite={() => {
+            const next = toggleFavouriteMessage(me, chat.id, menuMessage.id);
+            setFavMessages(next);
+            flash(next.has(`${chat.id}:${menuMessage.id}`) ? "Added to favourites" : "Removed from favourites");
+          }}
           onSave={() => {
             const m = menuMessage;
             const c = m.card;

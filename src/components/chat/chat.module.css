@@ -741,6 +741,7 @@
 .rowAction svg { width: 20px; height: 20px; }
 .rowActionPin { background: var(--ink); color: var(--bg); }
 .rowActionMute { background: #7A6FF0; }
+.rowActionFavourite { background: #E0527A; }
 
 .inboxRow {
   position: relative;

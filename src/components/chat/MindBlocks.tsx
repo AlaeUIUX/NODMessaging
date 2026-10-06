@@ -51,7 +51,7 @@ export function BlockView({ block, shape, onToggle }: { block: Block; shape: Blo
     case "book": return <BookBlock block={block} shape={shape} cls={cls} />;
     case "link": return (
       <div className={cls}>
-        <span className={styles.mbFav} style={{ background: toneFor(block.source ?? block.title) }}>{(block.source ?? "?")[0].toUpperCase()}</span>
+        <span className={styles.mbFav} style={{ background: toneFor(block.source || block.title) }}>{(block.source || "?")[0].toUpperCase()}</span>
         <span className={styles.mbText}>
           <b>{block.title}</b>
           <small>{block.source}</small>

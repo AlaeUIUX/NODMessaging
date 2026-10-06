@@ -1,7 +1,11 @@
 "use client";
 
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { chatIdentity, initials } from "@/lib/chat/avatar";
+import { DEFAULT_SECTION_ORDER, readSectionOrder, SECTION_LABELS, writeSectionOrder, type SectionId } from "@/lib/chat/layout";
 import { dayKey, lastSevenDays } from "@/lib/chat/mind";
 import { billShares, doneColumn, money, unclaimedItems } from "@/lib/chat/ops";
 import { useChat, userById } from "@/lib/chat/store";
@@ -9,7 +13,7 @@ import type { Card, Chat, Message } from "@/lib/chat/types";
 import { outcome } from "./Artifacts";
 import Avatar from "./Avatar";
 import {
-  IconBell, IconBoard, IconCalendar, IconChecklist, IconChevron, IconClock, IconLocation, IconMoneyReceive,
+  IconBell, IconBoard, IconCalendar, IconChecklist, IconChevron, IconClock, IconDrag, IconLocation, IconMoneyReceive,
   IconMoneySend, IconPoll, IconReceipt, IconRoute,
 } from "./Icons";
 import Logo from "./Logo";
@@ -63,7 +67,7 @@ const CARD_ICON: Partial<Record<Card["type"], ReactNode>> = {
   location: <IconLocation size={15} />, event: <IconCalendar size={15} />, plan: <IconRoute size={15} />,
   project: <IconBoard size={15} />, bill: <IconReceipt size={15} />,
 };
-const cardIcon = (c: Card) => (c.type === "payment" ? (c.mode === "sent" ? <IconMoneySend size={15} /> : <IconMoneyReceive size={15} />) : CARD_ICON[c.type]);
+export const cardIcon = (c: Card) => (c.type === "payment" ? (c.mode === "sent" ? <IconMoneySend size={15} /> : <IconMoneyReceive size={15} />) : CARD_ICON[c.type]);
 
 type StatKind = "type" | "progress" | "people" | "time";
 interface Stat { kind: StatKind; text: string }
@@ -267,7 +271,7 @@ type Upcoming = { key: string; at: number; title: string; sub: string; icon: Rea
 /** One row, everywhere a list needs one: icon or avatar, title + a line of detail, a trailing figure/time or a chevron.
  * `bare` drops the boxed list's own left/right padding, so the row's text lines up with whatever sits above it
  * on the open page (Needs you's blocks bar) instead of a sheet's own inset list. */
-function Row({ icon, title, detail, detailColor, figure, time, action, bare, onOpen }: {
+export function Row({ icon, title, detail, detailColor, figure, time, action, bare, onOpen }: {
   icon?: ReactNode; title: string; detail?: string; detailColor?: string; figure?: string; time?: string; action?: string; bare?: boolean; onOpen?: () => void;
 }) {
   const Tag = onOpen ? "button" : "div";
@@ -420,16 +424,76 @@ function MessagesChart({ bars, avg, valueLabel }: { bars: { key: string; label: 
   );
 }
 
+/** One row in the reorder sheet. dnd-kit's `useSortable` supplies the drag transform/listeners — no hand-rolled pointer tracking. */
+function ReorderRow({ id, label }: { id: SectionId; label: string }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`${s.reorderRow} ${isDragging ? s.reorderDragging : ""}`}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+    >
+      <span className={s.reorderLabel}>{label}</span>
+      <button className={s.reorderHandle} aria-label={`Drag to reorder ${label}`} {...attributes} {...listeners}>
+        <IconDrag size={18} />
+      </button>
+    </div>
+  );
+}
+
+/** A settings-style list of section names with drag handles — reordering the Analytics dashboard, not the dashboard itself. */
+function ReorderSheet({ order, onClose, onChange }: {
+  order: SectionId[];
+  onClose: () => void;
+  onChange: (next: SectionId[]) => void;
+}) {
+  const [list, setList] = useState(order);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const onDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    // Computed from `list` directly (not a setState updater) — React may invoke an
+    // updater function outside the normal commit phase, and `onChange` here calls
+    // setOrder on the parent, which React disallows from inside another component's
+    // updater ("Cannot update a component while rendering a different component").
+    const next = arrayMove(list, list.indexOf(active.id as SectionId), list.indexOf(over.id as SectionId));
+    setList(next);
+    onChange(next);
+  };
+
+  return (
+    <Sheet
+      title="Reorder sections"
+      onClose={onClose}
+      action={{ label: "Reset", onClick: () => { setList(DEFAULT_SECTION_ORDER); onChange(DEFAULT_SECTION_ORDER); } }}
+    >
+      <p className={s.hint}>Drag a section to change where it appears on your dashboard.</p>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        <SortableContext items={list} strategy={verticalListSortingStrategy}>
+          <div>
+            {list.map((id) => <ReorderRow key={id} id={id} label={SECTION_LABELS[id]} />)}
+          </div>
+        </SortableContext>
+      </DndContext>
+    </Sheet>
+  );
+}
+
 type SheetKind = "needs" | "tasks" | "checklists" | "spent" | "owe" | "owed" | null;
 type NeedsCategory = "Votes" | "RSVP" | "Payment" | "Request";
 const NEEDS_ACTION: Record<NeedsCategory, string> = { Votes: "Vote", RSVP: "Going", Payment: "Pay", Request: "Review" };
 const CARD_NEEDS_CATEGORY: Partial<Record<Card["type"], NeedsCategory>> = { poll: "Votes", event: "RSVP", plan: "RSVP", payment: "Payment", bill: "Payment" };
 
-export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
+export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onOpenProfile }: {
   onOpenChat: (chat: Chat, messageId?: string) => void;
   /** "v1" opens the item in its chat (scrolled to and highlighted); "v2" opens the item's own page. */
   mode: "v1" | "v2";
   onOpenWidget: (chat: Chat, message: Message) => void;
+  onOpenProfile: () => void;
 }) {
   const { state, me } = useChat();
   const meUser = userById(me);
@@ -439,7 +503,15 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
   const greetingWord = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const [allNeeds, setAllNeeds] = useState(false);
   const [sheet, setSheet] = useState<SheetKind>(null);
+  const [order, setOrder] = useState<SectionId[]>(DEFAULT_SECTION_ORDER);
+  const [reordering, setReordering] = useState(false);
   const open = (chat: Chat, message: Message) => (mode === "v2" ? onOpenWidget(chat, message) : onOpenChat(chat, message.id));
+
+  // Read after mount (and per person): the prerendered HTML uses the default order.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOrder(readSectionOrder(me));
+  }, [me]);
 
   const data = useMemo(() => {
     const items: ActivityItem[] = [];
@@ -651,6 +723,212 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
 
   const spendDelta = data.spentLastMonth ? data.spent - data.spentLastMonth : null;
 
+  const sectionNodes: Record<SectionId, ReactNode> = {
+    hero: (
+      <section
+        className={s.hero}
+        id="an-money"
+        role="button"
+        tabIndex={0}
+        onClick={() => setSheet("spent")}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet("spent"); } }}
+      >
+        <span className={s.heroLabel}>Spent in {monthName(data.heroNow)}</span>
+        <div className={s.heroNum}><BigMoney cents={data.spent} /></div>
+        {spendDelta !== null && (
+          <p className={s.heroDelta}>
+            <b className={spendDelta <= 0 ? s.deltaGood : s.deltaBad}>{spendDelta <= 0 ? "↓" : "↑"} {money(Math.abs(spendDelta))}</b>
+            {" "}{spendDelta <= 0 ? "less" : "more"} than {prevMonthName(data.heroNow)}
+          </p>
+        )}
+        <div className={s.spendWrap}>
+          <SpendChart cur={data.spendCurCum} prev={data.spendPrevCum} />
+          <div className={s.xaxis}><span>1 {monthName(data.heroNow).slice(0, 3)}</span><span>15</span><b>Today</b></div>
+        </div>
+      </section>
+    ),
+    balances: (
+      <div className={s.bal}>
+        <div
+          className={s.panel}
+          role="button"
+          tabIndex={0}
+          onClick={() => setSheet("owe")}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet("owe"); } }}
+        >
+          <span className={s.balLabel}><i style={{ background: "var(--warn)" }} />You owe</span>
+          <div className={s.balNum}><BigMoney cents={data.youOwe} /></div>
+          <button className={s.payBtn} onClick={(e) => { e.stopPropagation(); setSheet("owe"); }}>Settle up</button>
+        </div>
+        <div
+          className={s.panel}
+          role="button"
+          tabIndex={0}
+          onClick={() => setSheet("owed")}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet("owed"); } }}
+        >
+          <span className={s.balLabel}><i style={{ background: "var(--ok)" }} />Owed to you</span>
+          <div className={s.balNum}><BigMoney cents={data.owedToYou} /></div>
+          {data.owedByIds.size > 0 ? (
+            <div className={s.faces}>
+              {[...data.owedByIds].slice(0, 2).map((id) => {
+                const u = userById(id);
+                return <Avatar key={id} glyph={initials(u.fullName)} tone={u.tone} size={26} shape="circle" />;
+              })}
+              <em>{people(data.owedByIds.size)}</em>
+            </div>
+          ) : (
+            // Same slot as "Settle up" on the other tile, filled in rather than left blank —
+            // nobody owes you right now, so the action here is to ask, not to pay.
+            <button className={s.payBtn} onClick={(e) => { e.stopPropagation(); setSheet("owed"); }}>Request money</button>
+          )}
+        </div>
+      </div>
+    ),
+    needs: (
+      <section className={`${s.panel} ${s.bare}`} id="an-needs">
+        <div className={s.ph}><h2>Needs you</h2><button onClick={() => setSheet("needs")}>See all</button></div>
+        {needsEntries.length === 0 ? (
+          <p className={s.empty}>Nothing is waiting on you. Votes, RSVPs and your turns show up here.</p>
+        ) : (
+          <>
+            <div className={s.needTop}><div className={s.needNum}>{needsEntries.length}</div><span className={s.needLabel}>waiting on you</span></div>
+            <NeedsBlocks blocks={[
+              { label: "Votes", value: needsCounts.Votes, color: NEEDS_TONE.Votes, ink: NEEDS_INK.Votes },
+              { label: "RSVP", value: needsCounts.RSVP, color: NEEDS_TONE.RSVP, ink: NEEDS_INK.RSVP },
+              { label: "Payment", value: needsCounts.Payment, color: NEEDS_TONE.Payment, ink: NEEDS_INK.Payment },
+              { label: "Request", value: needsCounts.Request, color: NEEDS_TONE.Request, ink: NEEDS_INK.Request },
+            ]} />
+            <div className={s.rows}>
+              {needsEntries.slice(0, SHOWN).map((it) => (
+                <Row
+                  key={it.key}
+                  bare
+                  title={it.title}
+                  detail={`${it.detail} · ${chatIdentity(it.chat, me, userById).label}`}
+                  action={NEEDS_ACTION[it.category]}
+                  onOpen={() => open(it.chat, it.message)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+    ),
+    tasks: (
+      <section className={s.panel} id="an-tasks">
+        <div className={s.ph}>
+          <h2>Tasks</h2>
+          {data.overdueTasks > 0 && <span className={s.overdue}>{data.overdueTasks} overdue</span>}
+        </div>
+        {data.byStage.todo + data.byStage.inProgress + data.byStage.done === 0 ? (
+          <p className={s.empty}>Tasks assigned to you, on any board, show up here.</p>
+        ) : (
+          <button className={s.tasksRow} onClick={() => setSheet("tasks")}>
+            <span className={s.gaugeWrap}>
+              <Gauge segments={[
+                { value: data.byStage.todo, color: BLUE.a4 },
+                { value: data.byStage.inProgress, color: BLUE.a2 },
+                { value: data.byStage.done, color: BLUE.base },
+              ]} />
+              <span className={s.gc}><b>{data.byStage.todo + data.byStage.inProgress + data.byStage.done}</b><span>Your tasks</span></span>
+            </span>
+            <ul className={s.tl}>
+              <li><i style={{ background: BLUE.a4 }} /><b>{data.byStage.todo}</b><span>To do</span></li>
+              <li><i style={{ background: BLUE.a2 }} /><b>{data.byStage.inProgress}</b><span>In progress</span></li>
+              <li><i style={{ background: BLUE.base }} /><b>{data.byStage.done}</b><span>Done</span></li>
+            </ul>
+          </button>
+        )}
+      </section>
+    ),
+    checklists: (
+      <section className={`${s.panel} ${s.bare}`} id="an-checklists">
+        <div className={s.ph}><h2>Checklists</h2><span className={s.phHint}>{checklistList.length ? `${checklistList.length} list${checklistList.length === 1 ? "" : "s"}` : ""}</span></div>
+        {checklistList.length === 0 ? (
+          <p className={s.empty}>Checklists from your chats will show up here.</p>
+        ) : (
+          <>
+            <div className={s.needTop}><div className={s.needNum}>{Math.round((listDone / Math.max(1, listTotal)) * 100)}%</div><span className={s.needLabel}>{listDone} of {listTotal} ticked</span></div>
+            {openChecklists.length === 0 ? (
+              <p className={s.empty}>Every list is done.</p>
+            ) : (
+              <div className={s.crows}>
+                {openChecklists.slice(0, 3).map((it) => {
+                  const done = it.message.card.items.filter((i) => i.doneBy).length;
+                  const totalItems = it.message.card.items.length;
+                  return (
+                    <button key={it.message.id} className={s.crow} onClick={() => open(it.chat, it.message)}>
+                      <span className={s.cn}>{it.title}</span>
+                      <ChecklistTrack done={done} total={totalItems} />
+                      <span className={s.cc}>{done}<em>/{totalItems}</em></span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {checklistList.length > openChecklists.slice(0, 3).length && (
+              <button className={s.seeall} onClick={() => setSheet("checklists")}>
+                See all {checklistList.length} lists<span>{doneChecklists.length} done · {openChecklists.length} open</span>
+              </button>
+            )}
+          </>
+        )}
+      </section>
+    ),
+    week: (
+      <section className={s.panel} aria-labelledby="an-week-title">
+        <div className={s.ph}><h2 id="an-week-title">This week</h2></div>
+        <div className={s.week}>
+          {data.week.map((x, i) => {
+            const isToday = i === data.week.length - 1;
+            const d = new Date(`${x.k}T12:00`);
+            return (
+              <div key={x.k} className={`${s.d} ${isToday ? s.dToday : ""}`}>
+                {isToday ? "Today" : weekday(d.getTime())}
+                <b>{d.getDate()}</b>
+                <span className={s.dot}>{Array.from({ length: Math.min(2, x.n) }, (_, i2) => <i key={i2} />)}</span>
+              </div>
+            );
+          })}
+        </div>
+        {upcomingShown.length === 0 ? (
+          <p className={s.empty}>No events, plan stops, reminders or due tasks this week.</p>
+        ) : (
+          <div className={s.evlist}>
+            {upcomingShown.map((u, i) => (
+              <button key={u.key} className={s.ev} onClick={() => open(u.chat, u.message)}>
+                <span className={s.evt}>{u.timed ? clock(u.at) : ""}<small>{dayLabel(u.at, now)}</small></span>
+                <span className={s.evtx}><b>{u.title}</b><small>{u.sub}</small></span>
+                {i === 0 && u.at > now && <span className={s.soon}>{until(u.at - now)}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+    ),
+    messages: (
+      <section className={s.panel} aria-labelledby="an-msg-title">
+        <div className={s.ph}><h2 id="an-msg-title">Messages</h2><span className={s.phHint}>Last 7 days</span></div>
+        <div className={s.msgTop}>
+          <div className={s.needNum}>{weekTotal}</div>
+          <Trend current={weekTotal} previous={data.lastWeekMessages} />
+          <span className={s.avgLabel}>avg {avgPerDay.toFixed(1)}/day</span>
+        </div>
+        <MessagesChart
+          bars={data.week.map((x, i) => ({ key: x.k, label: i === data.week.length - 1 ? "Today" : weekday(new Date(`${x.k}T12:00`).getTime()), value: x.n, highlight: i === data.week.length - 1 }))}
+          avg={avgPerDay}
+          valueLabel={(n) => `${n} ${n === 1 ? "message" : "messages"}`}
+        />
+        {data.busiest && (
+          <p className={s.busy}>
+            <span>Busiest chat</span><span><b>{chatIdentity(data.busiest.chat, me, userById).label}</b> · {data.busiest.n}</span>
+          </p>
+        )}
+      </section>
+    ),
+  };
+
   return (
     <>
       <header className={styles.profile}>
@@ -659,10 +937,15 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
             <span className={s.greetingDate}>{dateLabel}</span>
             <b className={s.greetingText}>{greetingWord}, {meUser.name}</b>
           </div>
-          <span className={styles.profileAvatar}>
-            <Avatar glyph={initials(meUser.fullName)} tone={meUser.tone} size={40} shape="circle" />
-            <span className={styles.orgBadge}><Logo size={12} /></span>
-          </span>
+          <div className={s.headActions}>
+            <button className={s.editBtn} onClick={() => setReordering(true)} aria-label="Reorder sections">
+              <IconDrag size={18} />
+            </button>
+            <button className={styles.profileAvatar} onClick={onOpenProfile} aria-label="Your profile" style={{ border: "none", background: "none", padding: 0, cursor: "pointer" }}>
+              <Avatar glyph={initials(meUser.fullName)} tone={meUser.tone} size={40} shape="circle" />
+              <span className={styles.orgBadge}><Logo size={12} /></span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -676,208 +959,7 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
             </div>
           ) : (
             <>
-              {/* ---- Hero: this month's spend ---- */}
-              <section
-                className={s.hero}
-                id="an-money"
-                role="button"
-                tabIndex={0}
-                onClick={() => setSheet("spent")}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet("spent"); } }}
-              >
-                <span className={s.heroLabel}>Spent in {monthName(data.heroNow)}</span>
-                <div className={s.heroNum}><BigMoney cents={data.spent} /></div>
-                {spendDelta !== null && (
-                  <p className={s.heroDelta}>
-                    <b className={spendDelta <= 0 ? s.deltaGood : s.deltaBad}>{spendDelta <= 0 ? "↓" : "↑"} {money(Math.abs(spendDelta))}</b>
-                    {" "}{spendDelta <= 0 ? "less" : "more"} than {prevMonthName(data.heroNow)}
-                  </p>
-                )}
-                <div className={s.spendWrap}>
-                  <SpendChart cur={data.spendCurCum} prev={data.spendPrevCum} />
-                  <div className={s.xaxis}><span>1 {monthName(data.heroNow).slice(0, 3)}</span><span>15</span><b>Today</b></div>
-                </div>
-              </section>
-
-              {/* ---- Balances ---- */}
-              <div className={s.bal}>
-                <div
-                  className={s.panel}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSheet("owe")}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet("owe"); } }}
-                >
-                  <span className={s.balLabel}><i style={{ background: "var(--warn)" }} />You owe</span>
-                  <div className={s.balNum}><BigMoney cents={data.youOwe} /></div>
-                  <button className={s.payBtn} onClick={(e) => { e.stopPropagation(); setSheet("owe"); }}>Settle up</button>
-                </div>
-                <div
-                  className={s.panel}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSheet("owed")}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet("owed"); } }}
-                >
-                  <span className={s.balLabel}><i style={{ background: "var(--ok)" }} />Owed to you</span>
-                  <div className={s.balNum}><BigMoney cents={data.owedToYou} /></div>
-                  {data.owedByIds.size > 0 ? (
-                    <div className={s.faces}>
-                      {[...data.owedByIds].slice(0, 2).map((id) => {
-                        const u = userById(id);
-                        return <Avatar key={id} glyph={initials(u.fullName)} tone={u.tone} size={26} shape="circle" />;
-                      })}
-                      <em>{people(data.owedByIds.size)}</em>
-                    </div>
-                  ) : (
-                    // Same slot as "Settle up" on the other tile, filled in rather than left blank —
-                    // nobody owes you right now, so the action here is to ask, not to pay.
-                    <button className={s.payBtn} onClick={(e) => { e.stopPropagation(); setSheet("owed"); }}>Request money</button>
-                  )}
-                </div>
-              </div>
-
-              {/* ---- Needs you ---- */}
-              <section className={`${s.panel} ${s.bare}`} id="an-needs">
-                <div className={s.ph}><h2>Needs you</h2><button onClick={() => setSheet("needs")}>See all</button></div>
-                {needsEntries.length === 0 ? (
-                  <p className={s.empty}>Nothing is waiting on you. Votes, RSVPs and your turns show up here.</p>
-                ) : (
-                  <>
-                    <div className={s.needTop}><div className={s.needNum}>{needsEntries.length}</div><span className={s.needLabel}>waiting on you</span></div>
-                    <NeedsBlocks blocks={[
-                      { label: "Votes", value: needsCounts.Votes, color: NEEDS_TONE.Votes, ink: NEEDS_INK.Votes },
-                      { label: "RSVP", value: needsCounts.RSVP, color: NEEDS_TONE.RSVP, ink: NEEDS_INK.RSVP },
-                      { label: "Payment", value: needsCounts.Payment, color: NEEDS_TONE.Payment, ink: NEEDS_INK.Payment },
-                      { label: "Request", value: needsCounts.Request, color: NEEDS_TONE.Request, ink: NEEDS_INK.Request },
-                    ]} />
-                    <div className={s.rows}>
-                      {needsEntries.slice(0, SHOWN).map((it) => (
-                        <Row
-                          key={it.key}
-                          bare
-                          title={it.title}
-                          detail={`${it.detail} · ${chatIdentity(it.chat, me, userById).label}`}
-                          action={NEEDS_ACTION[it.category]}
-                          onOpen={() => open(it.chat, it.message)}
-                        />
-                      ))}
-                    </div>
-                  </>
-                )}
-              </section>
-
-              {/* ---- Tasks ---- */}
-              <section className={s.panel} id="an-tasks">
-                <div className={s.ph}>
-                  <h2>Tasks</h2>
-                  {data.overdueTasks > 0 && <span className={s.overdue}>{data.overdueTasks} overdue</span>}
-                </div>
-                {data.byStage.todo + data.byStage.inProgress + data.byStage.done === 0 ? (
-                  <p className={s.empty}>Tasks assigned to you, on any board, show up here.</p>
-                ) : (
-                  <button className={s.tasksRow} onClick={() => setSheet("tasks")}>
-                    <span className={s.gaugeWrap}>
-                      <Gauge segments={[
-                        { value: data.byStage.todo, color: BLUE.a4 },
-                        { value: data.byStage.inProgress, color: BLUE.a2 },
-                        { value: data.byStage.done, color: BLUE.base },
-                      ]} />
-                      <span className={s.gc}><b>{data.byStage.todo + data.byStage.inProgress + data.byStage.done}</b><span>Your tasks</span></span>
-                    </span>
-                    <ul className={s.tl}>
-                      <li><i style={{ background: BLUE.a4 }} /><b>{data.byStage.todo}</b><span>To do</span></li>
-                      <li><i style={{ background: BLUE.a2 }} /><b>{data.byStage.inProgress}</b><span>In progress</span></li>
-                      <li><i style={{ background: BLUE.base }} /><b>{data.byStage.done}</b><span>Done</span></li>
-                    </ul>
-                  </button>
-                )}
-              </section>
-
-              {/* ---- Checklists ---- */}
-              <section className={`${s.panel} ${s.bare}`} id="an-checklists">
-                <div className={s.ph}><h2>Checklists</h2><span className={s.phHint}>{checklistList.length ? `${checklistList.length} list${checklistList.length === 1 ? "" : "s"}` : ""}</span></div>
-                {checklistList.length === 0 ? (
-                  <p className={s.empty}>Checklists from your chats will show up here.</p>
-                ) : (
-                  <>
-                    <div className={s.needTop}><div className={s.needNum}>{Math.round((listDone / Math.max(1, listTotal)) * 100)}%</div><span className={s.needLabel}>{listDone} of {listTotal} ticked</span></div>
-                    {openChecklists.length === 0 ? (
-                      <p className={s.empty}>Every list is done.</p>
-                    ) : (
-                      <div className={s.crows}>
-                        {openChecklists.slice(0, 3).map((it) => {
-                          const done = it.message.card.items.filter((i) => i.doneBy).length;
-                          const totalItems = it.message.card.items.length;
-                          return (
-                            <button key={it.message.id} className={s.crow} onClick={() => open(it.chat, it.message)}>
-                              <span className={s.cn}>{it.title}</span>
-                              <ChecklistTrack done={done} total={totalItems} />
-                              <span className={s.cc}>{done}<em>/{totalItems}</em></span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {checklistList.length > openChecklists.slice(0, 3).length && (
-                      <button className={s.seeall} onClick={() => setSheet("checklists")}>
-                        See all {checklistList.length} lists<span>{doneChecklists.length} done · {openChecklists.length} open</span>
-                      </button>
-                    )}
-                  </>
-                )}
-              </section>
-
-              {/* ---- This week ---- */}
-              <section className={s.panel} aria-labelledby="an-week-title">
-                <div className={s.ph}><h2 id="an-week-title">This week</h2></div>
-                <div className={s.week}>
-                  {data.week.map((x, i) => {
-                    const isToday = i === data.week.length - 1;
-                    const d = new Date(`${x.k}T12:00`);
-                    return (
-                      <div key={x.k} className={`${s.d} ${isToday ? s.dToday : ""}`}>
-                        {isToday ? "Today" : weekday(d.getTime())}
-                        <b>{d.getDate()}</b>
-                        <span className={s.dot}>{Array.from({ length: Math.min(2, x.n) }, (_, i2) => <i key={i2} />)}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-                {upcomingShown.length === 0 ? (
-                  <p className={s.empty}>No events, plan stops, reminders or due tasks this week.</p>
-                ) : (
-                  <div className={s.evlist}>
-                    {upcomingShown.map((u, i) => (
-                      <button key={u.key} className={s.ev} onClick={() => open(u.chat, u.message)}>
-                        <span className={s.evt}>{u.timed ? clock(u.at) : ""}<small>{dayLabel(u.at, now)}</small></span>
-                        <span className={s.evtx}><b>{u.title}</b><small>{u.sub}</small></span>
-                        {i === 0 && u.at > now && <span className={s.soon}>{until(u.at - now)}</span>}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </section>
-
-              {/* ---- Messages ---- */}
-              <section className={s.panel} aria-labelledby="an-msg-title">
-                <div className={s.ph}><h2 id="an-msg-title">Messages</h2><span className={s.phHint}>Last 7 days</span></div>
-                <div className={s.msgTop}>
-                  <div className={s.needNum}>{weekTotal}</div>
-                  <Trend current={weekTotal} previous={data.lastWeekMessages} />
-                  <span className={s.avgLabel}>avg {avgPerDay.toFixed(1)}/day</span>
-                </div>
-                <MessagesChart
-                  bars={data.week.map((x, i) => ({ key: x.k, label: i === data.week.length - 1 ? "Today" : weekday(new Date(`${x.k}T12:00`).getTime()), value: x.n, highlight: i === data.week.length - 1 }))}
-                  avg={avgPerDay}
-                  valueLabel={(n) => `${n} ${n === 1 ? "message" : "messages"}`}
-                />
-                {data.busiest && (
-                  <p className={s.busy}>
-                    <span>Busiest chat</span><span><b>{chatIdentity(data.busiest.chat, me, userById).label}</b> · {data.busiest.n}</span>
-                  </p>
-                )}
-              </section>
+              {order.map((id) => <Fragment key={id}>{sectionNodes[id]}</Fragment>)}
             </>
           )}
         </div>
@@ -1047,6 +1129,14 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget }: {
             </>
           )}
         </Sheet>
+      )}
+
+      {reordering && (
+        <ReorderSheet
+          order={order}
+          onClose={() => setReordering(false)}
+          onChange={(next) => { setOrder(next); writeSectionOrder(me, next); }}
+        />
       )}
     </>
   );

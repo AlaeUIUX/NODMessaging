@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { chatIdentity, initials, TONES } from "@/lib/chat/avatar";
+import { readFavouriteChats, toggleFavouriteChat } from "@/lib/chat/favourites";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
-import { IconBellOff, IconPin } from "./Icons";
+import { IconBellOff, IconHeart, IconPin } from "./Icons";
 import Logo from "./Logo";
 import { emojify } from "@/lib/chat/emoji";
 import AnalyticsTab from "./Analytics";
@@ -19,7 +20,7 @@ import styles from "./chat.module.css";
 type Filter = "all" | "unread" | "dms" | "spaces";
 type Tab = "chats" | "mind" | "analytics" | "explore";
 
-const REVEAL = 124;
+const REVEAL = 180;
 
 /** Pins and mutes are this person's own, and survive a reload. */
 const listKey = (kind: "pinned" | "muted", userId: string) => `nod.chat.${kind}.${userId}`;
@@ -68,14 +69,16 @@ function timeLabel(ts: number) {
 
 /** A row that slides left to reveal Pin / Mute, and springs back otherwise. */
 function SwipeRow({
-  children, onTap, onPin, onMute, pinned, muted,
+  children, onTap, onPin, onMute, onFavourite, pinned, muted, favourite,
 }: {
   children: React.ReactNode;
   onTap: () => void;
   onPin: () => void;
   onMute: () => void;
+  onFavourite: () => void;
   pinned: boolean;
   muted: boolean;
+  favourite: boolean;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -105,6 +108,9 @@ function SwipeRow({
         </button>
         <button className={`${styles.rowAction} ${styles.rowActionMute}`} aria-label={muted ? "Unmute" : "Mute"} onClick={() => { onMute(); settle(0); }}>
           <IconBellOff />
+        </button>
+        <button className={`${styles.rowAction} ${styles.rowActionFavourite}`} aria-label={favourite ? "Unfavourite" : "Favourite"} onClick={() => { onFavourite(); settle(0); }}>
+          <IconHeart />
         </button>
       </div>
       <button
@@ -196,11 +202,12 @@ function toggle(set: Set<string>, id: string) {
   return next;
 }
 
-export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
+export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget, onOpenProfile }: {
   onOpen: (chat: Chat, messageId?: string) => void;
   pushed: boolean;
   analyticsMode: "v1" | "v2";
   onOpenWidget: (chat: Chat, message: Message) => void;
+  onOpenProfile: () => void;
 }) {
   const { state, me, isOnline, lastReadAt, typingUsers } = useChat();
   const [query, setQuery] = useState("");
@@ -209,6 +216,7 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
   const [newChat, setNewChat] = useState(false);
   const [pinned, setPinned] = useState<Set<string>>(() => new Set(["dm"]));
   const [muted, setMuted] = useState<Set<string>>(() => new Set());
+  const [favourites, setFavourites] = useState<Set<string>>(() => new Set());
   const searchRef = useRef<HTMLInputElement>(null);
   const meUser = userById(me);
 
@@ -217,13 +225,20 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPinned(readList("pinned", me, ["dm"]));
     setMuted(readList("muted", me, []));
+    setFavourites(readFavouriteChats(me));
     // The contact page can mute too; re-read when it does, so neither overwrites the other.
     const reread = () => setMuted(readList("muted", me, []));
+    const rereadFavourites = () => setFavourites(readFavouriteChats(me));
     window.addEventListener("nod:muted", reread);
-    return () => window.removeEventListener("nod:muted", reread);
+    window.addEventListener("nod:favourites", rereadFavourites);
+    return () => {
+      window.removeEventListener("nod:muted", reread);
+      window.removeEventListener("nod:favourites", rereadFavourites);
+    };
   }, [me]);
   const togglePinned = (id: string) => setPinned((s) => { const next = toggle(s, id); writeList("pinned", me, next); return next; });
   const toggleMuted = (id: string) => setMuted((s) => { const next = toggle(s, id); writeList("muted", me, next); return next; });
+  const toggleFavourited = (id: string) => setFavourites(toggleFavouriteChat(me, id));
 
   // Only chats this person is in: signed in as Reema, the Alae–Charles DM isn't yours to read.
   const rows = useMemo(() => {
@@ -275,7 +290,7 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
       <StatusBar />
 
       {tab === "mind" ? <MindTab onOpenChat={onOpen} /> : tab === "analytics" ? (
-        <AnalyticsTab onOpenChat={onOpen} mode={analyticsMode} onOpenWidget={onOpenWidget} />
+        <AnalyticsTab onOpenChat={onOpen} mode={analyticsMode} onOpenWidget={onOpenWidget} onOpenProfile={onOpenProfile} />
       ) : tab === "explore" ? <ExploreTab onOpenChat={onOpen} /> : (
       <>
       <header className={styles.profile}>
@@ -339,8 +354,10 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
                       onTap={() => onOpen(chat)}
                       pinned={pinned.has(chat.id)}
                       muted={isMuted}
+                      favourite={favourites.has(chat.id)}
                       onPin={() => togglePinned(chat.id)}
                       onMute={() => toggleMuted(chat.id)}
+                      onFavourite={() => toggleFavourited(chat.id)}
                     >
                       {chat.kind === "group" ? (
                         <span className={styles.spaceAvatar} style={{ background: TONES[id.tone] }}><Logo size={36} /></span>
@@ -363,6 +380,7 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
                           <span className={`${styles.rowTime} ${showBadge ? styles.rowTimeUnread : ""}`}>
                             {pinned.has(chat.id) && <IconPin size={11} />}
                             {isMuted && <IconBellOff size={11} />}
+                            {favourites.has(chat.id) && <IconHeart size={11} />}
                             {last ? timeLabel(last.createdAt) : ""}
                           </span>
                           {showBadge && <span className={styles.rowBadge}>{mentioned ? "@" : unread}</span>}
