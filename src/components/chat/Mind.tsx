@@ -5,8 +5,8 @@ import { initials, TONES } from "@/lib/chat/avatar";
 import { Emoji, emojify, firstEmoji } from "@/lib/chat/emoji";
 import { toAttachment } from "@/lib/chat/media";
 import {
-  blankPage, childrenOf, collectionItems, detach, learnChat, locate, makeCollection, newId, nowMs, pageItems, patchBlock,
-  patchCollection, patchPage, place, removeBlock, rootItems, tagsOf, todayKey, useMind,
+  blankPage, childrenOf, collectionItems, commitDraft, detach, draftOf, dropDraft, learnChat, locate, makeCollection, newId, nowMs,
+  pageItems, patchBlock, patchCollection, patchPage, place, removeBlock, rootItems, tagsOf, todayKey, useMind,
   type Block, type BlockKind, type Collection, type Mind, type MindView, type Page, type TaskStatus,
 } from "@/lib/chat/mind";
 import { useChat, userById } from "@/lib/chat/store";
@@ -85,6 +85,8 @@ type ToastAction = { label: string; run: () => void };
 
 interface Ctx {
   mind: Mind;
+  /** Which Mind is being changed: yours, or the copy of a group's being edited. */
+  store: string;
   /** The collection that's open, if any. */
   col: Collection | null;
   update: (fn: (m: Mind) => Mind) => void;
@@ -121,7 +123,7 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
   const col = folder ? mind.collections.find((c) => c.id === folder.id) ?? null : null;
 
   const ctx: Ctx = {
-    mind, col, update, me,
+    mind, col, update, me, store: me,
     flash: (text, actions) => {
       const id = nowMs();
       setToast({ text, id, actions });
@@ -205,6 +207,106 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
         </div>
       )}
     </>
+  );
+}
+
+/* ===========================================================================
+   Editing a group's Mind, full screen
+   =========================================================================== */
+
+/**
+ * A group's Mind, opened full screen to edit, the way a board opens: the same
+ * Mind as your own (stacks, items, views, the one +, hold and drag), working
+ * on a copy made when Edit was tapped (startDraft). Save puts the copy back
+ * for everyone; leaving with changes asks first.
+ */
+export function MindEditor({ source, title, onClose, onSaved, onOpenChat }: {
+  /** The Mind being edited (a group's id in the store); its copy is already made. */
+  source: string;
+  title: string;
+  onClose: () => void;
+  onSaved: () => void;
+  onOpenChat: (chatId: string) => void;
+}) {
+  const { me } = useChat();
+  const store = draftOf(source);
+  const { mind, update } = useMind(store);
+  const { mind: saved } = useMind(source);
+  const [page, setPage] = useState<{ id: string; leaving: boolean } | null>(null);
+  const [sheet, setSheet] = useState<React.ReactNode>(null);
+  const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean; actions?: ToastAction[] } | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const col = mind?.collections[0] ?? null;
+  const dirty = !!mind && !!saved && JSON.stringify(mind) !== JSON.stringify(saved);
+
+  // The copy is forgotten once the screen has slid away, when nothing reads it any more.
+  const finish = (save: boolean, after?: () => void) => {
+    if (leaving) return;
+    if (save) commitDraft(source);
+    setLeaving(true);
+    setTimeout(() => {
+      onClose();
+      dropDraft(source);
+      if (save) onSaved();
+      after?.();
+    }, 220);
+  };
+  const cancel = () => (dirty ? setAsking(true) : finish(false));
+
+  if (!mind || !col) return null;
+  const flash = (text: string, actions?: ToastAction[]) => {
+    const id = nowMs();
+    setToast({ text, id, actions });
+    const stay = actions ? 4200 : 1800;
+    setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), stay);
+    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), stay + 220);
+  };
+  const ctx: Ctx = {
+    mind, col, update, me, store, flash,
+    // One collection: there's nowhere else to go.
+    openFolder: () => setPage(null),
+    openPage: (id) => setPage({ id, leaving: false }),
+    openSheet: setSheet,
+    closeSheet: () => setSheet(null),
+    openChat: (chatId) => {
+      if (dirty) flash("Save or cancel first, then open the chat");
+      else finish(false, () => onOpenChat(chatId));
+    },
+  };
+  const leavePage = () => {
+    setPage((x) => (x ? { ...x, leaving: true } : x));
+    setTimeout(() => setPage((x) => (x?.leaving ? null : x)), 220);
+  };
+
+  return (
+    <div className={styles.mindEditor}>
+      <FolderScreen ctx={ctx} col={col} leaving={leaving} onBack={cancel} edit={{ title, dirty, onCancel: cancel, onSave: () => finish(true) }} />
+      {page && col.pages.some((p) => p.id === page.id) && (
+        <PageScreen ctx={ctx} col={col} pageId={page.id} leaving={page.leaving} onBack={leavePage} onOpen={(id) => setPage({ id, leaving: false })} />
+      )}
+      {sheet}
+      {toast && (
+        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${styles.mindToast} ${toast.actions ? styles.toastActions : ""} ${toast.leaving ? styles.toastLeaving : ""}`} role="status">
+          <span className={styles.toastText}>{emojify(toast.text)}</span>
+          {toast.actions?.map((a) => (
+            <button key={a.label} className={styles.toastBtn} onClick={() => { setToast(null); a.run(); }}>{a.label}</button>
+          ))}
+        </div>
+      )}
+      {asking && (
+        <div className={styles.alertScrim} role="alertdialog" aria-modal="true" aria-label="Discard your changes?">
+          <div className={`${styles.alert} ${styles.glassStrong}`}>
+            <h4>Discard your changes?</h4>
+            <p>Nothing you changed in {title} is saved yet.</p>
+            <div className={styles.alertActions}>
+              <button data-autofocus onClick={() => setAsking(false)}>Keep editing</button>
+              <button className={styles.alertDanger} onClick={() => { setAsking(false); finish(false); }}>Discard changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -319,7 +421,14 @@ function EmptyMind({ ctx }: { ctx: Ctx }) {
  * menu, or held and moved: onto a stack to put it inside, or between things
  * to reorder.
  */
-function FolderScreen({ ctx, col, leaving, onBack }: { ctx: Ctx; col: Collection; leaving: boolean; onBack: () => void }) {
+function FolderScreen({ ctx, col, leaving, onBack, edit }: {
+  ctx: Ctx;
+  col: Collection;
+  leaving: boolean;
+  onBack: () => void;
+  /** Editing a group's Mind: the header names it and offers Cancel and Save instead of Back and settings. */
+  edit?: { title: string; dirty: boolean; onCancel: () => void; onSave: () => void };
+}) {
   const [tag, setTag] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -402,15 +511,31 @@ function FolderScreen({ ctx, col, leaving, onBack }: { ctx: Ctx; col: Collection
       {...hold.rootHandlers}
     >
       <div className={styles.edgeTop} />
-      <header className={styles.chatHeader}>
-        <button className={`${styles.circleBtn} ${styles.glass}`} onClick={onBack} aria-label="Back to Mind"><IconBack /></button>
-        <div className={styles.titleCapsule}>
-          <span className={styles.mindPageBadge}><Emoji char={col.emoji} /></span>
-          <div className={`${styles.tcName} ${styles.glass}`}><span>{col.name}</span></div>
-          <span className={styles.tcPresence}>{col.pages.length} {col.pages.length === 1 ? "stack" : "stacks"} · {all.length} items</span>
-        </div>
-        <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => ctx.openSheet(<FolderSheet ctx={ctx} colId={col.id} onDeleted={onBack} />)} aria-label="Collection settings"><IconMore /></button>
-      </header>
+      {edit ? (
+        <header className={styles.chatHeader}>
+          <div className={styles.headerSide}>
+            <button className={`${styles.circleBtn} ${styles.glass}`} onClick={edit.onCancel} aria-label="Cancel editing"><IconClose /></button>
+          </div>
+          <div className={styles.titleCapsule}>
+            <span className={styles.mindPageBadge}><Emoji char={col.emoji} /></span>
+            <div className={`${styles.tcName} ${styles.glass}`}><span>{edit.title}</span></div>
+            <span className={styles.tcPresence}>{edit.dirty ? "Unsaved changes" : "Editing for everyone"}</span>
+          </div>
+          <div className={`${styles.headerSide} ${styles.headerEnd}`}>
+            <button className={`${styles.mindSave} ${edit.dirty ? styles.mindSaveOn : styles.glass}`} onClick={edit.onSave}>Save</button>
+          </div>
+        </header>
+      ) : (
+        <header className={styles.chatHeader}>
+          <button className={`${styles.circleBtn} ${styles.glass}`} onClick={onBack} aria-label="Back to Mind"><IconBack /></button>
+          <div className={styles.titleCapsule}>
+            <span className={styles.mindPageBadge}><Emoji char={col.emoji} /></span>
+            <div className={`${styles.tcName} ${styles.glass}`}><span>{col.name}</span></div>
+            <span className={styles.tcPresence}>{col.pages.length} {col.pages.length === 1 ? "stack" : "stacks"} · {all.length} items</span>
+          </div>
+          <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => ctx.openSheet(<FolderSheet ctx={ctx} colId={col.id} onDeleted={onBack} />)} aria-label="Collection settings"><IconMore /></button>
+        </header>
+      )}
 
       <div className={styles.mindPageScroll} ref={scrollRef}>
         <div className={styles.mindToolbar}>
@@ -539,7 +664,7 @@ function ToSort({ ctx, items, hold }: { ctx: Ctx; items: Block[]; hold: { bind: 
                 </Tile>
               </SwipeItem>
             </div>
-            <button className={styles.mindSort} onClick={() => ctx.openSheet(<MoveSheet me={ctx.me} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} title="Sort into" />)}>Sort</button>
+            <button className={styles.mindSort} onClick={() => ctx.openSheet(<MoveSheet me={ctx.store} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} title="Sort into" />)}>Sort</button>
           </div>
         ))}
       </div>
@@ -715,7 +840,7 @@ function NewFolderSheet({ ctx }: { ctx: Ctx }) {
 }
 
 function FolderSheet({ ctx, colId, onDeleted }: { ctx: Ctx; colId: string; onDeleted: () => void }) {
-  const { mind, update } = useMind(ctx.me);
+  const { mind, update } = useMind(ctx.store);
   const col = mind?.collections.find((c) => c.id === colId);
   if (!col) return null;
   const set = (patch: Partial<Collection>) => update((m) => patchCollection(m, colId, (c) => ({ ...c, ...patch })));
@@ -784,7 +909,7 @@ function itemActions(ctx: Ctx, b: Block): SwipeAction[] {
   const list: SwipeAction[] = [];
   if (b.ref) list.push({ id: "open", label: "Chat", icon: <IconOpen size={18} />, tone: "ink", run: () => ctx.openChat(b.ref!.chatId) });
   else if (b.url) list.push({ id: "open", label: "Open", icon: <IconOpen size={18} />, tone: "ink", run: () => window.open(b.url, "_blank", "noopener") });
-  list.push({ id: "move", label: "Move", icon: <IconFolder size={18} />, tone: "accent", run: () => ctx.openSheet(<MoveSheet me={ctx.me} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} />) });
+  list.push({ id: "move", label: "Move", icon: <IconFolder size={18} />, tone: "accent", run: () => ctx.openSheet(<MoveSheet me={ctx.store} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} />) });
   list.push({ id: "remove", label: "Remove", icon: <IconTrash size={18} />, tone: "danger", run: () => removeItem(ctx.update, ctx.flash, b.id) });
   return list;
 }
@@ -1130,7 +1255,7 @@ function openHoldMenu(ctx: Ctx, col: Collection | null, src: HoldSrc, el: HTMLEl
     ...(b.kind !== "chat" ? [{ id: "rename", label: "Rename", icon: <IconEdit />, run: rename(KIND_LABEL[b.kind]?.toLowerCase() ?? "item", b.title, (title) => ctx.update((m) => patchBlock(m, b.id, { title }))) }] : []),
     {
       id: "move", label: where?.toSort ? "Sort into…" : "Move to…", icon: where?.toSort ? <IconInbox /> : <IconFolder />,
-      run: () => ctx.openSheet(<MoveSheet me={ctx.me} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} title={where?.toSort ? "Sort into" : "Move to"} />),
+      run: () => ctx.openSheet(<MoveSheet me={ctx.store} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} title={where?.toSort ? "Sort into" : "Move to"} />),
     },
     ...(b.ref ? [{ id: "chat", label: "Show in chat", icon: <IconMessage />, run: () => ctx.openChat(b.ref!.chatId) }]
       : b.url ? [{ id: "link", label: "Open link", icon: <IconOpen />, run: () => window.open(b.url, "_blank", "noopener") }] : []),
@@ -1159,7 +1284,7 @@ function RenameSheet({ ctx, what, value, onSave }: { ctx: Ctx; what: string; val
 
 /** Where a stack should live: the top of any collection, or inside another stack. */
 function StackMoveSheet({ ctx, pageId }: { ctx: Ctx; pageId: string }) {
-  const { mind, update } = useMind(ctx.me);
+  const { mind, update } = useMind(ctx.store);
   const from = mind?.collections.find((c) => c.pages.some((p) => p.id === pageId));
   const [colId, setColId] = useState(from?.id ?? "");
   if (!mind || !from) return null;
@@ -1707,7 +1832,7 @@ function NewPageSheet({ ctx, col, parentId }: { ctx: Ctx; col: Collection; paren
    =========================================================================== */
 
 function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
-  const { mind, update } = useMind(ctx.me);
+  const { mind, update } = useMind(ctx.store);
   const [adding, setAdding] = useState(false);
   const [newTag, setNewTag] = useState("");
   // Escape discards the tag: the blur that follows mustn't add it anyway.
@@ -1785,7 +1910,7 @@ function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
 
           <div className={styles.mindSectionBar}>
             <p className={styles.sheetLabel}>Lives in</p>
-            <button className={styles.mindPill} onClick={() => close(() => ctx.openSheet(<MoveSheet me={ctx.me} id={id} onClose={ctx.closeSheet} onMoved={ctx.flash} />))}>
+            <button className={styles.mindPill} onClick={() => close(() => ctx.openSheet(<MoveSheet me={ctx.store} id={id} onClose={ctx.closeSheet} onMoved={ctx.flash} />))}>
               <IconFolder size={14} /> Move
             </button>
           </div>
@@ -1903,7 +2028,7 @@ export function MoveSheet({ me, id, onClose, onMoved, title = "Move to" }: { me:
 }
 
 function PageSheet({ ctx, col, pageId, onDeleted }: { ctx: Ctx; col: Collection; pageId: string; onDeleted: () => void }) {
-  const { mind, update } = useMind(ctx.me);
+  const { mind, update } = useMind(ctx.store);
   const page = mind?.collections.find((c) => c.id === col.id)?.pages.find((p) => p.id === pageId);
   if (!mind || !page) return null;
   const set = (fn: (p: Page) => Page) => update((m) => patchPage(m, pageId, fn));

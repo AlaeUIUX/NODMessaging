@@ -2857,6 +2857,7 @@
   cursor: pointer;
 }
 .alertActions .alertDeny { background: transparent; color: var(--ink-2); font-weight: 500; }
+.alertActions .alertDanger { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
 
 .banner {
   position: absolute;
@@ -4652,6 +4653,11 @@ a.secondaryWide, a.primaryWide { display: flex; align-items: center; justify-con
 .folderNew:hover { background: var(--fill); color: var(--ink-2); }
 /* a collection sits under its pages (which are z 40), whatever the source order */
 .chatScreen.mindPageScreen.mindFolderScreen { z-index: 35; }
+/* The fade behind a Mind screen's header stops where the header does, and the
+   page starts just under it, so the view switcher at the top is never blurred. */
+/* (Specific enough to win over a group chat's taller fade, when the editor opens from one.) */
+.chatScreen.mindPageScreen > .edgeTop { height: calc(var(--inset-top) + 104px); }
+.mindPageScreen .mindPageScroll { padding-top: calc(var(--inset-top) + 112px); }
 .mindStructure.mindStructureTwo { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .mindHint { margin: 0; font: var(--t-footnote); color: var(--ink-3); text-wrap: pretty; }
 
@@ -4893,3 +4899,21 @@ img.spaceAvatar { object-fit: cover; }
   color: var(--ink-2);
   text-align: center;
 }
+
+/* ==========================================================================
+   A group's Mind, open full screen to edit (Cancel · name · Save)
+   ========================================================================== */
+.mindEditor { position: absolute; inset: 0; z-index: 70; }
+.mindSave {
+  height: 44px;
+  padding: 0 18px;
+  border: none;
+  border-radius: var(--r-pill);
+  color: var(--ink);
+  font: var(--t-subhead);
+  font-weight: var(--w-emph);
+  cursor: pointer;
+  transition: background var(--t-mid), color var(--t-mid), transform var(--t-fast);
+}
+.mindSave:active { transform: scale(.94); }
+.mindSaveOn { background: var(--ink); color: var(--bg); box-shadow: var(--e2); }

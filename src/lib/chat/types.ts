@@ -108,6 +108,7 @@ export interface BillCard {
   paid: string[];
 }
 
+export type Priority = "low" | "medium" | "high";
 export interface Task {
   id: string;
   title: string;
@@ -116,12 +117,14 @@ export interface Task {
   order: number;
   assignee: string | null;
   due: number | null;
+  /** How much it matters; unset means no priority. */
+  priority?: Priority;
   /** The message this task was made from, if any. */
   fromMessageId?: string;
   createdBy: string;
   createdAt: number;
   /** When each field last changed: concurrent edits merge per field, newest wins. */
-  updatedAt: Partial<Record<"title" | "column" | "order" | "assignee" | "due", number>>;
+  updatedAt: Partial<Record<"title" | "column" | "order" | "assignee" | "due" | "priority", number>>;
   deleted?: boolean;
 }
 export interface ProjectCard {
@@ -143,7 +146,7 @@ export type CardOp =
   | { kind: "bill.claimAll"; userIds: string[] }
   | { kind: "bill.pay"; userId: string }
   | { kind: "task.add"; task: Task }
-  | { kind: "task.update"; id: string; patch: Partial<Pick<Task, "title" | "column" | "order" | "assignee" | "due">>; at: number }
+  | { kind: "task.update"; id: string; patch: Partial<Pick<Task, "title" | "column" | "order" | "assignee" | "due" | "priority">>; at: number }
   | { kind: "task.remove"; id: string }
   | { kind: "column.rename"; id: string; name: string }
   | { kind: "column.add"; column: { id: string; name: string } }
@@ -244,7 +247,7 @@ export interface Chat {
    Groups: channels, roles and invitations (see lib/chat/groups.ts)
 --------------------------------------------------------------------------- */
 
-export type GroupPermission = "manageGroup" | "manageChannels" | "manageRoles" | "invite";
+export type GroupPermission = "manageGroup" | "manageChannels" | "manageRoles" | "invite" | "editMind";
 
 export interface GroupRole {
   id: string;

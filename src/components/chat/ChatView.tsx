@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { chatIdentity } from "@/lib/chat/avatar";
 import { can, canPost, groupInfo, groupOf, roleNames, visibleChannels, writeLastChannel } from "@/lib/chat/groups";
+import { effectiveRule, isQuiet, useMutes } from "@/lib/chat/mutes";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { allPeople } from "@/lib/chat/people";
 import { useChat, userById } from "@/lib/chat/store";
@@ -13,7 +14,7 @@ import {
   AddSheet, ChecklistBuilder, EventBuilder, LocationBuilder, PaymentBuilder, PollBuilder, ReminderBuilder, type AddKind,
 } from "./CardBuilders";
 import Composer from "./Composer";
-import { IconBack, IconBoard, IconCheck, IconChevron, IconPhone } from "./Icons";
+import { IconBack, IconBellOff, IconBoard, IconCheck, IconChevron, IconPhone } from "./Icons";
 import MessageList from "./MessageList";
 import MessageOverlay from "./MessageOverlay";
 import MessageRow, { type BubblePos } from "./MessageRow";
@@ -103,6 +104,9 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   // Anything unfinished in this chat puts a blue dot after the name.
   // Re-checked each minute too: a poll closing or an event starting ends "open" with no new message.
   const minute = useNow(60_000);
+  // Muted (this chat, or the group it's a channel of): a small bell under the name says so.
+  const { rules: mutes } = useMutes(me);
+  const quiet = isQuiet(effectiveRule(mutes, chat, minute));
   const live = useMemo(() => openItems(messages, me, minute), [messages, me, minute]);
   const boards = useMemo(() => projectsOf(messages), [messages]);
   const openBoardMessage = boardId ? boards.find((b) => b.id === boardId) : undefined;
@@ -496,7 +500,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
             {live.length > 0 && <i className={styles.openDot} aria-hidden="true" />}
             <IconChevron />
           </span>
-          <span className={`${styles.tcPresence} ${typing.length ? styles.isTyping : ""}`}>{presence}</span>
+          <span className={`${styles.tcPresence} ${typing.length ? styles.isTyping : ""}`}>{quiet && !typing.length && <IconBellOff size={11} />} {presence}</span>
         </button>
         <div className={`${styles.headerSide} ${styles.headerEnd}`}>
           <button

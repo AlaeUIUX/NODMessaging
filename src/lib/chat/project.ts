@@ -1,4 +1,4 @@
-import type { Message, ProjectCard, Task, User } from "./types";
+import type { Message, Priority, ProjectCard, Task, User } from "./types";
 
 export type BoardMessage = Message & { card: ProjectCard };
 
@@ -15,6 +15,14 @@ export function projectOf(messages: Message[]): BoardMessage | undefined {
   }
   return undefined;
 }
+
+/** Highest first; "none" sorts last. */
+export const PRIORITIES: { id: Priority; label: string }[] = [
+  { id: "high", label: "High" },
+  { id: "medium", label: "Medium" },
+  { id: "low", label: "Low" },
+];
+export const priorityRank = (p?: Priority) => (p === "high" ? 0 : p === "medium" ? 1 : p === "low" ? 2 : 3);
 
 export function newProject(name: string): ProjectCard {
   return {

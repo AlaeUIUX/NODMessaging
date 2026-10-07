@@ -32,6 +32,26 @@
 .due.dueSoon { background: var(--warn-soft); color: var(--warn); }
 .due.dueLate { background: var(--bad-soft); color: var(--bad); }
 
+/* Priority: a coloured dot, and on a card a small pill of the same tone. */
+.prio_high { --prio: var(--bad); }
+.prio_medium { --prio: var(--warn); }
+.prio_low { --prio: var(--ink-3); }
+.prioDot { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--prio, var(--ink-3)); }
+.prio {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--prio) 12%, transparent);
+  color: var(--prio);
+  font: var(--t-caption1);
+  font-weight: var(--w-control);
+  white-space: nowrap;
+}
+
 /* ==========================================================================
    The card in the thread
    ========================================================================== */
@@ -567,3 +587,4 @@ button.fromChat::after { content: ""; position: absolute; inset: -10px -4px; }
   font: var(--t-footnote);
   color: var(--ink-3);
 }
+button > .prioDot { display: inline-block; margin-right: 6px; vertical-align: 1px; }

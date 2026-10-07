@@ -1,0 +1,33 @@
+/* The mute sheet: three plain choices, how long, and calls on their own */
+
+.lede { margin: -2px 2px 2px; font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); }
+.lede span { font-weight: 400; color: var(--ink-3); }
+.option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 14px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.option + .option { border-top: 1px solid var(--line); }
+.option.on { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.icon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink-2);
+}
+.on .icon { background: var(--accent); color: var(--bg); }
+.follow { font-size: 18px; line-height: 1; }
+.calls { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 16px; background: color-mix(in srgb, var(--ink) 4%, transparent); }

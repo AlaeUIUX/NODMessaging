@@ -8,12 +8,13 @@ import {
   newChannelId, newRoleId, PERMISSIONS, removeMember, ROLE_TONES, roleNames, rolesOf, setMemberRoles, upsertChannel,
   upsertRole,
 } from "@/lib/chat/groups";
-import { readMuted, setMutedChat } from "@/lib/chat/mutes";
+import { describe, isQuiet, ruleFor, useMutes } from "@/lib/chat/mutes";
 import { allPeople } from "@/lib/chat/people";
 import { useChat, userById } from "@/lib/chat/store";
 import type { AvatarTone, Chat, GroupChannel, GroupPermission, GroupRole } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { DragScroll } from "./Composer";
+import { MuteSheet } from "./Mute";
 import {
   IconBack, IconBell, IconCamera, IconCheck, IconChevron, IconCopy, IconLock, IconLogout, IconPlus, IconSearch, IconTrash, IconUserAdd,
   IconUserGroup,
@@ -464,8 +465,8 @@ export function GroupSettings({ groupId, leaving, onBack, onToast, onLeft }: {
   const live = useGroup(groupId);
   const [page, setPage] = useState<{ id: SettingsPage; leaving: boolean } | null>(null);
   const [sheet, setSheet] = useState<React.ReactNode>(null);
-  // Only mounted after a tap, never prerendered, so reading storage here is safe.
-  const [muted, setMuted] = useState(() => readMuted(me).includes(groupId));
+  const { rules } = useMutes(me);
+  const now = useNow(60_000);
   if (!live) return null;
   const { group, info } = live;
   const open = (id: SettingsPage) => setPage({ id, leaving: false });
@@ -518,13 +519,31 @@ export function GroupSettings({ groupId, leaving, onBack, onToast, onLeft }: {
           </GroupBanner>
         </div>
 
-        <Group label="Notifications" note={muted ? `No banners or badges for ${group.name}. Mentions still show.` : undefined}>
-          <Row
-            icon={<Tile tone="clay"><IconBell size={16} /></Tile>}
-            title={`Mute ${group.name}`}
-            trailing={<Toggle on={muted} label={`Mute ${group.name}`} onChange={(on) => { setMutedChat(me, groupId, on); setMuted(on); onToast(on ? `Muted ${group.name}` : "Notifications on"); }} />}
-          />
-        </Group>
+        {(() => {
+          // The group, then each channel you can see: a channel follows the group unless set on its own.
+          const groupRule = ruleFor(rules, groupId, now);
+          const mine = info.channels.filter((c) => !c.roles.length || isAdmin(info, me) || rolesOf(info, me).some((r) => c.roles.includes(r)));
+          const sheetFor = (id: string, name: string, channel: boolean) => setSheet(
+            <MuteSheet me={me} chatId={id} name={name} group={channel ? { id: groupId, name: group.name } : undefined} onClose={closeSheet} onToast={onToast} />,
+          );
+          return (
+            <Group label="Notifications" note={isQuiet(groupRule) ? "Channels follow the group unless you set them on their own, like keeping #announcements on." : "Mute the whole group, or just a noisy channel."}>
+              <Row icon={<Tile tone="clay"><IconBell size={16} /></Tile>} title={group.name} value={describe(groupRule, now)} onClick={() => sheetFor(groupId, group.name, false)} />
+              {mine.length > 1 && mine.map((c) => {
+                const own = ruleFor(rules, c.id, now);
+                return (
+                  <Row
+                    key={c.id}
+                    icon={<span className={g.muteHash}>#</span>}
+                    title={`#${c.name}`}
+                    value={own ? describe(own, now) : "Same as group"}
+                    onClick={() => sheetFor(c.id, `#${c.name}`, c.id !== groupId)}
+                  />
+                );
+              })}
+            </Group>
+          );
+        })()}
 
         <Group label={canManage(info, me) ? "Organise" : "People"}>
           {can(info, me, "manageChannels") && <Row icon={<Tile tone="denim"><b className={g.tileHash}>#</b></Tile>} title="Channels" value={String(info.channels.length)} onClick={() => open("channels")} />}

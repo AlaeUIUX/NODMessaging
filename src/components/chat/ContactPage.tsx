@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { chatIdentity, initials, TONES } from "@/lib/chat/avatar";
 import { can, groupInfo, groupOf, roleNames, visibleChannels } from "@/lib/chat/groups";
 import { stripFormatting } from "@/lib/chat/markdown";
-import { readMuted, writeMuted } from "@/lib/chat/mutes";
+import { describe, effectiveRule, isQuiet, QUICK_MUTE, ruleFor, useMutes } from "@/lib/chat/mutes";
 import { openItems, type OpenState } from "@/lib/chat/open";
 import { sortStops } from "@/lib/chat/ops";
 import { useChat, userById } from "@/lib/chat/store";
@@ -15,6 +15,8 @@ import {
   IconImage, IconLink, IconLocation, IconLock, IconMoneyReceive, IconOpen, IconPoll, IconReceipt, IconRoute, IconSearch,
   IconSettings, IconSparkles, IconUserAdd,
 } from "./Icons";
+import GroupMind from "./GroupMind";
+import { MuteSheet } from "./Mute";
 import { RoleBadges } from "./Groups";
 import { FileRow, Photo } from "./Media";
 import StatusBar from "./StatusBar";
@@ -23,7 +25,7 @@ import styles from "./chat.module.css";
 import s from "./contact.module.css";
 import gs from "./groups.module.css";
 
-export type ContactTab = "live" | "media" | "files" | "links";
+export type ContactTab = "live" | "media" | "files" | "links" | "mind";
 
 const LEAVE_MS = 220;
 const EDGE = 24;
@@ -155,18 +157,18 @@ export default function ContactPage({ chat: opened, startTab, onClose, onJump, o
   const tabsAnchorRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const isGroup = chat.kind === "group";
-  const [tab, setTab] = useState<ContactTab>(startTab);
+  const [tab, setTab] = useState<ContactTab>(() => (opened.kind === "group" && (startTab === "files" || startTab === "links") ? "mind" : startTab));
   const [leaving, setLeaving] = useState(false);
   const [compact, setCompact] = useState(false);
   // Groups: the bar is clear over the cover at rest, and frosts once anything scrolls under it.
   const [scrolled, setScrolled] = useState(false);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
-  // Only mounted after a tap, never prerendered, so reading storage here is safe.
-  // A group is muted as a whole, the way its inbox row is.
+  // A group is muted as a whole, the way its inbox row is; its channels can each have their own rule.
   const muteId = group?.id ?? chat.id;
-  const [muted, setMuted] = useState(() => readMuted(me).includes(muteId));
+  const { rules, set: setRule } = useMutes(me);
   const now = useNow(30_000);
+  const muted = isQuiet(ruleFor(rules, muteId, now));
 
   const messages = useMemo(
     () => (state.data.messages[chat.id] ?? []).filter((m) => !m.deletedAt),
@@ -250,11 +252,23 @@ export default function ContactPage({ chat: opened, startTab, onClose, onJump, o
     if (scroller.scrollTop > pinnedAt) scroller.scrollTop = pinnedAt;
   };
 
+  // Unmuting is one tap; muting asks what should still get through, and for how long.
   const toggleMute = () => {
-    const list = readMuted(me).filter((id) => id !== muteId);
-    writeMuted(me, muted ? list : [...list, muteId]);
-    setMuted(!muted);
-    ui.toast(muted ? "Notifications on" : `Muted ${isGroup ? identity.label : identity.label.split(" ")[0]}`);
+    if (muted) { setRule(muteId, null); ui.toast("Notifications on"); return; }
+    ui.openSheet(<MuteSheet me={me} chatId={muteId} name={isGroup ? identity.label : identity.label.split(" ")[0]} onClose={ui.closeSheet} onToast={ui.toast} />);
+  };
+  /** A channel's bell: one tap mutes it (mentions still come through) or turns it back on. */
+  const toggleChannel = (channelId: string, name: string) => {
+    const t = state.data.chats.find((c) => c.id === channelId);
+    if (!t) return;
+    if (isQuiet(effectiveRule(rules, t, now))) {
+      // On again: its own "everything" if the group is muted, otherwise just follow the group.
+      setRule(channelId, group && isQuiet(ruleFor(rules, group.id, now)) ? { messages: "all", calls: false, until: null } : null);
+      ui.toast(`#${name} notifications on`);
+    } else {
+      setRule(channelId, QUICK_MUTE(false));
+      ui.toast(`#${name}: ${describe(QUICK_MUTE(false), now).toLowerCase()}`);
+    }
   };
 
   // Swipe from the left edge to go back, like any pushed screen.
@@ -465,15 +479,14 @@ export default function ContactPage({ chat: opened, startTab, onClose, onJump, o
     <Empty icon={<IconLink size={22} />} title="No links yet">Links sent in messages are gathered here, with who sent them and when.</Empty>
   );
 
+  // A group keeps its files and links in its own Mind (with what was shared in the chat underneath).
   const panels: Record<ContactTab, ReactNode> = {
     live: livePanel, media: mediaPanel, files: filesPanel, links: linksPanel,
+    mind: group ? <GroupMind group={group} files={files} links={links} onJump={jump} onToast={ui.toast} /> : null,
   };
-  const tabs: { id: ContactTab; label: string; count?: number }[] = [
-    { id: "live", label: "Live", count: live.length },
-    { id: "media", label: "Media" },
-    { id: "files", label: "Files" },
-    { id: "links", label: "Links" },
-  ];
+  const tabs: { id: ContactTab; label: string; count?: number }[] = group
+    ? [{ id: "live", label: "Live", count: live.length }, { id: "media", label: "Media" }, { id: "mind", label: "Mind" }]
+    : [{ id: "live", label: "Live", count: live.length }, { id: "media", label: "Media" }, { id: "files", label: "Files" }, { id: "links", label: "Links" }];
   const tabIndex = Math.max(0, tabs.findIndex((t) => t.id === tab));
 
   /* ---- Search ---- */
@@ -632,17 +645,25 @@ export default function ContactPage({ chat: opened, startTab, onClose, onJump, o
               <section className={s.space} aria-labelledby="group-channels">
                 <h3 id="group-channels" className={s.spaceHead}>Channels <em>{channels.length}</em></h3>
                 <ul className={`${s.list} ${s.group}`}>
-                  {channels.map((c) => (
-                    <li key={c.id}>
-                      <button className={gs.channelItem} onClick={() => (c.id === chat.id ? close() : onSwitchChannel?.(c.id))} aria-current={c.id === chat.id ? "page" : undefined}>
-                        <span className={gs.channelIcon} style={{ ["--tone" as string]: TONES[identity.tone] }}>{c.roles.length ? <IconLock size={14} /> : "#"}</span>
-                        <span className={s.memberText}>
-                          <b>#{c.name}{c.id === chat.id && <em> · You’re here</em>}</b>
-                          <span>{[c.topic, c.roles.length ? `${roleNames(gInfo!, c.roles)} only` : "", c.postRoles.length ? `${roleNames(gInfo!, c.postRoles)} post` : ""].filter(Boolean).join(" · ") || "Everyone"}</span>
-                        </span>
-                      </button>
-                    </li>
-                  ))}
+                  {channels.map((c) => {
+                    const t = state.data.chats.find((x) => x.id === c.id);
+                    const rule = t ? effectiveRule(rules, t, now) : null;
+                    const quiet = isQuiet(rule);
+                    return (
+                      <li key={c.id} className={gs.channelLi}>
+                        <button className={gs.channelItem} onClick={() => (c.id === chat.id ? close() : onSwitchChannel?.(c.id))} aria-current={c.id === chat.id ? "page" : undefined}>
+                          <span className={gs.channelIcon} style={{ ["--tone" as string]: TONES[identity.tone] }}>{c.roles.length ? <IconLock size={14} /> : "#"}</span>
+                          <span className={s.memberText}>
+                            <b>#{c.name}{c.id === chat.id && <em> · You’re here</em>}</b>
+                            <span>{quiet ? describe(rule, now) : [c.topic, c.roles.length ? `${roleNames(gInfo!, c.roles)} only` : "", c.postRoles.length ? `${roleNames(gInfo!, c.postRoles)} post` : ""].filter(Boolean).join(" · ") || "Everyone"}</span>
+                          </span>
+                        </button>
+                        <button className={`${gs.bell} ${quiet ? gs.bellOff : ""}`} onClick={() => toggleChannel(c.id, c.name)} aria-label={quiet ? `Unmute #${c.name}` : `Mute #${c.name}`} aria-pressed={quiet}>
+                          {quiet ? <IconBellOff size={17} /> : <IconBell size={17} />}
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             )}

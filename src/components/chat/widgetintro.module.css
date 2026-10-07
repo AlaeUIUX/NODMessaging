@@ -1,0 +1,278 @@
+/* ==========================================================================
+   The widgets intro: four little scenes that play on a loop, each above a
+   line or two of text. Every scene is plain shapes and keyframes; a scene's
+   parts share one duration, so they stay in step.
+   ========================================================================== */
+
+.intro { display: flex; flex-direction: column; gap: 14px; }
+
+.stage {
+  position: relative;
+  height: 232px;
+  border-radius: 26px;
+  overflow: hidden;
+  background:
+    radial-gradient(110% 85% at 50% 0%, color-mix(in srgb, var(--accent) 13%, var(--surface)), transparent 70%),
+    color-mix(in srgb, var(--accent) 4%, var(--bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  animation: stageIn .5s var(--ease-out) both;
+}
+.stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(color-mix(in srgb, var(--accent) 26%, transparent) 1px, transparent 1.3px);
+  background-size: 14px 14px;
+  -webkit-mask-image: radial-gradient(80% 70% at 50% 50%, #000 30%, transparent 100%);
+  mask-image: radial-gradient(80% 70% at 50% 50%, #000 30%, transparent 100%);
+  opacity: .55;
+}
+@keyframes stageIn { from { opacity: 0; transform: translateY(8px) scale(.985); } }
+
+.copy { display: flex; flex-direction: column; gap: 4px; padding: 0 6px; text-align: center; animation: copyIn .45s var(--ease-out) both; animation-delay: 60ms; }
+@keyframes copyIn { from { opacity: 0; transform: translateY(6px); } }
+.eyebrow { margin: 0; font: var(--t-caption1); font-weight: var(--w-emph); letter-spacing: .05em; text-transform: uppercase; color: var(--accent); }
+.copy h3 { margin: 2px 0 0; font: var(--t-title3); font-weight: var(--w-emph); letter-spacing: -.01em; color: var(--ink); text-wrap: balance; }
+.copy p:last-child { margin: 0; font: var(--t-subhead); color: var(--ink-2); text-wrap: pretty; }
+
+.dots { display: flex; justify-content: center; gap: 6px; }
+.dots button { width: 7px; height: 7px; padding: 0; border: none; border-radius: var(--r-pill); background: var(--line-2); cursor: pointer; transition: width var(--t-mid) var(--ease-out), background var(--t-mid); }
+.dots .dotOn { width: 22px; background: var(--accent); }
+.next { margin-top: 2px; }
+.skip { align-self: center; padding: 2px 8px; border: none; background: none; color: var(--ink-3); font: var(--t-footnote); cursor: pointer; }
+
+/* ---- the little widgets every scene is made of ---- */
+
+.scene { position: absolute; left: 50%; top: 50%; width: 226px; translate: -50% -50%; }
+.mini {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  border-radius: 15px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), 0 8px 20px -8px rgba(16, 24, 40, .22);
+  overflow: hidden;
+}
+.miniName { display: flex; align-items: center; gap: 5px; font-size: 9.5px; line-height: 12px; font-weight: 600; color: var(--ink-2); }
+.miniName i { width: 6px; height: 6px; border-radius: 50%; background: var(--tone); }
+.num { font-size: 22px; line-height: 1; font-weight: 600; letter-spacing: -.03em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.num em { font-style: normal; font-size: 15px; color: var(--ink-3); }
+.numSm { font-size: 17px; line-height: 1; font-weight: 600; letter-spacing: -.02em; color: var(--ink); }
+.pill { align-self: flex-start; margin-top: auto; padding: 3px 9px; border-radius: var(--r-pill); background: var(--ink); color: var(--bg); font-size: 9.5px; font-weight: 600; }
+.stackBar { display: flex; gap: 2px; height: 9px; flex-shrink: 0; border-radius: var(--r-pill); overflow: hidden; }
+.stackBar i { display: block; border-radius: 2px; transform-origin: left; }
+.legend { display: flex; gap: 10px; font-size: 9.5px; color: var(--ink-3); }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend i { width: 6px; height: 6px; border-radius: 50%; }
+
+/* ---- 1. Little windows: three widgets rise in, then their charts draw ---- */
+
+.windows { height: 172px; }
+/* Shared timing as longhands: a shorthand without a name doesn't survive the CSS module build. */
+.winA, .winB, .winC { animation-duration: 6s; animation-timing-function: cubic-bezier(.3, .7, .3, 1); animation-iteration-count: infinite; animation-fill-mode: both; }
+.winA { left: 0; top: 0; width: 109px; height: 82px; animation-name: rise1; }
+.winB { left: 117px; top: 0; width: 109px; height: 82px; animation-name: rise2; }
+.winC { left: 0; top: 90px; width: 226px; height: 82px; gap: 10px; animation-name: rise3; }
+@keyframes rise1 {
+  0% { opacity: 0; transform: translateY(16px) scale(.9); }
+  8% { opacity: 1; transform: translateY(-2px) scale(1.02); }
+  12%, 88% { opacity: 1; transform: none; }
+  96%, 100% { opacity: 0; transform: translateY(-8px) scale(.97); }
+}
+@keyframes rise2 {
+  0%, 7% { opacity: 0; transform: translateY(16px) scale(.9); }
+  15% { opacity: 1; transform: translateY(-2px) scale(1.02); }
+  19%, 88% { opacity: 1; transform: none; }
+  96%, 100% { opacity: 0; transform: translateY(-8px) scale(.97); }
+}
+@keyframes rise3 {
+  0%, 14% { opacity: 0; transform: translateY(16px) scale(.94); }
+  22% { opacity: 1; transform: translateY(-2px) scale(1.01); }
+  26%, 88% { opacity: 1; transform: none; }
+  96%, 100% { opacity: 0; transform: translateY(-8px) scale(.98); }
+}
+.spark { width: 100%; height: 22px; margin-top: auto; overflow: visible; }
+.spark path { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 130; animation: draw 6s ease-out infinite both; }
+@keyframes draw { 0%, 10% { stroke-dashoffset: 130; } 30%, 100% { stroke-dashoffset: 0; } }
+.winB .pill { animation: nudge 6s infinite both; }
+@keyframes nudge { 0%, 20% { transform: scale(.6); opacity: 0; } 25% { transform: scale(1.12); opacity: 1; } 29%, 100% { transform: none; opacity: 1; } }
+.winC .stackBar i { animation: fill 6s cubic-bezier(.3, .7, .3, 1) infinite both; }
+.winC .stackBar i:nth-child(2) { animation-delay: 80ms; }
+.winC .stackBar i:nth-child(3) { animation-delay: 160ms; }
+@keyframes fill { 0%, 26% { transform: scaleX(0); } 40%, 100% { transform: scaleX(1); } }
+
+/* ---- 2. Sizes: one widget grows from small to medium to large ---- */
+
+.sizes { height: 192px; }
+.morph { top: 0; left: 50%; translate: -50% 0; animation: grow3 7.2s cubic-bezier(.6, 0, .2, 1) infinite both; }
+@keyframes grow3 {
+  0%, 24% { width: 96px; height: 96px; }
+  32%, 56% { width: 226px; height: 96px; }
+  64%, 90% { width: 226px; height: 158px; }
+  98%, 100% { width: 96px; height: 96px; }
+}
+.morphChart { position: absolute; right: 12px; top: 30px; width: 104px; height: 50px; overflow: visible; animation: chartIn 7.2s ease-out infinite both; }
+.morphChart path { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; }
+.morphChart path.morphPrev { stroke: var(--ink-3); stroke-width: 1.4; stroke-dasharray: 2 4; }
+.morphChart circle { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+@keyframes chartIn { 0%, 27% { opacity: 0; transform: translateX(12px); } 35%, 91% { opacity: 1; transform: none; } 97%, 100% { opacity: 0; } }
+.morphRows { position: absolute; left: 10px; right: 10px; bottom: 9px; display: flex; flex-direction: column; gap: 4px; animation: rowsIn 7.2s ease-out infinite both; }
+.morphRows span { display: flex; justify-content: space-between; padding-top: 4px; border-top: 1px solid var(--line); font-size: 9.5px; }
+.morphRows b { font-weight: 600; color: var(--ink); }
+.morphRows em { font-style: normal; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+@keyframes rowsIn { 0%, 63% { opacity: 0; transform: translateY(10px); } 71%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+.sizeTabs { position: absolute; left: 50%; bottom: 0; translate: -50% 0; display: flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.sizeTabs span { padding: 4px 11px; border-radius: var(--r-pill); font-size: 10.5px; line-height: 14px; font-weight: 600; color: var(--ink-3); animation-duration: 7.2s; animation-iteration-count: infinite; animation-fill-mode: both; }
+.sizeTabs span:nth-child(1) { animation-name: tab1; }
+.sizeTabs span:nth-child(2) { animation-name: tab2; }
+.sizeTabs span:nth-child(3) { animation-name: tab3; }
+@keyframes tab1 {
+  0%, 24% { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(16, 24, 40, .14); }
+  30%, 93% { background: transparent; color: var(--ink-3); box-shadow: none; }
+  99%, 100% { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(16, 24, 40, .14); }
+}
+@keyframes tab2 {
+  0%, 27% { background: transparent; color: var(--ink-3); box-shadow: none; }
+  33%, 56% { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(16, 24, 40, .14); }
+  62%, 100% { background: transparent; color: var(--ink-3); box-shadow: none; }
+}
+@keyframes tab3 {
+  0%, 59% { background: transparent; color: var(--ink-3); box-shadow: none; }
+  65%, 90% { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(16, 24, 40, .14); }
+  96%, 100% { background: transparent; color: var(--ink-3); box-shadow: none; }
+}
+
+/* ---- 3. Views: the board widget flips between priority, deadlines and missing ---- */
+
+.views { height: 176px; }
+.viewCard { left: 0; top: 0; width: 226px; height: 176px; gap: 10px; }
+.viewTabs { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); height: 24px; padding: 2px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.viewTabs span { position: relative; z-index: 1; display: grid; place-items: center; font-size: 9.5px; font-weight: 600; color: var(--ink-3); animation-duration: 9s; animation-iteration-count: infinite; animation-fill-mode: both; }
+.viewTabs span:nth-of-type(1) { animation-name: vt1; }
+.viewTabs span:nth-of-type(2) { animation-name: vt2; }
+.viewTabs span:nth-of-type(3) { animation-name: vt3; }
+@keyframes vt1 { 0%, 28% { color: var(--ink); } 33%, 95% { color: var(--ink-3); } 100% { color: var(--ink); } }
+@keyframes vt2 { 0%, 29% { color: var(--ink-3); } 34%, 61% { color: var(--ink); } 66%, 100% { color: var(--ink-3); } }
+@keyframes vt3 { 0%, 62% { color: var(--ink-3); } 67%, 94% { color: var(--ink); } 99%, 100% { color: var(--ink-3); } }
+.viewLens {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / 3);
+  height: 20px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: 0 1px 4px rgba(16, 24, 40, .14);
+  animation: lens 9s cubic-bezier(.6, 0, .2, 1) infinite both;
+}
+@keyframes lens {
+  0%, 28% { transform: translateX(0); }
+  33.3%, 61.6% { transform: translateX(100%); }
+  66.6%, 94.9% { transform: translateX(200%); }
+  100% { transform: translateX(0); }
+}
+.pane { position: absolute; left: 10px; right: 10px; top: 66px; bottom: 10px; display: flex; flex-direction: column; gap: 8px; animation-duration: 9s; animation-timing-function: ease-out; animation-iteration-count: infinite; animation-fill-mode: both; }
+.pane1 { animation-name: pane1; }
+.pane2 { animation-name: pane2; }
+.pane3 { animation-name: pane3; }
+@keyframes pane1 { 0%, 28% { opacity: 1; transform: none; } 33%, 95% { opacity: 0; transform: translateX(-14px); } 100% { opacity: 1; transform: none; } }
+@keyframes pane2 { 0%, 29% { opacity: 0; transform: translateX(14px); } 35%, 61% { opacity: 1; transform: none; } 66%, 100% { opacity: 0; transform: translateX(-14px); } }
+@keyframes pane3 { 0%, 62% { opacity: 0; transform: translateX(14px); } 68%, 94% { opacity: 1; transform: none; } 99%, 100% { opacity: 0; transform: translateX(-14px); } }
+.paneRows { display: flex; flex-direction: column; }
+.paneRows span { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-top: 1px solid var(--line); font-size: 10px; font-weight: 500; color: var(--ink); }
+.paneRows span:first-child { border-top: none; }
+.paneRows i { width: 6px; height: 6px; border-radius: 50%; }
+.cols { display: flex; align-items: flex-end; gap: 6px; height: 88px; }
+.cols i { flex: 1; border-radius: 4px 4px 2px 2px; background: var(--fill-2); transform-origin: bottom; animation: colsIn 9s cubic-bezier(.3, .7, .3, 1) infinite both; animation-delay: calc(var(--d) * 45ms); }
+@keyframes colsIn { 0%, 31% { transform: scaleY(0); } 42%, 100% { transform: scaleY(1); } }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tiles span { display: flex; flex-direction: column; gap: 2px; padding: 9px 10px; border-radius: 11px; background: color-mix(in srgb, var(--ink) 5%, transparent); font-size: 9.5px; color: var(--ink-3); }
+.tiles b { font-size: 22px; line-height: 1; font-weight: 600; letter-spacing: -.02em; }
+
+/* ---- 4. Move: hold the board widget, a blue slot opens at the top, it lands there ---- */
+
+.move { height: 132px; animation: sceneFade 7s infinite both; }
+@keyframes sceneFade { 0% { opacity: 0; } 4%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+.moveA, .moveB, .moveC { height: 62px; animation-duration: 7s; animation-timing-function: cubic-bezier(.45, 0, .2, 1); animation-iteration-count: infinite; animation-fill-mode: both; }
+.moveA { left: 0; top: 0; width: 109px; animation-name: mA; }
+.moveB { left: 117px; top: 0; width: 109px; animation-name: mB; }
+.moveC { left: 0; top: 70px; width: 226px; z-index: 2; animation-name: mC; }
+@keyframes mA { 0%, 21% { transform: none; } 33%, 96% { transform: translateY(70px); } 99%, 100% { transform: none; } }
+@keyframes mB { 0%, 23% { transform: none; } 35%, 96% { transform: translateY(70px); } 99%, 100% { transform: none; } }
+@keyframes mC {
+  0%, 14% { transform: none; box-shadow: 0 0 0 1px var(--line), 0 8px 20px -8px rgba(16, 24, 40, .22); }
+  20% { transform: scale(1.05); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent), 0 20px 36px -10px rgba(16, 24, 40, .4); }
+  32% { transform: translateY(-6px) scale(1.05); }
+  52% { transform: translateY(-70px) scale(1.05); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent), 0 20px 36px -10px rgba(16, 24, 40, .4); }
+  57% { transform: translateY(-70px) scale(.98); box-shadow: 0 0 0 1px var(--line), 0 8px 20px -8px rgba(16, 24, 40, .22); }
+  62%, 96% { transform: translateY(-70px) scale(1); }
+  99%, 100% { transform: none; }
+}
+.moveSlot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 226px;
+  height: 62px;
+  border-radius: 15px;
+  border: 2px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  animation: slotIn 7s ease-out infinite both;
+}
+@keyframes slotIn {
+  0%, 21% { opacity: 0; transform: scale(.94); }
+  28% { opacity: 1; transform: scale(1); }
+  40% { transform: scale(1.02); }
+  48%, 54% { opacity: 1; transform: scale(1); }
+  60%, 100% { opacity: 0; transform: scale(1); }
+}
+.moveLine {
+  position: absolute;
+  left: 112px;
+  top: 31px;
+  width: 2px;
+  height: 70px;
+  z-index: 3;
+  background: repeating-linear-gradient(to bottom, var(--accent) 0 5px, transparent 5px 10px);
+  transform-origin: top;
+  animation: lineGo 7s ease-in-out infinite both, march .5s linear infinite;
+}
+@keyframes lineGo {
+  0%, 22% { opacity: 0; transform: scaleY(1); }
+  28% { opacity: 1; transform: scaleY(1); }
+  52% { opacity: 1; transform: scaleY(0); }
+  54%, 100% { opacity: 0; transform: scaleY(0); }
+}
+@keyframes march { to { background-position: 0 -10px; } }
+.moveRing { position: absolute; left: 0; top: 0; width: 226px; height: 62px; z-index: 3; border-radius: 15px; box-shadow: 0 0 0 2px var(--accent); animation: ring 7s ease-out infinite both; }
+@keyframes ring { 0%, 55% { opacity: 0; transform: scale(1); } 57% { opacity: .9; } 72%, 100% { opacity: 0; transform: scale(1.08); } }
+.finger {
+  position: absolute;
+  left: 99px;
+  top: 87px;
+  width: 28px;
+  height: 28px;
+  z-index: 4;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ink) 24%, transparent);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .85), 0 4px 12px rgba(0, 0, 0, .2);
+  animation: finger 7s cubic-bezier(.45, 0, .2, 1) infinite both;
+}
+@keyframes finger {
+  0%, 8% { opacity: 0; transform: translateY(12px) scale(1.25); }
+  12% { opacity: 1; transform: none; }
+  16%, 20% { opacity: 1; transform: scale(.8); }
+  32% { transform: translateY(-6px) scale(.8); }
+  52% { opacity: 1; transform: translateY(-70px) scale(.8); }
+  58% { opacity: 1; transform: translateY(-70px) scale(1); }
+  64%, 100% { opacity: 0; transform: translateY(-80px) scale(1.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage, .copy, .scene, .scene * { animation: none !important; }
+}

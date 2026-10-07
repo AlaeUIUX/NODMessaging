@@ -131,7 +131,7 @@ export function money(cents: number, currency = "EUR") {
    Projects
 --------------------------------------------------------------------------- */
 
-const TASK_FIELDS = ["title", "column", "order", "assignee", "due"] as const;
+const TASK_FIELDS = ["title", "column", "order", "assignee", "due", "priority"] as const;
 
 function reduceProject(card: ProjectCard, op: CardOp): ProjectCard {
   switch (op.kind) {

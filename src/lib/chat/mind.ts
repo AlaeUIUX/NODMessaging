@@ -373,8 +373,44 @@ function reemaMind(): Mind {
   ], "c-home");
 }
 
+/**
+ * A group's Mind: one shared collection whose stacks ("shelves") everyone in
+ * the group can read; people with "Edit the group's Mind" add and sort them.
+ * Stored like a person's Mind, under its own id.
+ */
+export const groupMindId = (groupId: string) => `group:${groupId}`;
+
+/** What NOD Team keeps for everyone: the brand kit, launch links and the docs people ask for. */
+function nodTeamMind(): Mind {
+  return build([
+    {
+      id: "c-shared", name: "NOD Team", emoji: "🗂️", tone: "#C99432", chatIds: [], vault: [],
+      pages: [
+        { title: "Brand kit", emoji: "🎨", view: "grid", views: ["grid", "list"], defaultKind: "image", sections: one([
+          { kind: "palette", title: "NOD colours", colors: ["#1C1917", "#FAFAF9", "#00359E", "#C99432", "#5B8A6B"] },
+          { kind: "file", title: "NOD-logo-pack.zip", size: 2_400_000 },
+          { kind: "file", title: "Type scale v2.fig", size: 860_000 },
+          { kind: "image", title: "Spaces launch moodboard", image: photo("photo-1618221195710-dd6b41faaea6"), source: "Reema" },
+        ]) },
+        { title: "Launch", emoji: "🚀", view: "list", views: ["list", "grid"], defaultKind: "link", sections: one([
+          { kind: "link", title: "Launch plan", source: "notion.so", url: "https://notion.so" },
+          { kind: "link", title: "Press kit", source: "nod.app", url: "https://nod.app" },
+          { kind: "date", title: "Launch day", at: Date.now() + 9 * DAY },
+          { kind: "file", title: "Investor update – October.pdf", size: 1_200_000 },
+        ]) },
+        { title: "How we work", emoji: "📝", view: "list", views: ["list", "grid"], defaultKind: "note", sections: one([
+          { kind: "note", title: "Writing for NOD", body: "Short sentences. Say what happens, not what the button is called. No exclamation marks." },
+          { kind: "note", title: "Release checklist", body: "Changelog, QA on iOS and Android, support briefed, announcement scheduled." },
+          { kind: "quote", title: "Make it work, make it right, make it fast.", body: "Kent Beck" },
+        ]) },
+      ],
+    },
+  ], "c-shared");
+}
+
 /** Alae, Charles and Reema have been using Mind for a while; everyone else starts blank. */
 export function seedMind(userId: string): Mind {
+  if (userId === groupMindId("general")) return nodTeamMind();
   if (userId === "me") return alaeMind();
   if (userId === "charles") return charlesMind();
   if (userId === "reema") return reemaMind();
@@ -439,6 +475,33 @@ export function updateMind(userId: string, fn: (m: Mind) => Mind) {
   write();
   notify();
 }
+/*
+ * Editing a Mind that isn't yours alone (a group's) happens on a copy, kept in
+ * the store under its own id so every Mind screen and sheet works on it as
+ * usual. Save puts the copy back in one write; Cancel just drops it.
+ */
+export const draftOf = (id: string) => `draft:${id}`;
+/** A fresh copy of `id` to edit; returns the copy's id. Call it before the editor opens. */
+export function startDraft(id: string) {
+  const copy = JSON.parse(JSON.stringify(mindOf(id))) as Mind;
+  updateMind(draftOf(id), () => copy);
+  return draftOf(id);
+}
+/** Puts the edited copy back. */
+export function commitDraft(id: string) {
+  const draft = load(true)[draftOf(id)];
+  if (draft) updateMind(id, () => draft);
+}
+/** Forgets the copy. Only once its editor is gone: nothing should be reading it, so nothing is told. */
+export function dropDraft(id: string) {
+  const all = load(true);
+  if (!(draftOf(id) in all)) return;
+  const rest = { ...all };
+  delete rest[draftOf(id)];
+  cache = rest;
+  write();
+}
+
 export function useMind(userId: string) {
   const mind = useSyncExternalStore(subscribe, () => mindOf(userId), () => null);
   const update = useCallback((fn: (m: Mind) => Mind) => updateMind(userId, fn), [userId]);

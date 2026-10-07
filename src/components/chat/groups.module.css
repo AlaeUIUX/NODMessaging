@@ -259,3 +259,11 @@
 
 /* An icon beside the label on a wide button (they stack by default). */
 .rowBtn.rowBtn { flex-direction: row; gap: 8px; }
+
+/* a channel row on the group page, with its own bell */
+.channelLi { display: flex; align-items: center; }
+.channelLi > .channelItem { flex: 1; min-width: 0; }
+.bell { flex-shrink: 0; width: 40px; height: 40px; margin-right: 10px; border: none; border-radius: var(--r-pill); background: none; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; transition: background var(--t-fast), color var(--t-fast); }
+.bell:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink-2); }
+.bellOff { color: var(--warn, #C2410C); background: color-mix(in srgb, var(--warn, #C2410C) 10%, transparent); }
+.muteHash { width: 30px; height: 30px; flex-shrink: 0; border-radius: 9px; display: grid; place-items: center; background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink-2); font: var(--t-headline); }

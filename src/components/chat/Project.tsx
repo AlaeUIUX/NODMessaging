@@ -5,7 +5,7 @@ import { chatIdentity, initials } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { openState } from "@/lib/chat/open";
 import { doneColumn, tasksIn } from "@/lib/chat/ops";
-import { newProject, newTask, parseDue, parseTaskCommand, projectsOf, type BoardMessage } from "@/lib/chat/project";
+import { newProject, newTask, parseDue, parseTaskCommand, PRIORITIES, projectsOf, type BoardMessage } from "@/lib/chat/project";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Card, Chat, Message, ProjectCard, Task, User } from "@/lib/chat/types";
 import Avatar from "./Avatar";
@@ -291,7 +291,7 @@ function TaskSheet({ chatId, messageId, taskId, onClose, onShowInChat }: {
   const people = peopleOf(chat?.memberIds ?? [me], me);
   const gone = !board || !task || task.deleted;
 
-  const update = (patch: Partial<Pick<Task, "title" | "column" | "order" | "assignee" | "due">>) => {
+  const update = (patch: Partial<Pick<Task, "title" | "column" | "order" | "assignee" | "due" | "priority">>) => {
     if (!board || gone) return;
     cardOp(board, { kind: "task.update", id: taskId, patch, at: stamp() });
   };
@@ -329,6 +329,22 @@ function TaskSheet({ chatId, messageId, taskId, onClose, onShowInChat }: {
 
           <p className={styles.sheetLabel}>Due</p>
           <DuePicker value={task.due} onChange={(due) => update({ due })} />
+
+          <p className={styles.sheetLabel}>Priority</p>
+          <div className={styles.chipGrid} role="radiogroup" aria-label="Priority">
+            {[{ id: undefined, label: "None" }, ...PRIORITIES].map((p) => (
+              <button
+                key={p.id ?? "none"}
+                role="radio"
+                aria-checked={task.priority === p.id}
+                className={`${styles.choice} ${task.priority === p.id ? styles.choiceOn : ""}`}
+                onClick={() => update({ priority: p.id })}
+              >
+                {p.id && <span className={`${s.prioDot} ${s[`prio_${p.id}`]}`} aria-hidden="true" />}
+                {p.label}
+              </button>
+            ))}
+          </div>
 
           <p className={styles.sheetLabel}>Move to</p>
           <div className={styles.chipGrid} role="radiogroup" aria-label="Column">
@@ -379,8 +395,15 @@ function TaskBody({ task, now, done, onShow }: { task: Task; now: number; done: 
         {done && <span className={s.doneMark} aria-hidden="true"><IconCheck size={10} /></span>}
         {task.title}
       </p>
-      {(task.due !== null || task.fromMessageId || who) && (
+      {(task.due !== null || task.fromMessageId || who || (task.priority && !done)) && (
         <div className={s.taskMeta}>
+          {task.priority && !done && (
+            <span className={`${s.prio} ${s[`prio_${task.priority}`]}`}>
+              <span className={s.prioDot} aria-hidden="true" />
+              {PRIORITIES.find((p) => p.id === task.priority)!.label}
+              <span className={s.srOnly}> priority</span>
+            </span>
+          )}
           {task.due !== null && !done && <DueChip due={task.due} now={now} />}
           {task.fromMessageId && (
             onShow ? (

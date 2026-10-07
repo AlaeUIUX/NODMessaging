@@ -17,6 +17,7 @@ export const PERMISSIONS: { id: GroupPermission; label: string; sub: string }[] 
   { id: "manageChannels", label: "Manage channels", sub: "Add channels, rename them, choose who sees them" },
   { id: "manageRoles", label: "Manage roles & members", sub: "Create roles, give them to people, remove members" },
   { id: "invite", label: "Invite people", sub: "Send invitations and share the invite link" },
+  { id: "editMind", label: "Edit the group’s Mind", sub: "Add files and links, sort shelves, remove things" },
 ];
 const ALL: GroupPermission[] = PERMISSIONS.map((p) => p.id);
 

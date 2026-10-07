@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { chatIdentity, initials, TONES } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { groupInfo, landingChannel, visibleChannels } from "@/lib/chat/groups";
+import { describe, effectiveRule, isQuiet, QUICK_MUTE, useMutes } from "@/lib/chat/mutes";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
@@ -17,6 +18,8 @@ import Settings from "./Settings";
 import { formatPhone } from "@/lib/chat/people";
 import NewChat from "./NewChat";
 import { NewGroupSheet } from "./Groups";
+import { MuteSheet } from "./Mute";
+import { useNow } from "./ui";
 import AnalyticsTab from "./Analytics";
 import ExploreTab from "./Explore";
 import StatusBar from "./StatusBar";
@@ -215,19 +218,23 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
   const [newChat, setNewChat] = useState(false);
   const [newGroup, setNewGroup] = useState(false);
   const [pinned, setPinned] = useState<Set<string>>(() => new Set(["dm"]));
-  const [muted, setMuted] = useState<Set<string>>(() => new Set());
+  // Mutes are rules per chat (what notifies, for how long); a channel follows its group.
+  const { rules, set: setRule } = useMutes(me);
+  const now = useNow(60_000);
+  const [muting, setMuting] = useState<Chat | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const meUser = userById(me);
   const [settings, setSettings] = useState<{ leaving: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
   const [inviting, setInviting] = useState(false);
-  const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean } | null>(null);
-  const flash = useCallback((text: string) => {
+  const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean; action?: { label: string; run: () => void } } | null>(null);
+  const flash = useCallback((text: string, action?: { label: string; run: () => void }) => {
     const id = Date.now();
-    setToast({ text, id });
-    setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), 2200);
-    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 2420);
-  }, []);
+    setToast({ text, id, action });
+    const stay = action ? 3600 : 2200;
+    setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), stay);
+    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), stay + 220);
+  }, [setToast]);
   const openSettings = () => setSettings({ leaving: false });
   const closeSettings = () => {
     setSettings((x) => (x ? { leaving: true } : x));
@@ -238,14 +245,20 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPinned(readList("pinned", me, ["dm"]));
-    setMuted(readList("muted", me, []));
-    // The contact page can mute too; re-read when it does, so neither overwrites the other.
-    const reread = () => setMuted(readList("muted", me, []));
-    window.addEventListener("nod:muted", reread);
-    return () => window.removeEventListener("nod:muted", reread);
   }, [me]);
   const togglePinned = (id: string) => setPinned((s) => { const next = toggle(s, id); writeList("pinned", me, next); return next; });
-  const toggleMuted = (id: string) => setMuted((s) => { const next = toggle(s, id); writeList("muted", me, next); return next; });
+  // One swipe: quiet (only @mentions get through; a DM goes fully quiet) or back on. Options for the details.
+  const toggleMuted = (chat: Chat) => {
+    const name = chatIdentity(chat, me, userById).label;
+    if (isQuiet(effectiveRule(rules, chat, now))) {
+      setRule(chat.id, null);
+      flash(`Notifications on for ${name}`);
+      return;
+    }
+    const rule = QUICK_MUTE(chat.kind === "dm");
+    setRule(chat.id, rule);
+    flash(`${name}: ${describe(rule, now).toLowerCase()}`, { label: "Options", run: () => setMuting(chat) });
+  };
 
   // Only chats this person is in: signed in as Reema, the Alae–Charles DM isn't yours to read.
   // A group is one row for all the channels you can see: their unread add up, the newest message shows.
@@ -257,6 +270,8 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
         : [chat];
       let last: Message | undefined;
       let unread = 0;
+      // What would actually notify: a muted channel adds nothing, "only @mentions" adds its mentions.
+      let alert = 0;
       let mentioned = false;
       for (const t of threads) {
         const messages = state.data.messages[t.id] ?? [];
@@ -264,16 +279,20 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
         if (tail && (!last || tail.createdAt > last.createdAt)) last = tail;
         const lastRead = lastReadAt(t.id);
         const unreadMsgs = messages.filter((m) => m.authorId !== me && m.createdAt > lastRead);
+        const mentions = unreadMsgs.filter((m) => m.body.includes(`@${userById(me).name}`)).length;
+        const rule = effectiveRule(rules, t, now);
         unread += unreadMsgs.length;
-        mentioned ||= unreadMsgs.some((m) => m.body.includes(`@${userById(me).name}`));
+        alert += !rule || rule.messages === "all" ? unreadMsgs.length : rule.messages === "mentions" ? mentions : 0;
+        mentioned ||= mentions > 0 && rule?.messages !== "none";
       }
+      const quiet = isQuiet(effectiveRule(rules, chat, now));
       // Which channel the newest message is in, when there's more than one to tell apart.
       const channel = chat.kind === "group" && threads.length > 1 && last && last.chatId !== chat.id
         ? groupInfo(chat).channels.find((c) => c.id === last!.chatId)?.name
         : undefined;
-      return { chat, last, unread, mentioned, channel };
+      return { chat, last, unread, alert, mentioned, channel, quiet };
     });
-  }, [state.data, me, lastReadAt]);
+  }, [state.data, me, lastReadAt, rules, now]);
   // Groups that invited you: a red badge on + until you answer them (in New chat › Invitations).
   const invites = useMemo(
     () => state.data.chats.filter((c) => c.kind === "group" && !c.groupId && !c.removedAt && !c.memberIds.includes(me) && c.group?.invites.some((i) => i.userId === me)),
@@ -284,8 +303,8 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
   // Conversations (and their clock-relative labels) exist only once local
   // storage has loaded; rendering the seed on the server would mismatch.
   const ready = state.hydrated;
-  // Muted chats keep their own count but stay out of the Unread badge.
-  const unreadChats = ready ? rows.filter((r) => r.unread > 0 && !muted.has(r.chat.id)).length : 0;
+  // Muted chats keep their own count but stay out of the Unread badge (unless a mention gets through).
+  const unreadChats = ready ? rows.filter((r) => r.alert > 0).length : 0;
   const spaceMention = ready && rows.some((r) => r.chat.kind === "group" && r.mentioned);
 
   const visible = (ready ? rows : [])
@@ -375,13 +394,13 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
             )}
 
             <div className={styles.rows} key={`${tab}-${filter}`}>
-              {visible.map(({ chat, last, unread, mentioned, channel }, i) => {
+              {visible.map(({ chat, last, alert, mentioned, channel, quiet }, i) => {
                 const id = chatIdentity(chat, me, userById);
                 const other = chat.kind === "dm" ? chat.memberIds.find((m) => m !== me) : undefined;
                 const online = !!other && isOnline(other);
                 const typing = typingUsers(chat.id).filter((u) => u !== me);
-                const isMuted = muted.has(chat.id);
-                const showBadge = unread > 0 && !isMuted;
+                const isMuted = quiet;
+                const showBadge = alert > 0;
                 return (
                   <div key={chat.id} className={styles.rowEnter} style={{ ["--i" as string]: i }}>
                     <SwipeRow
@@ -389,7 +408,7 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
                       pinned={pinned.has(chat.id)}
                       muted={isMuted}
                       onPin={() => togglePinned(chat.id)}
-                      onMute={() => toggleMuted(chat.id)}
+                      onMute={() => toggleMuted(chat)}
                     >
                       {chat.kind === "group" ? (
                         id.photo
@@ -417,7 +436,7 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
                             {isMuted && <IconBellOff size={11} />}
                             {last ? timeLabel(last.createdAt) : ""}
                           </span>
-                          {showBadge && <span className={styles.rowBadge}>{mentioned ? "@" : unread}</span>}
+                          {showBadge && <span className={styles.rowBadge}>{mentioned ? "@" : alert}</span>}
                         </div>
                       </div>
                     </SwipeRow>
@@ -492,9 +511,13 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
           }}
         />
       )}
+      {muting && (
+        <MuteSheet me={me} chatId={muting.id} name={chatIdentity(muting, me, userById).label} onClose={() => setMuting(null)} onToast={flash} />
+      )}
       {toast && (
-        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${styles.mindToast} ${toast.leaving ? styles.toastLeaving : ""}`} role="status">
+        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${styles.mindToast} ${toast.action ? styles.toastActions : ""} ${toast.leaving ? styles.toastLeaving : ""}`} role="status">
           <span className={styles.toastText}>{toast.text}</span>
+          {toast.action && <button className={styles.toastBtn} onClick={() => { setToast(null); toast.action!.run(); }}>{toast.action.label}</button>}
         </div>
       )}
     </div>

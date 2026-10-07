@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getForceFailure, setForceFailure } from "@/lib/chat/api";
 import { getPrefs, resetDemoData, THEME_EVENT, useAccounts, type ThemePref } from "@/lib/chat/account";
+import { effectiveRule, isQuiet, readMutes } from "@/lib/chat/mutes";
 import { USERS } from "@/lib/chat/seed";
 import { ChatProvider, useChat, userById } from "@/lib/chat/store";
 import type { Chat, Message } from "@/lib/chat/types";
@@ -263,9 +264,12 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
   }
 
   const showBanner = useCallback((b: Banner) => {
+    // A chat you've quietened (or its group) doesn't banner; storage warnings always do.
+    const chat = latestChats.current.find((c) => c.id === b.chatId);
+    if (chat && isQuiet(effectiveRule(readMutes(me), chat, Date.now()))) return;
     setBanner(b);
     setTimeout(() => setBanner((cur) => (cur?.id === b.id ? null : cur)), 5000);
-  }, []);
+  }, [me]);
 
   const show = useCallback((chat: Chat, messageId?: string) => {
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
