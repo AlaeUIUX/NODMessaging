@@ -15,7 +15,7 @@ import Avatar from "./Avatar";
 import { BlockView, KIND_LABEL } from "./MindBlocks";
 import {
   IconArrowRight, IconArrowUp, IconBack, IconBoard, IconCheck, IconChevron, IconChevronDown, IconClose, IconEdit, IconGrid,
-  IconFolder, IconInbox, IconListView, IconMessage, IconMore, IconOpen, IconPalette, IconPlus, IconShelf, IconSmile, IconTrash,
+  IconFolder, IconGlobe, IconInbox, IconListView, IconMessage, IconMore, IconOpen, IconPalette, IconPlus, IconShelf, IconSmile, IconTrash,
 } from "./Icons";
 import { HoldMenu, useHold, type HoldAction, type HoldBind, type HoldSrc } from "./MindHold";
 import Logo from "./Logo";
@@ -39,6 +39,8 @@ const VIEW_META: Record<MindView, { label: string; icon: React.ReactNode }> = {
 };
 /** A collection's top level has no board: that needs to-dos, which live in stacks. */
 const COLLECTION_VIEWS: MindView[] = ["list", "grid", "shelf"];
+/** Mind's home: the collections as folders, or as a list. */
+const HOME_VIEWS: MindView[] = ["grid", "list"];
 
 function ViewSwitch({ views, value, onPick }: { views: MindView[]; value: MindView; onPick: (v: MindView) => void }) {
   return (
@@ -342,31 +344,65 @@ function FolderGrid({ ctx }: { ctx: Ctx }) {
     },
   });
   const target = hold.target;
+  // Folders side by side, or a list with one per row (like a drive); the same folders either way.
+  const home: MindView = ctx.mind.home === "list" ? "list" : "grid";
+  const setHome = (v: MindView) => ctx.update((m) => ({ ...m, home: v === "list" ? "list" : "grid" }));
+  const newFolder = () => ctx.openSheet(<NewFolderSheet ctx={ctx} />);
+  const props = (c: Collection, i: number) => ({
+    ctx, col: c, i,
+    hold: hold.bind({ kind: "collection", id: c.id }),
+    before: target?.t === "collectionBefore" && target.before === c.id,
+    lifted: hold.isDragging("collection", c.id),
+  });
   return (
     <div className={styles.mindStack} ref={rootRef} style={{ position: "relative" }} {...hold.rootHandlers}>
       <div className={styles.mindSectionBar}>
         <p className={styles.sheetLabel}>Collections</p>
-        <button className={styles.mindIconBtn} onClick={() => ctx.openSheet(<NewFolderSheet ctx={ctx} />)} aria-label="New collection" title="New collection"><IconPlus size={16} /></button>
+        <span className={styles.mindBarEnd}>
+          <ViewSwitch views={HOME_VIEWS} value={home} onPick={setHome} />
+          <button className={styles.mindIconBtn} onClick={newFolder} aria-label="New collection" title="New collection"><IconPlus size={16} /></button>
+        </span>
       </div>
-      <div className={styles.folderGrid}>
-        {cols.map((c, i) => (
-          <FolderCard
-            key={c.id}
-            ctx={ctx}
-            col={c}
-            i={i}
-            hold={hold.bind({ kind: "collection", id: c.id })}
-            before={target?.t === "collectionBefore" && target.before === c.id}
-            lifted={hold.isDragging("collection", c.id)}
-          />
-        ))}
-        <button className={styles.folderNew} onClick={() => ctx.openSheet(<NewFolderSheet ctx={ctx} />)}>
-          <IconPlus size={18} />
-          <span>New collection</span>
-        </button>
-      </div>
+      {home === "list" ? (
+        <div className={styles.folderList}>
+          {cols.map((c, i) => <FolderRow key={c.id} {...props(c, i)} />)}
+          <button className={styles.folderRowNew} onClick={newFolder}><IconPlus size={16} /> New collection</button>
+        </div>
+      ) : (
+        <div className={styles.folderGrid}>
+          {cols.map((c, i) => <FolderCard key={c.id} {...props(c, i)} />)}
+          <button className={styles.folderNew} onClick={newFolder}>
+            <IconPlus size={18} />
+            <span>New collection</span>
+          </button>
+        </div>
+      )}
       {hold.ghost}
     </div>
+  );
+}
+
+/** A collection as a row: the same little folder, its name, what's in it. */
+function FolderRow({ ctx, col, i, hold, before, lifted, q }: { ctx: Ctx; col: Collection; i: number; hold?: HoldBind; before?: boolean; lifted?: boolean; q?: string }) {
+  const items = collectionItems(ctx.mind, col);
+  return (
+    <button
+      className={[styles.folderRow, styles.rowEnter, before ? styles.mindDropAbove : "", lifted ? styles.mindDragSource : ""].filter(Boolean).join(" ")}
+      style={{ ["--tone" as string]: col.tone, ["--i" as string]: i }}
+      {...hold}
+      onClick={() => ctx.openFolder(col.id)}
+    >
+      <span className={styles.folderRowIcon}><Emoji char={col.emoji} /></span>
+      <span className={styles.mindPageText}>
+        <b>{q ? <Mark text={col.name} q={q} /> : col.name}</b>
+        <small>{q ? "Collection · " : ""}{col.pages.length} stack{col.pages.length === 1 ? "" : "s"} · {items.length} item{items.length === 1 ? "" : "s"}</small>
+      </span>
+      <span className={styles.mindPageSide}>
+        {col.published && <span className={styles.folderPub} title="On Explore"><IconGlobe size={12} /></span>}
+        {col.vault.length > 0 && <em className={styles.folderBadge}>{col.vault.length} to sort</em>}
+        <IconChevron size={14} />
+      </span>
+    </button>
   );
 }
 
@@ -383,7 +419,10 @@ function FolderCard({ ctx, col, i, hold, before, lifted }: { ctx: Ctx; col: Coll
     >
       <span className={styles.folderTop}>
         <span className={styles.folderIcon}><Emoji char={col.emoji} /></span>
-        {col.vault.length > 0 && <em className={styles.folderBadge}>{col.vault.length} to sort</em>}
+        <span className={styles.folderBadges}>
+          {col.published && <span className={styles.folderPub} title="On Explore"><IconGlobe size={12} /></span>}
+          {col.vault.length > 0 && <em className={styles.folderBadge}>{col.vault.length} to sort</em>}
+        </span>
       </span>
       <span className={styles.folderText}>
         <b>{col.name}</b>
@@ -672,40 +711,104 @@ function ToSort({ ctx, items, hold }: { ctx: Ctx; items: Block[]; hold: { bind: 
   );
 }
 
+/** The part of a name that matches, marked. */
+function Mark({ text, q }: { text: string; q: string }) {
+  const at = text.toLowerCase().indexOf(q);
+  if (!q || at < 0) return <>{emojify(text)}</>;
+  return <>{emojify(text.slice(0, at))}<mark className={styles.searchMark}>{text.slice(at, at + q.length)}</mark>{emojify(text.slice(at + q.length))}</>;
+}
+
+/** Where something lives, outermost first: "📁 Collection › Stack › Section". */
+function Crumbs({ trail }: { trail: { key: string; emoji?: string; label: string }[] }) {
+  return (
+    <span className={styles.crumbs}>
+      <span className={styles.crumbIn}>In</span>
+      {trail.map((t, i) => (
+        <Fragment key={t.key}>
+          {i > 0 && <i aria-hidden="true">›</i>}
+          <span>{t.emoji && <Emoji char={t.emoji} />}{t.label}</span>
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * Search across Mind, sorted by what each result is (collections, stacks,
+ * items), every one saying where it lives, so a stack is never mistaken for
+ * a collection or an item for a stack.
+ */
 function SearchResults({ ctx, q }: { ctx: Ctx; q: string }) {
-  const pages = ctx.mind.collections.flatMap((c) => c.pages.filter((p) => p.title.toLowerCase().includes(q)).map((p) => ({ c, p })));
   const folders = ctx.mind.collections.filter((c) => c.name.toLowerCase().includes(q));
+  const stacks = ctx.mind.collections.flatMap((c) => c.pages.filter((p) => p.title.toLowerCase().includes(q)).map((p) => ({ c, p })));
   const blocks = Object.values(ctx.mind.blocks).filter((b) =>
-    [b.title, b.body, b.source, b.back, b.note, ...b.tags].some((s) => s?.toLowerCase().includes(q)));
-  const nothing = !pages.length && !folders.length && !blocks.length;
+    [b.title, b.body, b.source, b.back, b.note, ...b.tags].some((x) => x?.toLowerCase().includes(q)));
+  const total = folders.length + stacks.length + blocks.length;
+  const trailOf = (c: Collection, pages: Page[], tail?: string) => [
+    { key: c.id, emoji: c.emoji, label: c.name },
+    ...pages.map((p) => ({ key: p.id, emoji: p.emoji, label: p.title })),
+    ...(tail ? [{ key: "tail", label: tail }] : []),
+  ];
   return (
     <div className={styles.mindStack}>
-      {folders.length > 0 && <div className={styles.folderGrid}>{folders.map((c, i) => <FolderCard key={c.id} ctx={ctx} col={c} i={i} />)}</div>}
-      {pages.length > 0 && (
-        <div className={styles.mindRows}>
-          {pages.map(({ c, p }) => (
-            <button key={p.id} className={styles.mindPageRow} onClick={() => { ctx.openFolder(c.id); ctx.openPage(p.id); }}>
-              <span className={styles.mindEmoji}><Emoji char={p.emoji} /></span>
-              <span className={styles.mindPageText}><b>{p.title}</b><small>{emojify(`${c.emoji} ${c.name}`)}</small></span>
-              <span className={styles.mindPageSide}><IconChevron size={14} /></span>
-            </button>
-          ))}
-        </div>
+      {total === 0 ? (
+        <p className={styles.emptyInbox}>Nothing in your Mind matches “{q}”.</p>
+      ) : (
+        <p className={styles.searchCount}>{total} {total === 1 ? "result" : "results"}</p>
       )}
+
+      {folders.length > 0 && (
+        <section className={styles.searchGroup}>
+          <p className={styles.searchHead}><IconFolder size={13} /> Collections <em>{folders.length}</em></p>
+          <div className={styles.folderList}>
+            {folders.map((c, i) => <FolderRow key={c.id} ctx={ctx} col={c} i={i} q={q} />)}
+          </div>
+        </section>
+      )}
+
+      {stacks.length > 0 && (
+        <section className={styles.searchGroup}>
+          <p className={styles.searchHead}><IconShelf size={13} /> Stacks <em>{stacks.length}</em></p>
+          <div className={styles.mindRows}>
+            {stacks.map(({ c, p }) => {
+              const above = pathTo(c, p).slice(0, -1);
+              return (
+                <button key={p.id} className={`${styles.mindPageRow} ${styles.searchRow}`} onClick={() => { ctx.openFolder(c.id); ctx.openPage(p.id); }}>
+                  <span className={styles.mindEmoji}><Emoji char={p.emoji} /></span>
+                  <span className={styles.mindPageText}>
+                    <b><Mark text={p.title} q={q} /></b>
+                    <Crumbs trail={trailOf(c, above)} />
+                  </span>
+                  <span className={styles.mindPageSide}><span className={styles.searchKind}>Stack</span><IconChevron size={14} /></span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {blocks.length > 0 && (
-        <div className={styles.mindRows}>
-          {blocks.map((b) => {
-            const at = locate(ctx.mind, b.id);
-            return (
-              <Tile key={b.id} onOpen={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
-                <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
-                <span className={styles.mindWhere}>{emojify(at ? `${at.collection.emoji} ${at.collection.name}${at.page ? ` › ${at.page.title}` : at.toSort ? " › To sort" : ""}` : "")}</span>
-              </Tile>
-            );
-          })}
-        </div>
+        <section className={styles.searchGroup}>
+          <p className={styles.searchHead}><IconInbox size={13} /> Items <em>{blocks.length}</em></p>
+          <div className={styles.mindRows}>
+            {blocks.map((b) => {
+              const at = locate(ctx.mind, b.id);
+              const trail = at ? trailOf(at.collection, at.page ? pathTo(at.collection, at.page) : [], at.toSort ? "To sort" : at.page && at.page.sections.length > 1 ? at.section?.title || undefined : undefined) : [];
+              return (
+                <div key={b.id} className={styles.searchItem}>
+                  <span className={styles.searchItemTop}>
+                    {trail.length > 0 ? <Crumbs trail={trail} /> : <span className={styles.crumbs}>Not in a collection</span>}
+                    <span className={styles.searchKind}>{KIND_LABEL[b.kind]}</span>
+                  </span>
+                  <Tile onOpen={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
+                    <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
+                  </Tile>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
-      {nothing && <p className={styles.emptyInbox}>Nothing in your Mind matches “{q}”.</p>}
     </div>
   );
 }
@@ -820,22 +923,71 @@ function NewFolderSheet({ ctx }: { ctx: Ctx }) {
   };
   return (
     <Sheet title="New collection" onClose={ctx.closeSheet} action={{ label: "Create", disabled: !name.trim(), onClick: create }}>
-      <input
-        className={`${styles.plainInput} ${styles.mindTitleInput}`}
-        data-autofocus
+      <NameIconField
+        name={name}
+        emoji={emoji}
+        options={FOLDER_EMOJIS}
+        label="Collection name"
         placeholder="e.g. Trip to Lisbon"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) create(); }}
-        aria-label="Collection name"
+        autoFocus
+        onName={setName}
+        onEmoji={setEmoji}
+        onEnter={() => { if (name.trim()) create(); }}
       />
-      <p className={styles.sheetLabel}>Icon</p>
-      <EmojiPicker value={emoji} options={FOLDER_EMOJIS} onPick={setEmoji} />
       <p className={styles.sheetLabel}>Colour</p>
       <div className={styles.mindSwatches}>
         {Object.values(TONES).map((c) => <button key={c} style={{ background: c }} className={tone === c ? styles.mindPickOn : undefined} onClick={() => setTone(c)} aria-label={`Colour ${c}`} />)}
       </div>
     </Sheet>
+  );
+}
+
+/**
+ * Publishing a collection to Explore: anyone on NOD can find it, look inside
+ * and add a copy to their Mind. It stays live (what you change shows there)
+ * until you turn it off. A collection added from someone else's isn't yours
+ * to publish.
+ */
+function PublishField({ ctx, col, onChange }: { ctx: Ctx; col: Collection; onChange: (p: Collection["published"]) => void }) {
+  const theirs = col.from && col.from.by !== ctx.me;
+  return (
+    <>
+      <p className={styles.sheetLabel}>Explore</p>
+      {theirs ? (
+        <p className={styles.sheetNote}>Added from Explore. Only collections you made can be published.</p>
+      ) : (
+        <div className={styles.mindPublish}>
+          <div className={styles.mindPublishRow}>
+            <span className={styles.mindPublishIcon}><IconGlobe size={18} /></span>
+            <span className={styles.contactText}>
+              <b>Publish to Explore</b>
+              <small>{col.published ? `On Explore since ${new Date(col.published.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : "Anyone on NOD can find it and add a copy"}</small>
+            </span>
+            <Toggle
+              on={!!col.published}
+              onChange={(v) => {
+                onChange(v ? { at: Date.now(), description: "" } : undefined);
+                ctx.flash(v ? `${col.emoji} ${col.name} is on Explore` : `${col.emoji} ${col.name} is private again`);
+              }}
+              label="Publish to Explore"
+            />
+          </div>
+          {col.published && (
+            <>
+              <input
+                className={styles.plainInput}
+                value={col.published.description}
+                maxLength={120}
+                onChange={(e) => onChange({ ...col.published!, description: e.target.value })}
+                placeholder="A line about it, e.g. Phrases for cafés and trains"
+                aria-label="What it's about"
+              />
+              <p className={styles.sheetNote}>People see its stacks and items as they are now; what you add or change shows on Explore too.</p>
+            </>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -848,13 +1000,12 @@ function FolderSheet({ ctx, colId, onDeleted }: { ctx: Ctx; colId: string; onDel
     <Sheet title="Collection" onClose={ctx.closeSheet}>
       {(close) => (
         <>
-          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} value={col.name} onChange={(e) => set({ name: e.target.value })} aria-label="Collection name" />
-          <p className={styles.sheetLabel}>Icon</p>
-          <EmojiPicker value={col.emoji} options={FOLDER_EMOJIS} onPick={(e) => set({ emoji: e })} />
+          <NameIconField name={col.name} emoji={col.emoji} options={FOLDER_EMOJIS} label="Collection name" onName={(name) => set({ name })} onEmoji={(emoji) => set({ emoji })} />
           <p className={styles.sheetLabel}>Colour</p>
           <div className={styles.mindSwatches}>
             {Object.values(TONES).map((c) => <button key={c} style={{ background: c }} className={col.tone === c ? styles.mindPickOn : undefined} onClick={() => set({ tone: c })} aria-label={`Colour ${c}`} />)}
           </div>
+          <PublishField ctx={ctx} col={col} onChange={(published) => set({ published })} />
           <button
             className={styles.mindDanger}
             onClick={() => close(() => {
@@ -874,6 +1025,56 @@ function FolderSheet({ ctx, colId, onDeleted }: { ctx: Ctx; colId: string; onDel
 /* ===========================================================================
    Shared pieces: the icon picker, and swipe-to-reveal actions on items
    =========================================================================== */
+
+/**
+ * A name and its icon as one field: the icon sits at the start of the name,
+ * and only tapping it ("Choose icon") opens the icons to pick from, right
+ * under the field. Nothing below a name reads like a file type any more.
+ */
+function NameIconField({ name, emoji, options, label, placeholder, autoFocus, onName, onEmoji, onEnter }: {
+  name: string;
+  emoji: string;
+  options: string[];
+  label: string;
+  placeholder?: string;
+  autoFocus?: boolean;
+  onName: (v: string) => void;
+  onEmoji: (e: string) => void;
+  onEnter?: () => void;
+}) {
+  const [picking, setPicking] = useState(false);
+  return (
+    <div className={styles.nameIcon}>
+      <div className={`${styles.nameIconRow} ${picking ? styles.nameIconPicking : ""}`}>
+        <button
+          className={styles.nameIconBtn}
+          onClick={() => setPicking((v) => !v)}
+          aria-expanded={picking}
+          aria-label={`Choose icon, now ${emoji}`}
+          title="Choose icon"
+        >
+          <Emoji char={emoji} />
+          <i aria-hidden="true"><IconChevronDown size={10} /></i>
+        </button>
+        <input
+          className={styles.nameIconInput}
+          data-autofocus={autoFocus || undefined}
+          value={name}
+          placeholder={placeholder}
+          onChange={(e) => onName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") onEnter?.(); }}
+          aria-label={label}
+        />
+      </div>
+      {picking && (
+        <div className={styles.nameIconPicker}>
+          <p>Choose an icon</p>
+          <EmojiPicker value={emoji} options={options} onPick={(e) => { onEmoji(e); setPicking(false); }} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * A grid of suggested icons, plus one tile that takes any emoji: tapping it
@@ -1193,6 +1394,15 @@ function openHoldMenu(ctx: Ctx, col: Collection | null, src: HoldSrc, el: HTMLEl
       { id: "open", label: "Open", icon: <IconArrowRight />, run: () => ctx.openFolder(c.id) },
       { id: "rename", label: "Rename", icon: <IconEdit />, run: rename("collection", c.name, (name) => ctx.update((m) => patchCollection(m, c.id, (x) => ({ ...x, name })))) },
       { id: "style", label: "Icon & colour", icon: <IconPalette />, run: () => ctx.openSheet(<FolderSheet ctx={ctx} colId={c.id} onDeleted={() => {}} />) },
+      ...(c.from && c.from.by !== ctx.me ? [] : [{
+        id: "publish",
+        label: c.published ? "Remove from Explore" : "Publish to Explore",
+        icon: <IconGlobe />,
+        run: () => {
+          ctx.update((m) => patchCollection(m, c.id, (x) => ({ ...x, published: c.published ? undefined : { at: Date.now(), description: "" } })));
+          ctx.flash(c.published ? `${c.emoji} ${c.name} is private again` : `${c.emoji} ${c.name} is on Explore`);
+        },
+      }]),
       "sep",
       { id: "delete", label: "Delete collection", icon: <IconTrash />, danger: true, run: () => deleteCollection(ctx, c.id) },
     ]);
@@ -1802,7 +2012,17 @@ function NewPageSheet({ ctx, col, parentId }: { ctx: Ctx; col: Collection; paren
   };
   return (
     <Sheet title="New stack" onClose={ctx.closeSheet} action={{ label: "Create", disabled: !title.trim(), onClick: create }}>
-      <input className={`${styles.plainInput} ${styles.mindTitleInput}`} data-autofocus placeholder={parent ? "e.g. Separable verbs" : "e.g. Vocab"} value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && title.trim()) create(); }} aria-label="Stack name" />
+      <NameIconField
+        name={title}
+        emoji={emoji}
+        options={PAGE_EMOJIS}
+        label="Stack name"
+        placeholder={parent ? "e.g. Separable verbs" : "e.g. Vocab"}
+        autoFocus
+        onName={setTitle}
+        onEmoji={setEmoji}
+        onEnter={() => { if (title.trim()) create(); }}
+      />
       {homes.length > 0 && (
         <>
           <p className={styles.sheetLabel}>Goes in</p>
@@ -1821,8 +2041,6 @@ function NewPageSheet({ ctx, col, parentId }: { ctx: Ctx; col: Collection; paren
         ))}
       </div>
       <p className={styles.sheetNote}>This sets the quick-add field and the first view ({VIEW_META[viewFor(kind).view].label}). A stack can hold anything, including other stacks.</p>
-      <p className={styles.sheetLabel}>Icon</p>
-      <EmojiPicker value={emoji} options={PAGE_EMOJIS} onPick={setEmoji} />
     </Sheet>
   );
 }
@@ -2044,10 +2262,8 @@ function PageSheet({ ctx, col, pageId, onDeleted }: { ctx: Ctx; col: Collection;
     <Sheet title="Customise stack" onClose={ctx.closeSheet}>
       {(close) => (
         <>
-          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} value={page.title} onChange={(e) => set((p) => ({ ...p, title: e.target.value }))} aria-label="Stack name" />
+          <NameIconField name={page.title} emoji={page.emoji} options={PAGE_EMOJIS} label="Stack name" onName={(title) => set((p) => ({ ...p, title }))} onEmoji={(emoji) => set((p) => ({ ...p, emoji }))} />
           <div className={styles.mindField}><span>Pin to home</span><Toggle on={!!page.pinned} onChange={(v) => set((p) => ({ ...p, pinned: v }))} label="Pin to home" /></div>
-          <p className={styles.sheetLabel}>Icon</p>
-          <EmojiPicker value={page.emoji} options={PAGE_EMOJIS} onPick={(e) => set((p) => ({ ...p, emoji: e }))} />
           <p className={styles.sheetLabel}>Colour</p>
           <div className={styles.mindSwatches}>
             {Object.values(TONES).map((c) => <button key={c} style={{ background: c }} className={page.tone === c ? styles.mindPickOn : undefined} onClick={() => set((p) => ({ ...p, tone: c }))} aria-label={`Colour ${c}`} />)}

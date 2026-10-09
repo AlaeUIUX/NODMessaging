@@ -1,4 +1,7 @@
-import { blankPage, makeCollection, newId, place, type Block, type BlockKind, type Collection, type Mind, type MindView } from "./mind";
+import {
+  blankPage, childrenOf, makeCollection, newId, pageItems, peopleMinds, place, rootItems,
+  type Block, type BlockKind, type Collection, type Mind, type MindView, type Page,
+} from "./mind";
 import { groupInfo } from "./groups";
 import type { AvatarTone, Chat } from "./types";
 
@@ -251,9 +254,82 @@ export const ACTIVITY: Activity[] = [
   { id: "ac-6", by: "charles", kind: "joined", groupId: "pub-founders", at: now - 2 * DAY },
 ];
 
-export const allPublicItems = () => PUBLIC_COLLECTIONS.flatMap((c) => c.stacks.flatMap((s) => s.items.map((item) => ({ item, collection: c }))));
+/* ---------------------------------------------------------------------------
+   Collections people published from their own Mind
+--------------------------------------------------------------------------- */
+
+export const publishedId = (owner: string, colId: string) => `pub-${owner}-${colId}`;
+
+/**
+ * The topics a published collection is about: its own name counts double,
+ * its stacks' names once each, and only a topic named twice is kept, so one
+ * stray word never tags it with something it isn't.
+ */
+function topicsOf(c: Collection): Topic[] {
+  const score = new Map<Topic, number>();
+  const feel = (text: string, weight: number) => {
+    const words = new Set(wordsIn(text));
+    for (const [t, list] of Object.entries(TOPIC_WORDS) as [Topic, string[]][]) {
+      if (list.some((x) => words.has(x))) score.set(t, (score.get(t) ?? 0) + weight);
+    }
+  };
+  feel(c.name, 2);
+  for (const p of c.pages) feel(p.title, 1);
+  return [...score.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t]) => t);
+}
+
+/** A Mind item as Explore shows it (no dates or tags of its owner's). */
+function asPublic(pcId: string, b: Block): PublicItem {
+  const item: PublicItem & { createdAt?: number; tags?: string[] } = { ...b, id: `${pcId}:${b.id}` };
+  delete item.createdAt;
+  delete item.tags;
+  return item;
+}
+
+/**
+ * Everyone's published collections, live: what Explore shows is what's in the
+ * collection right now. Top-level stacks become its stacks (with whatever is
+ * in stacks inside them); things at the top become a first stack of their own.
+ */
+export function publishedCollections(): PublicCollection[] {
+  const minds = peopleMinds();
+  const out: PublicCollection[] = [];
+  for (const [owner, m] of minds) {
+    for (const c of m.collections) {
+      if (!c.published) continue;
+      const id = publishedId(owner, c.id);
+      const itemsOf = (p: Page): Block[] => [...pageItems(m, p), ...childrenOf(c, p.id).flatMap(itemsOf)];
+      const stacks: PublicStack[] = c.pages
+        .filter((p) => !p.parentId)
+        .map((p) => ({ title: p.title, emoji: p.emoji, view: p.view, defaultKind: p.defaultKind, items: itemsOf(p).map((b) => asPublic(id, b)) }));
+      const loose = rootItems(m, c);
+      if (loose.length) stacks.unshift({ title: c.name, emoji: c.emoji, view: c.view ?? "list", defaultKind: "note", items: loose.map((b) => asPublic(id, b)) });
+      const all = stacks.flatMap((x) => x.items);
+      const picture = all.find((b) => b.kind === "image" && (b.image || b.attachment?.url || b.attachment?.dataUrl));
+      out.push({
+        id, name: c.name, emoji: c.emoji, tone: c.tone,
+        cover: picture?.image ?? picture?.attachment?.url ?? picture?.attachment?.dataUrl ?? "",
+        by: owner,
+        description: c.published.description.trim() || `${all.length} ${all.length === 1 ? "thing" : "things"} in ${stacks.length} ${stacks.length === 1 ? "stack" : "stacks"}`,
+        topics: topicsOf(c),
+        // Saves: how many other people have it in their Mind.
+        saves: minds.filter(([who, other]) => who !== owner && other.collections.some((x) => x.from?.id === id)).length,
+        updatedAt: c.published.at,
+        stacks,
+      });
+    }
+  }
+  return out;
+}
+
+/** Everything public: the collections made for Explore, and the ones people published. */
+export const allPublic = () => [...PUBLIC_COLLECTIONS, ...publishedCollections()];
+/** The collections you published, as others see them. */
+export const publishedBy = (me: string) => publishedCollections().filter((c) => c.by === me);
+
+export const allPublicItems = () => allPublic().flatMap((c) => c.stacks.flatMap((s) => s.items.map((item) => ({ item, collection: c }))));
 export const publicItem = (id: string) => allPublicItems().find((x) => x.item.id === id) ?? null;
-export const publicCollection = (id: string) => PUBLIC_COLLECTIONS.find((c) => c.id === id) ?? null;
+export const publicCollection = (id: string) => allPublic().find((c) => c.id === id) ?? null;
 /** A public item as a Mind block, for showing it (and saving it). */
 export const asBlock = (item: PublicItem, at = now): Block => ({ ...item, tags: [], createdAt: at });
 
@@ -303,22 +379,29 @@ export function friendsOf(chats: Chat[], me: string) {
   return out;
 }
 
-export interface Ranked<T> { value: T; score: number; reason: string }
+export interface Ranked<T> {
+  value: T;
+  score: number;
+  reason: string;
+  /** Your collection it fits, if any: Explore shelves things by it ("Because you collect …"). */
+  mine?: { id: string; name: string; emoji: string } | null;
+}
+const shelfOf = (c: Collection | null) => (c ? { id: c.id, name: c.name, emoji: c.emoji } : null);
 
 const match = (interests: Map<Topic, number>, topics: Topic[]) => topics.reduce((s, t) => s + (interests.get(t) ?? 0), 0);
 
 export function rankCollections(mind: Mind | null, chats: Chat[], me: string, nameOf: (id: string) => string): Ranked<PublicCollection>[] {
   const interests = interestsOf(mind, chats, me);
   const friends = friendsOf(chats, me);
-  return PUBLIC_COLLECTIONS
+  return allPublic()
     .filter((c) => c.by !== me)
     .map((c) => {
       const mine = collectionFor(mind, c.topics);
       const byFriend = friends.has(c.by);
       const fresh = Math.max(0, 1 - (now - c.updatedAt) / (7 * DAY));
-      const score = match(interests, c.topics) + (byFriend ? 6 : 0) + Math.log10(c.saves) + fresh * 2;
+      const score = match(interests, c.topics) + (byFriend ? 6 : 0) + Math.log10(c.saves + 1) + fresh * 2;
       const reason = mine ? `Because you collect ${mine.emoji} ${mine.name}` : byFriend ? `${nameOf(c.by)} made this` : c.saves > 2000 ? "Popular on NOD" : `For ${c.topics.map((t) => TOPIC_LABEL[t]).slice(0, 2).join(" & ")}`;
-      return { value: c, score, reason };
+      return { value: c, score, reason, mine: shelfOf(mine) };
     })
     .sort((a, b) => b.score - a.score);
 }
@@ -352,8 +435,8 @@ export function rankItems(mind: Mind | null, chats: Chat[], me: string): Ranked<
       const mine = collectionFor(mind, x.collection.topics);
       // Pictures and cards make the best tiles; a little variety per collection.
       const kindBoost = x.item.kind === "image" ? 1.2 : x.item.kind === "flashcard" || x.item.kind === "book" ? 0.8 : 0.4;
-      const score = match(interests, x.collection.topics) + kindBoost + Math.log10(x.collection.saves) / 2;
-      return { value: x, score, reason: mine ? `For ${mine.emoji} ${mine.name}` : `From ${x.collection.emoji} ${x.collection.name}` };
+      const score = match(interests, x.collection.topics) + kindBoost + Math.log10(x.collection.saves + 1) / 2;
+      return { value: x, score, reason: mine ? `For ${mine.emoji} ${mine.name}` : `From ${x.collection.emoji} ${x.collection.name}`, mine: shelfOf(mine) };
     })
     .filter((r) => r.score > 1.6)
     .sort((a, b) => b.score - a.score)

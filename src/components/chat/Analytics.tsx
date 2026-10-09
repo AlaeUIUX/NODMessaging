@@ -9,7 +9,7 @@ import type { Card, Chat, ChatState, Message, Task } from "@/lib/chat/types";
 import { useWidgets, WIDGETS, type Widget } from "@/lib/chat/widgets";
 import {
   BLUE, ChecklistTrack, cumulative, DAY, daysInMonth, dummyBaseline, dummyMessages, euro, monthKey,
-  monthName, people, plural, prevMonthKey, Row, shortDate, shortTime, SHOWN, SpendChart, WEEK, type Upcoming,
+  monthName, people, plural, prevMonthKey, prevMonthName, Row, shortDate, shortTime, SHOWN, WEEK, type Upcoming,
 } from "./AnalyticsParts";
 import { outcome } from "./Artifacts";
 import Avatar from "./Avatar";
@@ -21,7 +21,8 @@ import Logo from "./Logo";
 import { HoldMenu } from "./MindHold";
 import { MyTasks } from "./Project";
 import { Sheet, useNow } from "./ui";
-import { BoardsSheet, nextUp, WidgetBody, whenText } from "./WidgetBodies";
+import { TrendChart } from "./Charts";
+import { BoardsSheet, euroShort, nextUp, spendSeries, spendTicks, WidgetBody, whenText } from "./WidgetBodies";
 import { AddWidgetSheet, EditWidgetSheet, WidgetBoard, widgetTitle } from "./Widgets";
 import styles from "./chat.module.css";
 import s from "./activity.module.css";
@@ -456,7 +457,8 @@ export function buildDashboard(state: ChatState, me: string, now: number) {
   // line on a fresh account or right after the month turns over — added on top of
   // whatever's really there, and folded into the headline totals so they agree.
   const dummyCur = spendCurDaily.map((_, i) => dummyBaseline(i));
-  const dummyPrev = spendPrevDaily.map((_, i) => dummyBaseline(i));
+  // Last month gets its own shape (a few days along, a little heavier), so the comparison means something.
+  const dummyPrev = spendPrevDaily.map((_, i) => Math.round(dummyBaseline(i + 9) * 1.18));
   const spentOther = dummyCur.reduce((a, b) => a + b, 0);
   spent += spentOther;
   spentLastMonth += dummyPrev.reduce((a, b) => a + b, 0);
@@ -810,8 +812,18 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onSetting
           {(close) => (
             <>
               <div className={s.chartCard}>
-                <p className={s.chartLabel}>Day by day</p>
-                <SpendChart cur={data.spendCurCum} prev={data.spendPrevCum} height={120} />
+                <p className={s.chartLabel}>So far this month, against {prevMonthName(data.heroNow)}</p>
+                <div className={s.sheetChart}>
+                  <TrendChart
+                    data={spendSeries(data, "area")}
+                    kind="area"
+                    format={money}
+                    axisFormat={euroShort}
+                    names={{ value: monthName(data.heroNow), compare: prevMonthName(data.heroNow) }}
+                    xTicks={spendTicks(data)}
+                    yAxis
+                  />
+                </div>
               </div>
               {(data.spentRows.length > 0 || data.spentOther > 0) ? (
                 <div className={s.list}>

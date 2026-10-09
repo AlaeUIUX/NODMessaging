@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { initials, TONES } from "@/lib/chat/avatar";
 import { Emoji, emojify } from "@/lib/chat/emoji";
 import {
-  addCollection, addedFrom, asBlock, friendActivity, publicCollection, publicItem, rankCollections, rankGroups, rankItems,
+  addCollection, addedFrom, asBlock, friendActivity, publicCollection, publicItem, publishedBy, rankCollections, rankGroups, rankItems,
   saveItem, STRANGERS, suggestCollection, TOPIC_LABEL, type Activity, type PublicCollection, type PublicItem, type Ranked, type Topic,
 } from "@/lib/chat/explore";
 import { addMember, groupInfo, landingChannel } from "@/lib/chat/groups";
@@ -14,9 +14,10 @@ import type { AvatarTone, Chat } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { DragScroll } from "./Composer";
 import { GroupBanner } from "./Groups";
-import { IconBack, IconCheck, IconClose, IconPlus, IconSparkles, IconUserGroup } from "./Icons";
+import { IconBack, IconBookmark, IconCheck, IconClose, IconFolder, IconOpen, IconSparkles, IconUserGroup } from "./Icons";
 import Logo from "./Logo";
 import { BlockView, KIND_LABEL } from "./MindBlocks";
+import { HoldMenu, useHoldMenu, type HoldAction } from "./MindHold";
 import { Sheet, useNow } from "./ui";
 import styles from "./chat.module.css";
 import x from "./explore.module.css";
@@ -25,8 +26,8 @@ import x from "./explore.module.css";
  * Explore: public things on NOD, ranked for you (see lib/chat/explore.ts).
  * A top pick, what friends have been saving and joining, groups that fit,
  * collections to add, and single things for the collections you already
- * keep. Anything here can go into Mind: one item with +, or a whole
- * collection with Add to Mind. Groups join straight away.
+ * keep. Tap anything to look at it; hold it (like a message) for its menu:
+ * save a thing to Mind, add a whole collection. Groups join straight away.
  */
 
 type Filter = "foryou" | "collections" | "groups" | "friends";
@@ -45,6 +46,10 @@ function creator(id: string): { name: string; tone: AvatarTone; photo?: string; 
   return { name: u.fullName, tone: u.tone, photo: u.photo, username: u.username };
 }
 const short = (id: string) => creator(id).name.split(" ")[0];
+/** A collection's cover: its picture, or (published from a Mind with no picture yet) its own colour. */
+const coverOf = (pc: PublicCollection) => (pc.cover
+  ? `url(${pc.cover})`
+  : `radial-gradient(120% 90% at 20% 10%, color-mix(in srgb, ${pc.tone} 55%, #fff), ${pc.tone})`);
 const KIND_ICON: Partial<Record<PublicItem["kind"], string>> = { link: "🔗", note: "📝", flashcard: "🃏", todo: "✅", book: "📚", video: "🎬", quote: "💬" };
 const count = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1).replace(/\.0$/, "")}k` : String(n));
 function ago(ts: number, now: number) {
@@ -64,7 +69,7 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
   const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean; action?: { label: string; run: () => void } } | null>(null);
   const chats = state.data.chats;
   // Picks are worked out once per visit, so what you save stays on screen (with a tick) instead of vanishing.
-  const [items] = useState(() => rankItems(mind, chats, me).slice(0, 10));
+  const [items] = useState(() => rankItems(mind, chats, me).slice(0, 24));
   const [saved, setSaved] = useState<Record<string, string>>({});
 
   const flash = useCallback((text: string, action?: { label: string; run: () => void }) => {
@@ -89,6 +94,8 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
     .filter((p): p is Ranked<Chat> & { id: string } => !!p.value && !p.value.removedAt);
   const [heroId] = useState(() => (collections.find((r) => !addedFrom(mind, r.value.id)) ?? collections[0])?.value.id);
   const activity = friendActivity(chats, me);
+  // What you published, as everyone else sees it on Explore.
+  const yours: Ranked<PublicCollection>[] = publishedBy(me).map((pc) => ({ value: pc, score: 0, reason: pc.saves ? `${pc.saves} ${pc.saves === 1 ? "person has" : "people have"} it` : "Published by you" }));
 
   /* ---- actions ---- */
   const saveTo = (item: PublicItem, colId: string) => {
@@ -122,6 +129,19 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
     <ItemSheet item={item} from={from} saved={saved[item.id]} onClose={closeSheet} onSave={() => askSave(item, from)} onOpenCollection={() => { closeSheet(); openPage(from.id); }} />,
   );
 
+  /* ---- hold for a menu, like a message ---- */
+  const hold = useHoldMenu();
+  const menu = (el: HTMLElement, title: React.ReactNode, actions: HoldAction[]) => setSheet(<HoldMenu anchor={el} title={title} actions={actions} onClose={closeSheet} />);
+  const collectionMenu = (pc: PublicCollection) => hold((el) => menu(el, emojify(`${pc.emoji} ${pc.name}`), [
+    { id: "open", label: "Look inside", icon: <IconOpen />, run: () => openPage(pc.id) },
+    ...(pc.by === me || addedFrom(mind, pc.id) ? [] : [{ id: "add", label: "Add to Mind", icon: <IconBookmark />, run: () => add(pc) }]),
+  ]));
+  const itemMenu = (item: PublicItem, from: PublicCollection) => hold((el) => menu(el, item.title, [
+    { id: "open", label: "Open", icon: <IconOpen />, run: () => showItem(item, from) },
+    ...(saved[item.id] || from.by === me ? [] : [{ id: "save", label: "Save to Mind", icon: <IconBookmark />, run: () => askSave(item, from) }]),
+    { id: "from", label: "See its collection", icon: <IconFolder />, run: () => openPage(from.id) },
+  ]));
+
   /* ---- search ---- */
   const q = query.trim().toLowerCase();
   const found = q ? {
@@ -131,25 +151,60 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
   } : null;
 
   const tile = (r: Ranked<{ item: PublicItem; collection: PublicCollection }>) => (
-    <ItemTile key={r.value.item.id} item={r.value.item} reason={r.reason} saved={!!saved[r.value.item.id]} onOpen={() => showItem(r.value.item, r.value.collection)} onSave={() => askSave(r.value.item, r.value.collection)} />
+    <ItemTile key={r.value.item.id} item={r.value.item} reason={r.reason} saved={!!saved[r.value.item.id]} onOpen={() => showItem(r.value.item, r.value.collection)} holdProps={itemMenu(r.value.item, r.value.collection)} />
   );
+  // One collection per row: a grid of two was too much at once.
   const colCards = (list: Ranked<PublicCollection>[]) => (
-    <div className={x.colGrid}>
-      {list.map((r, i) => <CollectionCard key={r.value.id} r={r} i={i} added={!!addedFrom(mind, r.value.id)} onOpen={() => openPage(r.value.id)} onAdd={() => add(r.value)} />)}
+    <div className={x.colList}>
+      {list.map((r, i) => <CollectionCard key={r.value.id} r={r} i={i} own={r.value.by === me} added={!!addedFrom(mind, r.value.id)} onOpen={() => openPage(r.value.id)} holdProps={collectionMenu(r.value)} />)}
     </div>
   );
   const groupCards = (list: Ranked<Chat>[]) => (
-    <DragScroll className={x.rail}>
+    <DragScroll className={x.rail} sideWheel={false} glide>
       {list.map((r) => <GroupCard key={r.value.id} r={r} joined={r.value.memberIds.includes(me)} onOpen={() => showGroup(r.value, r.reason)} onJoin={() => join(r.value)} />)}
     </DragScroll>
   );
   const feed = (list: Activity[]) => (
     <div className={x.feed}>
-      {list.map((a) => <ActivityRow key={a.id} a={a} now={now} saved={saved} chats={chats} onItem={showItem} onSave={askSave} onCollection={openPage} onGroup={(g) => showGroup(g)} />)}
+      {list.map((a) => <ActivityRow key={a.id} a={a} now={now} saved={saved} chats={chats} onItem={showItem} holdItem={itemMenu} onCollection={openPage} onGroup={(g) => showGroup(g)} />)}
     </div>
   );
 
   const hero = collections.find((r) => r.value.id === heroId);
+
+  /*
+   * Shelves: everything that fits one of your collections, together
+   * ("Because you collect 🇩🇪 German": collections first, then single
+   * things), then what's popular. Each scrolls sideways, a card at a time.
+   */
+  type Shelf = { key: string; title: string; cols: Ranked<PublicCollection>[]; things: Ranked<{ item: PublicItem; collection: PublicCollection }>[] };
+  const shelves: Shelf[] = [];
+  const shelfFor = (mine: Ranked<unknown>["mine"]) => {
+    const key = mine?.id ?? "popular";
+    let shelf = shelves.find((x) => x.key === key);
+    if (!shelf) {
+      shelf = { key, title: mine ? `Because you collect ${mine.emoji} ${mine.name}` : "Popular on NOD", cols: [], things: [] };
+      shelves.push(shelf);
+    }
+    return shelf;
+  };
+  for (const r of collections) if (r !== hero) shelfFor(r.mine).cols.push(r);
+  for (const r of items) {
+    const shelf = shelfFor(r.mine);
+    if (shelf.things.length < 6) shelf.things.push(r);
+  }
+  // Yours first, the popular shelf last.
+  shelves.sort((a, b) => (a.key === "popular" ? 1 : 0) - (b.key === "popular" ? 1 : 0));
+  const shelfRail = (shelf: Shelf) => (
+    <DragScroll className={x.shelf} sideWheel={false} glide>
+      {shelf.cols.map((r, i) => (
+        <CollectionCard key={r.value.id} r={r} i={i} plain own={r.value.by === me} added={!!addedFrom(mind, r.value.id)} onOpen={() => openPage(r.value.id)} holdProps={collectionMenu(r.value)} />
+      ))}
+      {shelf.things.map((r) => (
+        <div key={r.value.item.id} className={x.shelfThing}>{tile({ ...r, reason: `From ${r.value.collection.emoji} ${r.value.collection.name}` })}</div>
+      ))}
+    </DragScroll>
+  );
 
   return (
     <>
@@ -192,14 +247,19 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
             </div>
           ) : filter === "foryou" ? (
             <div className={x.stack} key="foryou">
-              {hero && <Hero r={hero} added={!!addedFrom(mind, hero.value.id)} onOpen={() => openPage(hero.value.id)} onAdd={() => add(hero.value)} />}
+              {hero && <Hero r={hero} added={!!addedFrom(mind, hero.value.id)} onOpen={() => openPage(hero.value.id)} onAdd={() => add(hero.value)} holdProps={collectionMenu(hero.value)} />}
               {activity.length > 0 && <Section title="Your friends lately" more={activity.length > 3 ? () => setFilter("friends") : undefined}>{feed(activity.slice(0, 3))}</Section>}
               {groups.length > 0 && <Section title="Groups for you" more={() => setFilter("groups")}>{groupCards(groups.slice(0, 6))}</Section>}
-              <Section title="Collections to add" more={() => setFilter("collections")}>{colCards(collections.filter((r) => r !== hero).slice(0, 4))}</Section>
-              {items.length > 0 && <Section title="For your collections" note="Single things, saved with +"><div className={x.masonry}>{items.map(tile)}</div></Section>}
+              {shelves.filter((sh) => sh.cols.length + sh.things.length > 0).map((sh) => (
+                <Section key={sh.key} title={emojify(sh.title)} more={sh.cols.length ? () => setFilter("collections") : undefined}>{shelfRail(sh)}</Section>
+              ))}
+              {yours.length > 0 && <Section title="Published by you" note="What everyone sees on Explore">{colCards(yours)}</Section>}
             </div>
           ) : filter === "collections" ? (
-            <div className={x.stack} key="collections">{colCards(collections)}</div>
+            <div className={x.stack} key="collections">
+              {yours.length > 0 && <Section title="Published by you">{colCards(yours)}</Section>}
+              {colCards(collections)}
+            </div>
           ) : filter === "groups" ? (
             <div className={x.stack} key="groups">
               <div className={x.groupList}>
@@ -218,7 +278,7 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
       {page && (() => {
         const pc = publicCollection(page.id);
         return pc ? (
-          <CollectionPage pc={pc} leaving={page.leaving} added={!!addedFrom(mind, pc.id)} saved={saved} onBack={closePage} onAdd={() => add(pc)} onItem={(item) => showItem(item, pc)} onSave={(item) => askSave(item, pc)} />
+          <CollectionPage pc={pc} own={pc.by === me} leaving={page.leaving} added={!!addedFrom(mind, pc.id)} saved={saved} onBack={closePage} onAdd={() => add(pc)} onItem={(item) => showItem(item, pc)} holdItem={(item) => itemMenu(item, pc)} />
         ) : null;
       })()}
       {sheet}
@@ -236,7 +296,7 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
    Pieces
    =========================================================================== */
 
-function Section({ title, note, more, children }: { title: string; note?: string; more?: () => void; children: React.ReactNode }) {
+function Section({ title, note, more, children }: { title: React.ReactNode; note?: string; more?: () => void; children: React.ReactNode }) {
   return (
     <section className={x.section}>
       <div className={x.sectionHead}>
@@ -258,59 +318,69 @@ function Byline({ id, extra }: { id: string; extra?: string }) {
   );
 }
 
-function Hero({ r, added, onOpen, onAdd }: { r: Ranked<PublicCollection>; added: boolean; onOpen: () => void; onAdd: () => void }) {
+type HoldProps = ReturnType<ReturnType<typeof useHoldMenu>>;
+
+/** The top pick: tap anywhere to look inside, hold for its menu, or add it with the small pill. */
+function Hero({ r, added, onOpen, onAdd, holdProps }: { r: Ranked<PublicCollection>; added: boolean; onOpen: () => void; onAdd: () => void; holdProps: HoldProps }) {
   const pc = r.value;
   const total = pc.stacks.reduce((n, s) => n + s.items.length, 0);
   return (
-    <article className={x.hero} style={{ ["--tone" as string]: pc.tone }}>
-      <button className={x.heroCover} style={{ backgroundImage: `url(${pc.cover})` }} onClick={onOpen} aria-label={`Open ${pc.name}`}>
+    <article className={`${x.hero} ${x.holdable}`} style={{ ["--tone" as string]: pc.tone }} {...holdProps}>
+      <button className={x.heroCover} style={{ backgroundImage: coverOf(pc) }} onClick={onOpen} aria-label={`Look inside ${pc.name}`}>
         <span className={x.reason}><IconSparkles size={12} /> {emojify(r.reason)}</span>
       </button>
-      <div className={x.heroBody}>
+      <div className={x.heroBody} onClick={onOpen}>
         <span className={x.heroEmoji}><Emoji char={pc.emoji} /></span>
         <b className={x.heroName}>{pc.name}</b>
         <p className={x.heroDesc}>{pc.description}</p>
-        <Byline id={pc.by} extra={`${count(pc.saves)} saves · ${total} things`} />
-        <div className={x.heroActions}>
-          <button className={`${styles.primaryWide} ${x.btn}`} onClick={onAdd} disabled={added}>
-            {added ? <><IconCheck size={15} /> In your Mind</> : <><IconPlus size={15} /> Add to Mind</>}
+        <div className={x.heroFoot}>
+          <Byline id={pc.by} extra={`${count(pc.saves)} saves · ${total} things`} />
+          <button className={x.addPill} onClick={(e) => { e.stopPropagation(); onAdd(); }} disabled={added}>
+            {added ? <><IconCheck size={13} /> In your Mind</> : "Add to Mind"}
           </button>
-          <button className={`${styles.secondaryWide} ${x.btn}`} onClick={onOpen}>Look inside</button>
         </div>
       </div>
     </article>
   );
 }
 
-function CollectionCard({ r, i, added, onOpen, onAdd }: { r: Ranked<PublicCollection>; i: number; added: boolean; onOpen: () => void; onAdd: () => void }) {
+function CollectionCard({ r, i, own, added, plain, onOpen, holdProps }: {
+  r: Ranked<PublicCollection>; i: number; own?: boolean; added: boolean;
+  /** On a shelf: its title already says why, so the card shows what's in it instead. */
+  plain?: boolean;
+  onOpen: () => void; holdProps: HoldProps;
+}) {
   const pc = r.value;
   return (
-    <div className={`${x.colCard} ${styles.rowEnter}`} style={{ ["--tone" as string]: pc.tone, ["--i" as string]: i }}>
+    <div className={`${x.colCard} ${x.holdable} ${styles.rowEnter}`} style={{ ["--tone" as string]: pc.tone, ["--i" as string]: i }} {...holdProps}>
       <button className={x.colMain} onClick={onOpen}>
-        <span className={x.colCover} style={{ backgroundImage: `url(${pc.cover})` }}>
+        <span className={x.colCover} style={{ backgroundImage: coverOf(pc) }}>
           <span className={x.colEmoji}><Emoji char={pc.emoji} /></span>
+          {own ? <span className={x.badge}>Yours</span> : added && <span className={`${x.badge} ${x.badgeOn}`}><IconCheck size={11} /> In Mind</span>}
         </span>
         <b className={x.colName}>{pc.name}</b>
-        <Byline id={pc.by} extra={count(pc.saves)} />
-        <small className={x.colReason}>{emojify(r.reason)}</small>
-      </button>
-      <button className={`${x.plus} ${added ? x.plusDone : ""}`} onClick={onAdd} disabled={added} aria-label={added ? "In your Mind" : `Add ${pc.name} to Mind`}>
-        {added ? <IconCheck size={14} /> : <IconPlus size={15} />}
+        <span className={x.colDesc}>{pc.description}</span>
+        <Byline id={pc.by} extra={`${pc.saves ? `${count(pc.saves)} saves` : "New"} · ${pc.stacks.reduce((n, st) => n + st.items.length, 0)} things`} />
+        {!plain && <small className={x.colReason}>{emojify(r.reason)}</small>}
       </button>
     </div>
   );
 }
 
-function ItemTile({ item, reason, saved, onOpen, onSave }: { item: PublicItem; reason?: string; saved: boolean; onOpen: () => void; onSave: () => void }) {
+/** One thing to save: the tile, and under it why it's here. Tap to open it; hold it to save it. */
+function ItemTile({ item, reason, saved, onOpen, holdProps }: { item: PublicItem; reason?: string; saved: boolean; onOpen: () => void; holdProps?: HoldProps }) {
   return (
     <div className={x.item}>
-      <div role="button" tabIndex={0} className={x.itemMain} onClick={onOpen} onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }}>
+      {/* The tile itself is what's held: it lifts on its own, without the line under it. */}
+      <div role="button" tabIndex={0} className={`${x.itemMain} ${x.holdable}`} onClick={onOpen} onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }} {...holdProps}>
         <BlockView block={asBlock(item)} shape="tile" />
       </div>
-      <button className={`${x.plus} ${x.itemPlus} ${saved ? x.plusDone : ""}`} onClick={onSave} disabled={saved} aria-label={saved ? "Saved" : `Save ${item.title} to Mind`}>
-        {saved ? <IconCheck size={14} /> : <IconPlus size={15} />}
-      </button>
-      {reason && <small className={x.itemReason}>{emojify(reason)}</small>}
+      {(reason || saved) && (
+        <div className={x.itemFoot}>
+          <small className={x.itemReason}>{reason ? emojify(reason) : ""}</small>
+          {saved && <span className={x.savedTag}><IconCheck size={11} /> Saved</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -353,13 +423,13 @@ function GroupRow({ r, joined, onOpen, onJoin }: { r: Ranked<Chat>; joined: bool
   );
 }
 
-function ActivityRow({ a, now, saved, chats, onItem, onSave, onCollection, onGroup }: {
+function ActivityRow({ a, now, saved, chats, onItem, holdItem, onCollection, onGroup }: {
   a: Activity;
   now: number;
   saved: Record<string, string>;
   chats: Chat[];
   onItem: (item: PublicItem, from: PublicCollection) => void;
-  onSave: (item: PublicItem, from: PublicCollection) => void;
+  holdItem: (item: PublicItem, from: PublicCollection) => HoldProps;
   onCollection: (id: string) => void;
   onGroup: (g: Chat) => void;
 }) {
@@ -380,18 +450,16 @@ function ActivityRow({ a, now, saved, chats, onItem, onSave, onCollection, onGro
         </span>
       </div>
       {pc && things.length > 0 && (
-        <DragScroll className={x.strip} style={{ ["--tone" as string]: pc.tone }}>
+        <DragScroll className={x.strip} sideWheel={false} glide style={{ ["--tone" as string]: pc.tone }}>
           {things.map((item) => (
-            <div key={item.id} className={x.mini}>
+            <div key={item.id} className={`${x.mini} ${x.holdable}`} {...holdItem(item, pc)}>
               <button className={x.miniMain} onClick={() => onItem(item, pc)}>
                 {item.kind === "image" && item.image
                   // eslint-disable-next-line @next/next/no-img-element
                   ? <img src={item.image} alt="" />
                   : <span className={x.miniCard}><i aria-hidden="true"><Emoji char={KIND_ICON[item.kind] ?? "✨"} /></i><em>{KIND_LABEL[item.kind]}</em>{item.title}</span>}
               </button>
-              <button className={`${x.plus} ${x.miniPlus} ${saved[item.id] ? x.plusDone : ""}`} onClick={() => onSave(item, pc)} disabled={!!saved[item.id]} aria-label={`Save ${item.title}`}>
-                {saved[item.id] ? <IconCheck size={12} /> : <IconPlus size={13} />}
-              </button>
+              {saved[item.id] && <span className={x.miniSaved} aria-label="Saved"><IconCheck size={11} /></span>}
             </div>
           ))}
         </DragScroll>
@@ -435,7 +503,7 @@ function SaveSheet({ item, from, onClose, onPick, onNew }: { item: PublicItem; f
               <p className={styles.sheetNote}>It lands at the top of the collection; move it into a stack any time.</p>
             </>
           ) : (
-            <button className={`${styles.primaryWide} ${x.rowBtn}`} onClick={() => close(onNew)}><IconPlus size={16} /> Start “{from.name}” in your Mind</button>
+            <button className={`${styles.primaryWide} ${x.rowBtn}`} onClick={() => close(onNew)}>Start “{from.name}” in your Mind</button>
           )}
         </>
       )}
@@ -445,19 +513,12 @@ function SaveSheet({ item, from, onClose, onPick, onNew }: { item: PublicItem; f
 
 function ItemSheet({ item, from, saved, onClose, onSave, onOpenCollection }: { item: PublicItem; from: PublicCollection; saved?: string; onClose: () => void; onSave: () => void; onOpenCollection: () => void }) {
   return (
-    <Sheet title={KIND_LABEL[item.kind]} onClose={onClose}>
-      {(close) => (
-        <>
-          <div className={styles.mindDetail}><BlockView block={asBlock(item)} shape="detail" /></div>
-          <button className={x.fromRow} onClick={onOpenCollection}>
-            <span className={styles.mindEmoji} style={{ background: `color-mix(in srgb, ${from.tone} 16%, transparent)` }}><Emoji char={from.emoji} /></span>
-            <span className={styles.contactText}><b>From {from.name}</b><small>by {creator(from.by).name} · {count(from.saves)} saves</small></span>
-          </button>
-          <button className={`${styles.primaryWide} ${x.rowBtn}`} disabled={!!saved} onClick={() => close(onSave)}>
-            {saved ? <><IconCheck size={16} /> Saved</> : <><IconPlus size={16} /> Save to Mind</>}
-          </button>
-        </>
-      )}
+    <Sheet title={KIND_LABEL[item.kind]} onClose={onClose} action={{ label: saved ? "Saved" : "Save", disabled: !!saved, onClick: onSave }}>
+      <div className={styles.mindDetail}><BlockView block={asBlock(item)} shape="detail" /></div>
+      <button className={x.fromRow} onClick={onOpenCollection}>
+        <span className={styles.mindEmoji} style={{ background: `color-mix(in srgb, ${from.tone} 16%, transparent)` }}><Emoji char={from.emoji} /></span>
+        <span className={styles.contactText}><b>From {from.name}</b><small>by {creator(from.by).name} · {count(from.saves)} saves</small></span>
+      </button>
     </Sheet>
   );
 }
@@ -505,15 +566,17 @@ function GroupSheet({ groupId, reason, onClose, onJoin, onOpen }: { groupId: str
   );
 }
 
-function CollectionPage({ pc, leaving, added, saved, onBack, onAdd, onItem, onSave }: {
+function CollectionPage({ pc, own, leaving, added, saved, onBack, onAdd, onItem, holdItem }: {
   pc: PublicCollection;
+  /** You published it: this is how it looks to everyone else. */
+  own: boolean;
   leaving: boolean;
   added: boolean;
   saved: Record<string, string>;
   onBack: () => void;
   onAdd: () => void;
   onItem: (item: PublicItem) => void;
-  onSave: (item: PublicItem) => void;
+  holdItem: (item: PublicItem) => HoldProps;
 }) {
   const total = pc.stacks.reduce((n, s) => n + s.items.length, 0);
   return (
@@ -521,28 +584,35 @@ function CollectionPage({ pc, leaving, added, saved, onBack, onAdd, onItem, onSa
       <header className={x.pageBar}>
         <button className={`${styles.circleBtn} ${styles.glass}`} onClick={onBack} aria-label="Back to Explore"><IconBack /></button>
         <b>{pc.name}</b>
-        <span />
+        {own ? <span className={`${x.addPill} ${x.addPillQuiet}`}>Yours</span> : (
+          <button className={`${x.addPill} ${x.addPillBar}`} onClick={onAdd} disabled={added}>
+            {added ? <><IconCheck size={13} /> In your Mind</> : "Add to Mind"}
+          </button>
+        )}
       </header>
       <div className={x.pageScroll}>
-        <div className={x.pageCover} style={{ backgroundImage: `url(${pc.cover})` }} />
+        <div className={x.pageCover} style={{ backgroundImage: coverOf(pc) }} />
         <div className={x.pageHead}>
           <span className={x.pageEmoji}><Emoji char={pc.emoji} /></span>
           <h2>{pc.name}</h2>
           <Byline id={pc.by} extra={`${count(pc.saves)} saves · ${pc.stacks.length} stacks · ${total} things`} />
           <p>{pc.description}</p>
-          <div className={styles.chipGrid}>
-            {pc.topics.map((t) => <span key={t} className={`${styles.choice} ${x.topic}`}>{TOPIC_LABEL[t]}</span>)}
-          </div>
-          <button className={`${styles.primaryWide} ${x.btn}`} onClick={onAdd} disabled={added}>
-            {added ? <><IconCheck size={15} /> In your Mind</> : <><IconPlus size={15} /> Add to Mind</>}
-          </button>
-          <small className={x.hint}>{added ? "It’s yours now: change anything in it from Mind." : "Copies every stack into your Mind. Or save single things with +."}</small>
+          {pc.topics.length > 0 && (
+            <ul className={x.topics} aria-label="Topics">
+              {pc.topics.map((t) => <li key={t} className={x.topic}>{TOPIC_LABEL[t]}</li>)}
+            </ul>
+          )}
+          <small className={x.pageHint}>
+            {own ? "You published this from your Mind. It’s how everyone sees it; what you change there shows here too."
+              : added ? "It’s in your Mind now: change anything in it there."
+              : "Add to Mind copies every stack. Or hold any one thing to save just that."}
+          </small>
         </div>
         {pc.stacks.map((s) => (
           <section key={s.title} className={x.pageStack}>
             <p className={x.stackHead}><Emoji char={s.emoji} /> <b>{s.title}</b> <em>{s.items.length}</em></p>
             <div className={x.masonry}>
-              {s.items.map((item) => <ItemTile key={item.id} item={item} saved={!!saved[item.id]} onOpen={() => onItem(item)} onSave={() => onSave(item)} />)}
+              {s.items.map((item) => <ItemTile key={item.id} item={item} saved={!!saved[item.id]} onOpen={() => onItem(item)} holdProps={own ? undefined : holdItem(item)} />)}
             </div>
           </section>
         ))}

@@ -4917,3 +4917,157 @@ img.spaceAvatar { object-fit: cover; }
 }
 .mindSave:active { transform: scale(.94); }
 .mindSaveOn { background: var(--ink); color: var(--bg); box-shadow: var(--e2); }
+
+/* ==========================================================================
+   A name and its icon in one field (Mind's collections and stacks)
+   ========================================================================== */
+.nameIcon { display: flex; flex-direction: column; gap: 8px; }
+.nameIconRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 6px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  transition: box-shadow var(--t-fast);
+}
+.nameIconRow:focus-within, .nameIconPicking { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 45%, transparent); }
+.nameIconBtn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), var(--e1);
+  font-size: 23px;
+  cursor: pointer;
+  transition: transform var(--t-fast);
+}
+.nameIconBtn:active { transform: scale(.92); }
+.nameIconBtn i {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--bg);
+  box-shadow: 0 0 0 2px var(--bg);
+  transition: transform var(--t-fast);
+}
+.nameIconPicking .nameIconBtn i { transform: rotate(180deg); }
+.nameIconInput {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--ink);
+  font: var(--t-headline);
+  letter-spacing: -.01em;
+}
+.nameIconInput::placeholder { font-weight: 400; color: var(--ink-3); }
+.nameIconPicker { padding: 12px; border-radius: var(--r-md); background: color-mix(in srgb, var(--ink) 4%, transparent); animation: pickerIn var(--t-mid) var(--ease-out) both; }
+.nameIconPicker > p { margin: 0 0 10px; font: var(--t-footnote); font-weight: var(--w-emph); color: var(--ink-3); }
+@keyframes pickerIn { from { opacity: 0; transform: translateY(-6px); } }
+
+/* ==========================================================================
+   Mind: collections as a list, the Explore badge, publishing, and search
+   ========================================================================== */
+.mindBarEnd { display: inline-flex; align-items: center; gap: 8px; }
+.mindBarEnd .mindViews button { height: 28px; padding: 0 10px; }
+.folderList { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+.folderRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--tone) 8%, var(--card-bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 14%, transparent), var(--e1);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.folderRow:active { transform: scale(.98); }
+/* The same folder, small: a tab on top, the icon inside. */
+.folderRowIcon {
+  position: relative;
+  width: 44px;
+  height: 36px;
+  flex-shrink: 0;
+  margin-top: 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px 9px 9px 9px;
+  background: color-mix(in srgb, var(--tone) 22%, var(--card-bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 22%, transparent);
+  font-size: 18px;
+}
+.folderRowIcon::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  width: 46%;
+  height: 5px;
+  border-radius: 3px 3px 0 0;
+  background: color-mix(in srgb, var(--tone) 32%, var(--card-bg));
+}
+.folderRowNew {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 52px;
+  border: 1.5px dashed var(--line-2);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ink-3);
+  font: var(--t-subhead);
+  font-weight: var(--w-control);
+  cursor: pointer;
+}
+.folderRowNew:hover { background: var(--fill); color: var(--ink-2); }
+.folderBadges { display: inline-flex; align-items: center; gap: 4px; }
+.folderPub {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: #fff;
+}
+
+.mindPublish { display: flex; flex-direction: column; gap: 8px; }
+.mindPublishRow { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r-md); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.mindPublishIcon { width: 36px; height: 36px; flex-shrink: 0; display: grid; place-items: center; border-radius: 11px; background: var(--accent); color: #fff; }
+
+.searchCount { margin: 0 2px; font: var(--t-footnote); color: var(--ink-3); }
+.searchGroup { display: flex; flex-direction: column; gap: 8px; }
+.searchHead { display: flex; align-items: center; gap: 6px; margin: 6px 2px 0; font: var(--t-caption1); font-weight: var(--w-emph); letter-spacing: .05em; text-transform: uppercase; color: var(--ink-2); }
+.searchHead em { font-style: normal; color: var(--ink-3); letter-spacing: normal; }
+.searchRow .mindPageText { gap: 4px; }
+.crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 5px; min-width: 0; font: var(--t-caption1); color: var(--ink-3); }
+.crumbs > span { display: inline-flex; align-items: center; gap: 3px; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+.crumbs > span.crumbIn { color: var(--ink-3); }
+.crumbs > i { font-style: normal; color: var(--ink-3); }
+.searchKind { flex-shrink: 0; padding: 2px 8px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink-2); font: var(--t-caption2); font-weight: var(--w-emph); white-space: nowrap; }
+.searchItem { display: flex; flex-direction: column; gap: 6px; }
+.searchItemTop { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px; }
+mark.searchMark { padding: 0 1px; border-radius: 3px; background: color-mix(in srgb, var(--accent) 20%, transparent); color: inherit; }

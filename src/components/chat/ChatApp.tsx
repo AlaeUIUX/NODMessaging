@@ -105,7 +105,7 @@ function DevDrawer({ stage, onStage, analyticsMode, onAnalyticsMode }: {
           </div>
         </div>
         <div>
-          <span className={styles.devLabel}>Analytics</span>
+          <span className={styles.devLabel}>Dashboard</span>
           <div className={styles.devIds}>
             <button className={analyticsMode === "v1" ? styles.devOn : undefined} onClick={() => onAnalyticsMode("v1")}>
               v1 · in chat

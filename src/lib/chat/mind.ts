@@ -86,6 +86,8 @@ export interface Collection {
   view?: MindView;
   /** Added from Explore: the public collection it came from, and who made it. */
   from?: { id: string; by: string };
+  /** Published to Explore: when, and the line people see under its name. It stays in step with what's in it. */
+  published?: { at: number; description: string };
 }
 
 export interface Mind {
@@ -94,6 +96,8 @@ export interface Mind {
   /** The collection opened last; saves fall back to it. */
   current: string | null;
   blocks: Record<string, Block>;
+  /** How Mind's home shows the collections: as folders (the default) or a list, one per row. */
+  home?: "grid" | "list";
 }
 
 /* ---------------------------------------------------------------------------
@@ -500,6 +504,11 @@ export function dropDraft(id: string) {
   delete rest[draftOf(id)];
   cache = rest;
   write();
+}
+
+/** Every person's Mind on this device, by whose it is (not group Minds, not copies being edited). */
+export function peopleMinds(): [string, Mind][] {
+  return Object.entries(load()).filter(([id, m]) => !id.startsWith("draft:") && !id.startsWith("group:") && (m as Mind)?.version === 4) as [string, Mind][];
 }
 
 export function useMind(userId: string) {

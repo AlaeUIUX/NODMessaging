@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { TONES } from "@/lib/chat/avatar";
 import {
-  layoutOf, newWidget, placeAt, SIZE_LABEL, WIDGET_GROUPS, WIDGETS, type Box, type Widget, type WidgetKind, type WidgetSize,
+  CHART_LABEL, chartOf, chartsFor, layoutOf, newWidget, placeAt, SIZE_LABEL, WIDGET_GROUPS, WIDGETS,
+  type Box, type ChartKind, type Widget, type WidgetKind, type WidgetSize,
 } from "@/lib/chat/widgets";
 import type { BoardSummary } from "./Analytics";
 import {
@@ -482,6 +483,16 @@ function Options({ w, boards, onChange }: { w: Widget; boards: BoardSummary[]; o
           </div>
         </>
       )}
+      {chartsFor(w.kind, w.view).length > 1 && (
+        <>
+          <p className={styles.sheetLabel}>Chart</p>
+          <Segmented<ChartKind>
+            value={chartOf(w)!}
+            options={chartsFor(w.kind, w.view).map((id) => ({ id, label: CHART_LABEL[id] }))}
+            onChange={(chart) => onChange({ chart })}
+          />
+        </>
+      )}
       {w.kind === "boards" && boards.length > 1 && (
         <>
           <p className={styles.sheetLabel}>Boards</p>
@@ -571,7 +582,7 @@ export function EditWidgetSheet({ w, render, boards, index, count, onSave, onSte
     setDraft({ id: w.id, kind, view: spec.views[0].id, size: spec.sizes.includes(draft.size) ? draft.size : spec.sizes[spec.sizes.length - 1] });
   };
   return (
-    <Sheet title="Edit widget" onClose={onClose} action={{ label: "Done", onClick: () => onSave({ kind: draft.kind, size: draft.size, view: draft.view, board: draft.board }) }}>
+    <Sheet title="Edit widget" onClose={onClose} action={{ label: "Done", onClick: () => onSave({ kind: draft.kind, size: draft.size, view: draft.view, board: draft.board, chart: draft.chart }) }}>
       {(close) => (
         <>
           <Preview w={draft} title={widgetTitle(draft, boards)} render={render} />

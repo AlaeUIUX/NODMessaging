@@ -94,7 +94,32 @@ function exec(command: string, value?: string) {
  * already scrolls natively) and scrolled with a vertical wheel. A drag never
  * triggers the button it started on.
  */
-export function DragScroll({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
+/**
+ * After a mouse drag, glide to the card it was heading for: past a short
+ * flick it goes one card on in that direction, else back to the nearest.
+ */
+function glideTo(el: HTMLElement, from: number) {
+  const cards = [...el.children] as HTMLElement[];
+  if (!cards.length) return;
+  const pad = cards[0].offsetLeft;
+  const stops = cards.map((c) => Math.min(c.offsetLeft - pad, el.scrollWidth - el.clientWidth));
+  const now = el.scrollLeft;
+  const moved = now - from;
+  let target = stops.reduce((best, x) => (Math.abs(x - now) < Math.abs(best - now) ? x : best), stops[0]);
+  if (Math.abs(moved) > 24) {
+    const ahead = moved > 0 ? stops.filter((x) => x > from + 4) : stops.filter((x) => x < from - 4).reverse();
+    if (ahead.length) target = ahead[0];
+  }
+  el.scrollTo({ left: target, behavior: "smooth" });
+}
+
+export function DragScroll({ className, children, sideWheel = true, glide = false, style, ...rest }: React.HTMLAttributes<HTMLDivElement> & {
+  /** Turn a mouse wheel's up/down into sideways scrolling. Only where nothing scrolls up and down around it (a toolbar);
+   * inside a page that scrolls, it would move the row and the page at once. */
+  sideWheel?: boolean;
+  /** A row of cards: a mouse drag ends by gliding to a card (touch has the browser's own snapping). */
+  glide?: boolean;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef({ x: 0, left: 0, down: false, moved: false });
   const [dragging, setDragging] = useState(false);
@@ -103,6 +128,8 @@ export function DragScroll({ className, children, ...rest }: React.HTMLAttribute
       {...rest}
       ref={ref}
       className={`${className ?? ""} ${dragging ? styles.toolDragging : ""}`}
+      // While a mouse drags it, snapping would fight the drag; it settles on release.
+      style={dragging ? { ...style, scrollSnapType: "none", scrollBehavior: "auto" } : style}
       onPointerDown={(e) => {
         if (e.pointerType !== "mouse" || !ref.current) return;
         drag.current = { x: e.clientX, left: ref.current.scrollLeft, down: true, moved: false };
@@ -119,7 +146,12 @@ export function DragScroll({ className, children, ...rest }: React.HTMLAttribute
         }
         if (d.moved) el.scrollLeft = d.left - dx;
       }}
-      onPointerUp={() => { drag.current.down = false; setDragging(false); }}
+      onPointerUp={() => {
+        const d = drag.current;
+        d.down = false;
+        setDragging(false);
+        if (glide && d.moved && ref.current) glideTo(ref.current, d.left);
+      }}
       onPointerCancel={() => { drag.current = { ...drag.current, down: false, moved: false }; setDragging(false); }}
       onClickCapture={(e) => {
         if (drag.current.moved) {
@@ -128,10 +160,10 @@ export function DragScroll({ className, children, ...rest }: React.HTMLAttribute
           drag.current.moved = false;
         }
       }}
-      onWheel={(e) => {
+      onWheel={sideWheel ? (e) => {
         const el = ref.current;
         if (el && Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY;
-      }}
+      } : undefined}
     >
       {children}
     </div>

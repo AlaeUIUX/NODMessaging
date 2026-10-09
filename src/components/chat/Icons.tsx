@@ -9,7 +9,7 @@ import {
   Share08Icon, SourceCodeIcon, Route01Icon, Invoice03Icon, ScanIcon, Task01Icon, Clock01Icon, DragDropVerticalIcon, Flag01Icon, Folder01Icon, ArrowUpRight01Icon, Bookmark02Icon, GridViewIcon, LibraryIcon, KanbanIcon, Tag01Icon, MoreHorizontalIcon, InboxIcon, ArrowDown01Icon, LeftToRightListDashIcon, PaintBrush01Icon, GameController03Icon, PieChartIcon, SparklesIcon, Undo02Icon, FavouriteIcon, Sun03Icon, TextBoldIcon, TextItalicIcon, TextStrikethroughIcon, TextUnderlineIcon, Tick02Icon, UserGroupIcon,
   Message01Icon, Mail01Icon, WhatsappIcon, QrCodeIcon, Settings02Icon, Logout03Icon, UserAdd01Icon, Globe02Icon,
   Shield01Icon, PaintBoardIcon, Database01Icon, InformationCircleIcon, HelpCircleIcon, SmartPhone01Icon, KeyboardIcon, ComputerIcon, Contact01Icon,
-  MinusSignIcon, SlidersHorizontalIcon, ChartLineData01Icon, Wallet01Icon,
+  MinusSignIcon, SlidersHorizontalIcon, ChartLineData01Icon, Wallet01Icon, ArrowDown02Icon,
 } from "@hugeicons/core-free-icons";
 
 /**
@@ -121,3 +121,4 @@ export const IconMinus = make(MinusSignIcon, 2.2);
 export const IconSliders = make(SlidersHorizontalIcon);
 export const IconChart = make(ChartLineData01Icon);
 export const IconWallet = make(Wallet01Icon);
+export const IconArrowDown = make(ArrowDown02Icon, 1.8);

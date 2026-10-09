@@ -444,7 +444,7 @@ function AboutPage({ leaving, onBack }: { leaving: boolean; onBack: () => void }
         <Row title="Chats and groups" sub="One-to-one, or a group with channels for any team or trip" trailing={<span />} />
         <Row title="Decide in the thread" sub="Polls, checklists, plans, boards, payments and invoices" trailing={<span />} />
         <Row title="Mind" sub="Your own collections, filled from any chat" trailing={<span />} />
-        <Row title="Analytics" sub="Your spending, and everything that needs you" trailing={<span />} />
+        <Row title="Dashboard" sub="Your widgets: spending, boards, and everything that needs you" trailing={<span />} />
       </Group>
     </SubPage>
   );

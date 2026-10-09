@@ -9,7 +9,7 @@ import { newProject, newTask, parseDue, parseTaskCommand, PRIORITIES, projectsOf
 import { useChat, userById } from "@/lib/chat/store";
 import type { Card, Chat, Message, ProjectCard, Task, User } from "@/lib/chat/types";
 import Avatar from "./Avatar";
-import { IconBack, IconBoard, IconCheck, IconChevron, IconChevronDown, IconClock, IconEdit, IconLink, IconMore, IconPlus, IconTrash } from "./Icons";
+import { IconArrowDown, IconArrowUp, IconBack, IconBoard, IconCheck, IconChevron, IconChevronDown, IconClock, IconEdit, IconLink, IconMore, IconPlus, IconTrash } from "./Icons";
 import StatusBar from "./StatusBar";
 import { relative, Sheet, smooth, uid, useChatUi, useDialog, useNow } from "./ui";
 import styles from "./chat.module.css";
@@ -433,9 +433,11 @@ function TaskBody({ task, now, done, onShow }: { task: Task; now: number; done: 
  * A column's name (tap to rename) and its menu: rename, or delete the group
  * with its tasks after a confirm. A new group opens straight into renaming.
  */
-function ColumnHead({ name, count, renameNow, canDelete, menuOpen, onMenu, onRename, onDelete, onRenamed }: {
+function ColumnHead({ name, count, renameNow, canDelete, menuOpen, onMenu, onRename, onDelete, onRenamed, expand }: {
   name: string;
   count: number;
+  /** A group with more than it shows folded: open it, or fold it again. */
+  expand?: { open: boolean; hidden: number; onToggle: () => void };
   /** Start in the name field (a group that was just added). */
   renameNow: boolean;
   canDelete: boolean;
@@ -489,6 +491,18 @@ function ColumnHead({ name, count, renameNow, canDelete, menuOpen, onMenu, onRen
         />
       )}
       <em aria-hidden="true">{count}</em>
+      {expand && (
+        <button
+          className={`${s.colExpand} ${expand.open ? s.colExpandOpen : ""}`}
+          onClick={expand.onToggle}
+          aria-expanded={expand.open}
+          aria-label={expand.open ? `Fold ${name}` : `Show all ${count} in ${name}`}
+          title={expand.open ? "Fold" : "Show all"}
+        >
+          {!expand.open && <span>+{expand.hidden}</span>}
+          <IconChevronDown size={14} />
+        </button>
+      )}
       <button
         className={s.colMore}
         onClick={() => setMenu(menu === "closed" ? "open" : "closed")}
@@ -600,7 +614,35 @@ function boardCounts(card: ProjectCard) {
   return { open: live.filter((t) => t.column !== done).length, total: live.length };
 }
 
-/** The full-screen board for one project card; the title switches between the chat's boards. */
+/** How many tasks a folded board shows in all, shared between its groups. */
+const FOLDED_BUDGET = 3;
+
+/**
+ * Folded, a board's groups share a few rows: every group with tasks shows at
+ * least one, and the rest go round one by one, so To do filling up never
+ * leaves Doing and Done looking empty. A board with more groups than rows
+ * shows one per group.
+ */
+function foldedShares(counts: number[]) {
+  const out = counts.map((c) => Math.min(c, 1));
+  let left = Math.max(FOLDED_BUDGET, out.reduce((a, b) => a + b, 0)) - out.reduce((a, b) => a + b, 0);
+  while (left > 0) {
+    let gave = false;
+    for (let i = 0; i < counts.length && left > 0; i++) {
+      if (out[i] < counts[i]) { out[i]++; left--; gave = true; }
+    }
+    if (!gave) break;
+  }
+  return out;
+}
+
+/**
+ * The full-screen board for one project card; the title switches between the
+ * chat's boards. Folded, the groups share a few rows (see foldedShares), so
+ * the whole board fits at a glance; the expand button in a group's header
+ * opens just that group. Every task has arrows to step it to the group above
+ * or below, as well as hold-and-drag.
+ */
 export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
   message: BoardMessage;
   /** Every board in this chat, oldest first. */
@@ -630,6 +672,11 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
     setMenu((cur) => ((typeof open === "function" ? open(cur === "boards") : open) ? "boards" : null));
   // A group just added from the header: it opens with its name ready to type.
   const [renaming, setRenaming] = useState<string | null>(null);
+  // Groups opened one by one from their header.
+  const [unfolded, setUnfolded] = useState<string[]>([]);
+  // A task just stepped to another group: it lights up there.
+  const [stepped, setStepped] = useState<string | null>(null);
+  const toggleGroup = (id: string) => setUnfolded((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]));
 
   // A different board: start at its first group, with nothing half-added.
   const [shown, setShown] = useState(message.id);
@@ -652,6 +699,20 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
   }, []);
 
   const showInChat = (id: string) => close(() => setTimeout(() => ui.jumpTo(id), 40));
+
+  /** One step to the group above or below; it lands at the top there, where it's easy to see. */
+  const step = (t: Task, by: -1 | 1) => {
+    const ci = card.columns.findIndex((c) => c.id === t.column);
+    const to = card.columns[ci + by];
+    if (!to) return;
+    const there = tasksIn(card, to.id);
+    const order = there.length ? there[0].order - GAP : stamp();
+    cardOp(message, { kind: "task.update", id: t.id, patch: { column: to.id, order }, at: stamp() });
+    navigator.vibrate?.(6);
+    setStepped(t.id);
+    setTimeout(() => setStepped((x) => (x === t.id ? null : x)), 1000);
+    ui.toast(`Moved to ${to.name}`);
+  };
   const openTask = (t: Task) => ui.openSheet(
     <TaskSheet chatId={message.chatId} messageId={message.id} taskId={t.id} onClose={ui.closeSheet} onShowInChat={showInChat} />,
   );
@@ -750,7 +811,8 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
   };
 
   const onTaskDown = (e: React.PointerEvent<HTMLElement>, id: string) => {
-    if (e.button !== 0) return;
+    // The arrows are their own buttons, not the start of a hold.
+    if (e.button !== 0 || (e.target as HTMLElement).closest("[data-nodrag]")) return;
     const el = e.currentTarget;
     const pointerId = e.pointerId;
     const r = el.getBoundingClientRect();
@@ -824,6 +886,7 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
   };
 
   const draggingTask = dragging ? card.tasks[dragging.id] : null;
+  const shares = foldedShares(card.columns.map((c) => tasksIn(card, c.id).length));
 
   return (
     <div
@@ -899,11 +962,18 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
       )}
 
       {/* Groups stack top to bottom (To do, then Doing, then Done) and the board scrolls as one. */}
-      <div className={s.columns} ref={scrollRef}>
+      <div className={`${s.columns} ${s.compact}`} ref={scrollRef}>
         {card.columns.map((col, ci) => {
           const list = tasksIn(card, col.id);
           const isDone = col.id === done;
           const target = drop?.col === col.id ? drop : null;
+          const prevCol = card.columns[ci - 1];
+          const nextCol = card.columns[ci + 1];
+          // Folded: this group's share of the board's rows, until it's opened. While dragging, everything shows.
+          const open = !!dragging || unfolded.includes(col.id);
+          const shown = open ? list : list.slice(0, shares[ci]);
+          const hidden = list.length - shown.length;
+          const folds = list.length > shares[ci];
           return (
             <section key={col.id} className={`${s.column} ${target ? s.columnInto : ""}`} data-col={col.id} aria-label={col.name}>
               <ColumnHead
@@ -916,9 +986,10 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
                 onRename={(name) => cardOp(message, { kind: "column.rename", id: col.id, name })}
                 onRenamed={() => setRenaming(null)}
                 onDelete={() => removeGroup(col.id)}
+                expand={folds && !dragging ? { open, hidden, onToggle: () => toggleGroup(col.id) } : undefined}
               />
               <div className={s.colBody}>
-                {list.map((t) => (
+                {shown.map((t) => (
                   <div
                     key={t.id}
                     data-task={t.id}
@@ -926,29 +997,46 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
                       s.task,
                       dragging?.id === t.id ? s.taskSource : "",
                       target?.before === t.id ? s.dropAbove : "",
+                      stepped === t.id ? s.taskStepped : "",
                     ].filter(Boolean).join(" ")}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`${t.title}${t.assignee ? `, ${t.assignee === me ? "yours" : userById(t.assignee).name}` : ""}${t.due !== null && !isDone ? `, due ${dueInfo(t.due, now).label}` : ""}. Open task`}
                     onPointerDown={(e) => onTaskDown(e, t.id)}
-                    onClick={() => {
-                      if (stamp() - droppedAt.current < 400) return;
-                      openTask(t);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-                      e.preventDefault();
-                      openTask(t);
-                    }}
                     onContextMenu={(e) => e.preventDefault()}
                   >
-                    {/* No button inside the tile (it's a button itself); the task sheet has "Show in chat". */}
-                    <TaskBody task={t} now={now} done={isDone} />
+                    <div
+                      className={s.taskMain}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${t.title}${t.assignee ? `, ${t.assignee === me ? "yours" : userById(t.assignee).name}` : ""}${t.due !== null && !isDone ? `, due ${dueInfo(t.due, now).label}` : ""}. Open task`}
+                      onClick={() => {
+                        if (stamp() - droppedAt.current < 400) return;
+                        openTask(t);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+                        e.preventDefault();
+                        openTask(t);
+                      }}
+                    >
+                      <TaskBody task={t} now={now} done={isDone} />
+                    </div>
+                    {/* A step up or down, without dragging. */}
+                    <span className={s.steps}>
+                      {prevCol && (
+                        <button className={s.step} data-nodrag onClick={() => step(t, -1)} aria-label={`Move “${t.title}” up to ${prevCol.name}`} title={`To ${prevCol.name}`}>
+                          <IconArrowUp size={14} />
+                        </button>
+                      )}
+                      {nextCol && (
+                        <button className={`${s.step} ${nextCol.id === done ? s.stepDone : ""}`} data-nodrag onClick={() => step(t, 1)} aria-label={`Move “${t.title}” down to ${nextCol.name}`} title={`To ${nextCol.name}`}>
+                          {nextCol.id === done ? <IconCheck size={14} /> : <IconArrowDown size={14} />}
+                        </button>
+                      )}
+                    </span>
                   </div>
                 ))}
                 {target && target.before === null && <div className={s.dropEnd} aria-hidden="true" />}
                 {!list.length && !target && (
-                  <p className={s.empty}>{isDone ? "Finished tasks land here." : ci === 0 ? "Nothing here yet. Add the first task below." : "Hold a task and drag it here."}</p>
+                  <p className={s.empty}>{isDone ? "Finished tasks land here." : ci === 0 ? "Nothing here yet. Add the first task below." : "Hold a task and drag it here, or use its arrows."}</p>
                 )}
               </div>
               <AddTask

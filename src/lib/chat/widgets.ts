@@ -25,6 +25,30 @@ export interface Widget {
   view: string;
   /** Boards only: one board (its message id) instead of all of them. */
   board?: string;
+  /** How its numbers are drawn, for a view that has a chart (see chartsFor). */
+  chart?: ChartKind;
+}
+
+export type ChartKind = "area" | "line" | "bars" | "stacked" | "donut" | "gauge" | "blocks";
+export const CHART_LABEL: Record<ChartKind, string> = {
+  area: "Area", line: "Line", bars: "Bars", stacked: "Stacked", donut: "Donut", gauge: "Gauge", blocks: "Blocks",
+};
+
+/** The ways a widget's view can be drawn, the default first; none for a view that's a list or a number. */
+export function chartsFor(kind: WidgetKind, view: string): ChartKind[] {
+  if (kind === "spend" && view === "month") return ["area", "line", "bars"];
+  if (kind === "messages" && view === "week") return ["bars", "area", "line"];
+  if (kind === "boards" && view === "priority") return ["stacked", "donut", "bars"];
+  if (kind === "boards" && view === "deadlines") return ["bars", "line"];
+  if (kind === "tasks" && view === "stage") return ["gauge", "donut", "bars"];
+  if (kind === "needs" && view === "summary") return ["blocks", "donut", "bars"];
+  return [];
+}
+/** The chart a widget draws with: its choice when that fits its view, else the view's default. */
+export function chartOf(w: Widget): ChartKind | null {
+  const list = chartsFor(w.kind, w.view);
+  if (!list.length) return null;
+  return w.chart && list.includes(w.chart) ? w.chart : list[0];
 }
 
 export interface WidgetView { id: string; label: string; sub: string }

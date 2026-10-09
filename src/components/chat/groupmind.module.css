@@ -63,7 +63,7 @@
 .sectionHead small { font: var(--t-footnote); color: var(--ink-3); }
 .masonry { columns: 2; column-gap: 8px; }
 .masonry > * { break-inside: avoid; margin-bottom: 8px; }
-.item { cursor: pointer; border-radius: var(--r-md); transition: transform var(--t-fast); }
+.item { cursor: pointer; border-radius: var(--r-md); transition: transform var(--t-fast); -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .item:active { transform: scale(.98); }
 .none { margin: 0; font: var(--t-footnote); color: var(--ink-3); }
 

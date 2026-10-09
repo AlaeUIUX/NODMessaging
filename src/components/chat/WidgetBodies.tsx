@@ -7,14 +7,15 @@ import { money } from "@/lib/chat/ops";
 import { priorityRank, PRIORITIES } from "@/lib/chat/project";
 import { userById } from "@/lib/chat/store";
 import type { Chat, Message } from "@/lib/chat/types";
-import type { Widget, WidgetSize } from "@/lib/chat/widgets";
+import { chartOf, type Widget, type WidgetSize } from "@/lib/chat/widgets";
 import type { BoardSummary, BoardTask, DashData, NeedsCategory } from "./Analytics";
 import { NEEDS_ACTION, NEEDS_INK, NEEDS_TONE, STALLED_AFTER } from "./Analytics";
 import {
-  BigMoney, BLUE, ChecklistTrack, clock, DAY, dayLabel, daysInMonth, Gauge, monthName, NeedsBlocks, people, plural, prevMonthName,
-  shortDate, SpendChart, Trend, until, weekday, WEEK, type Upcoming,
+  BigMoney, BLUE, ChecklistTrack, clock, DAY, dayLabel, Gauge, monthName, NeedsBlocks, people, plural, prevMonthName,
+  shortDate, Trend, until, weekday, WEEK, type Upcoming,
 } from "./AnalyticsParts";
 import Avatar from "./Avatar";
+import { DonutChart, PartBars, StackedBar, TrendChart, type Part, type Point, type Trend as TrendKind } from "./Charts";
 import { IconCheck } from "./Icons";
 import { Sheet } from "./ui";
 import s from "./activity.module.css";
@@ -94,22 +95,6 @@ function Split({ parts, thick }: { parts: { value: number; color: string }[]; th
   );
 }
 
-/** Columns with their figure on top; `hl` marks the ones that matter (today, the heaviest day). */
-function Bars({ bars, height, bare }: { bars: { key: string; label: string; value: number; color?: string; hl?: boolean }[]; height: number; bare?: boolean }) {
-  const max = Math.max(1, ...bars.map((b) => b.value));
-  return (
-    <div className={g.bars} style={{ height }}>
-      {bars.map((b) => (
-        <div key={b.key} className={g.bar} role="img" aria-label={`${b.label}: ${b.value}`}>
-          {!bare && <em>{b.value || ""}</em>}
-          <span><i className={b.hl ? g.barHl : undefined} style={{ height: `${Math.max(b.value ? 8 : 3, (b.value / max) * 100)}%`, background: b.color }} /></span>
-          {!bare && <small>{b.label}</small>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /** A labelled share of a whole, with its figure. */
 function Meter({ label, value, of, right, color, onClick }: { label: string; value: number; of: number; right: ReactNode; color?: string; onClick?: () => void }) {
   const Tag = onClick ? "button" : "div";
@@ -120,6 +105,43 @@ function Meter({ label, value, of, right, color, onClick }: { label: string; val
     </Tag>
   );
 }
+
+/** A legend for parts: colour, figure, name. */
+function PartLegend({ parts }: { parts: Part[] }) {
+  return (
+    <ul className={g.legend}>
+      {parts.map((x) => <li key={x.key}><i style={{ background: x.color }} /><b>{x.value}</b><span>{x.label}</span></li>)}
+    </ul>
+  );
+}
+
+const count = (n: number) => String(n);
+/** Whole euros for an axis: "€1.2k", "€340". */
+export const euroShort = (cents: number) => {
+  const e = cents / 100;
+  return e >= 1000 ? `€${(e / 1000).toFixed(e >= 10_000 ? 0 : 1).replace(/\.0$/, "")}k` : `€${Math.round(e)}`;
+};
+
+/**
+ * This month's spending, day by day: running totals against last month's (to
+ * the same day), or (bars) what went out each day.
+ */
+export function spendSeries(d: DashData, kind: TrendKind): Point[] {
+  const cur = d.spendCurCum;
+  const prev = d.spendPrevCum;
+  const at = new Date(d.heroNow);
+  const mon = at.toLocaleDateString(undefined, { month: "short" });
+  return Array.from({ length: Math.max(cur.length, prev.length) }, (_, i) => {
+    const day = i + 1;
+    const label = `${mon} ${day}`;
+    if (kind === "bars") return { x: String(day), label, value: cur[i] === undefined ? undefined : cur[i] - (cur[i - 1] ?? 0) };
+    return { x: String(day), label, value: cur[i], compare: prev[i] };
+  });
+}
+export const spendTicks = (d: DashData) => {
+  const n = Math.max(d.spendCurCum.length, d.spendPrevCum.length);
+  return ["1", "8", "15", "22", String(n)].filter((x, i, a) => Number(x) <= n && a.indexOf(x) === i);
+};
 
 const dueText = (due: number, now: number) => (due < now ? "Overdue" : due - now > WEEK ? shortDate(due) : dayLabel(due, now));
 
@@ -154,25 +176,29 @@ function Spend({ w, d, open }: BodyProps) {
     );
   }
 
+  const kind = chartOf(w) as TrendKind;
+  const data = spendSeries(d, kind);
+  const names: Record<string, string> = kind === "bars" ? { value: "spent that day" } : { value: monthName(d.heroNow), compare: prevMonthName(d.heroNow) };
+  const mon = new Date(d.heroNow).toLocaleDateString(undefined, { month: "short" });
   if (w.size === "small") {
     return (
       <div className={g.col}>
         {label}
         <Big><BigMoney cents={d.spent} /></Big>
         {deltaLine}
-        <div className={g.spark}><SpendChart cur={d.spendCurCum} prev={d.spendPrevCum} height={40} /></div>
+        <div className={g.spark}><TrendChart mini data={data} kind={kind} format={money} names={names} /></div>
       </div>
     );
   }
   if (w.size === "medium") {
     return (
       <div className={g.sideBySide}>
-        <div className={g.col}>
+        <div className={`${g.col} ${g.figures}`}>
           {label}
           <Big><BigMoney cents={d.spent} /></Big>
           {deltaLine}
         </div>
-        <div className={g.chartFill}><SpendChart cur={d.spendCurCum} prev={d.spendPrevCum} height={100} /></div>
+        <div className={g.chartFill}><TrendChart data={data} kind={kind} format={money} names={names} /></div>
       </div>
     );
   }
@@ -181,8 +207,9 @@ function Spend({ w, d, open }: BodyProps) {
       {label}
       <Big size="large"><BigMoney cents={d.spent} /></Big>
       {deltaLine}
-      <div className={g.chartGrow}><SpendChart cur={d.spendCurCum} prev={d.spendPrevCum} height={150} /></div>
-      <div className={s.xaxis}><span>1 {monthName(d.heroNow).slice(0, 3)}</span><span>15</span><span>{daysInMonth(new Date(d.heroNow).getFullYear(), new Date(d.heroNow).getMonth())}</span></div>
+      <div className={g.chartGrow}>
+        <TrendChart data={data} kind={kind} format={money} axisFormat={euroShort} names={names} xTicks={spendTicks(d)} xFormat={(x) => (x === "1" && kind !== "bars" ? `1 ${mon}` : x)} yAxis />
+      </div>
     </div>
   );
 }
@@ -252,11 +279,23 @@ function Needs({ w, d, me, open }: BodyProps) {
     </div>
   );
 
+  const chart = chartOf(w);
+  const pieces: Part[] = NEEDS.map((c) => ({ key: c, label: c, value: d.needsCounts[c], color: NEEDS_TONE[c] }));
   if (w.size === "small") {
+    if (w.view !== "list" && chart === "donut") {
+      return (
+        <div className={g.colCenter}>
+          <div className={g.donutSmall}><DonutChart mini parts={pieces} format={count} center={<span className={g.donutCenter}><b>{n}</b>waiting</span>} /></div>
+          <span className={g.cap}>{kinds.slice(0, 2).join(" · ")}</span>
+        </div>
+      );
+    }
     return (
       <div className={g.col}>
         <Big label="waiting on you">{n}</Big>
-        {w.view === "list" ? <p className={g.clamp}>{d.needsEntries[0].title}</p> : <><Split parts={parts} thick /><span className={g.cap}>{kinds.slice(0, 2).join(" · ")}</span></>}
+        {w.view === "list" ? <p className={g.clamp}>{d.needsEntries[0].title}</p>
+          : chart === "bars" ? <div className={g.spark}><PartBars mini parts={pieces} format={count} /></div>
+          : <><Split parts={parts} thick /><span className={g.cap}>{kinds.slice(0, 2).join(" · ")}</span></>}
       </div>
     );
   }
@@ -265,6 +304,26 @@ function Needs({ w, d, me, open }: BodyProps) {
       <div className={g.col}>
         {w.size === "medium" ? <span className={g.cap}>{n} waiting on you</span> : <Big label="waiting on you" size="large">{n}</Big>}
         {list(rows(w.size, 2, 5))}
+      </div>
+    );
+  }
+  if (chart === "donut") {
+    return (
+      <div className={g.col}>
+        <div className={g.donutRow}>
+          <DonutChart parts={pieces} format={count} center={<span className={g.donutCenter}><b>{n}</b>waiting</span>} />
+          <PartLegend parts={pieces} />
+        </div>
+        {w.size === "large" && list(3)}
+      </div>
+    );
+  }
+  if (chart === "bars") {
+    return (
+      <div className={g.col}>
+        <Big label="waiting on you">{n}</Big>
+        <div className={g.chartGrow}><PartBars parts={pieces} format={count} /></div>
+        {w.size === "large" && list(2)}
       </div>
     );
   }
@@ -408,24 +467,49 @@ function Tasks({ w, d, now, me, open }: BodyProps) {
       <span className={s.gc}><b>{total}</b><span>Your tasks</span></span>
     </span>
   );
+  const chart = chartOf(w);
+  const stages: Part[] = [
+    { key: "todo", label: "To do", value: todo, color: BLUE.a4 },
+    { key: "doing", label: "In progress", value: inProgress, color: BLUE.a2 },
+    { key: "done", label: "Done", value: done, color: BLUE.base },
+  ];
+  const foot = <span className={d.overdueTasks ? g.capBad : g.cap}>{d.overdueTasks ? `${d.overdueTasks} overdue` : `${todo + inProgress} open`}</span>;
   if (w.size === "small") {
+    if (chart === "donut") {
+      return (
+        <div className={g.colCenter}>
+          <div className={g.donutSmall}><DonutChart mini parts={stages} format={count} center={<span className={g.donutCenter}><b>{total}</b>tasks</span>} /></div>
+          {foot}
+        </div>
+      );
+    }
+    if (chart === "bars") return <div className={g.col}><Big label="your tasks">{total}</Big><div className={g.chartGrow}><PartBars mini parts={stages} format={count} /></div>{foot}</div>;
     return (
       <div className={g.colCenter}>
         {gauge(130)}
-        <span className={d.overdueTasks ? g.capBad : g.cap}>{d.overdueTasks ? `${d.overdueTasks} overdue` : `${todo + inProgress} open`}</span>
+        {foot}
       </div>
     );
   }
   return (
     <div className={g.col}>
-      <div className={s.tasksRow}>
-        {gauge(140)}
-        <ul className={s.tl}>
-          <li><i style={{ background: BLUE.a4 }} /><b>{todo}</b><span>To do</span></li>
-          <li><i style={{ background: BLUE.a2 }} /><b>{inProgress}</b><span>In progress</span></li>
-          <li><i style={{ background: BLUE.base }} /><b>{done}</b><span>Done</span></li>
-        </ul>
-      </div>
+      {chart === "donut" ? (
+        <div className={g.donutRow}>
+          <DonutChart parts={stages} format={count} center={<span className={g.donutCenter}><b>{total}</b>your tasks</span>} />
+          <PartLegend parts={stages} />
+        </div>
+      ) : chart === "bars" ? (
+        <div className={w.size === "large" ? g.chartFixed : g.chartGrow}><PartBars parts={stages} format={count} /></div>
+      ) : (
+        <div className={s.tasksRow}>
+          {gauge(140)}
+          <ul className={s.tl}>
+            <li><i style={{ background: BLUE.a4 }} /><b>{todo}</b><span>To do</span></li>
+            <li><i style={{ background: BLUE.a2 }} /><b>{inProgress}</b><span>In progress</span></li>
+            <li><i style={{ background: BLUE.base }} /><b>{done}</b><span>Done</span></li>
+          </ul>
+        </div>
+      )}
       {w.size === "large" && (
         <div className={g.stack}>
           <span className={g.capHead}>Due next{d.overdueTasks ? <em className={g.late}> · {d.overdueTasks} overdue</em> : null}</span>
@@ -546,15 +630,22 @@ function Boards({ w, d, now, open }: BodyProps) {
         </div>
       );
     }
+    const soft = "color-mix(in srgb, var(--accent) 32%, var(--surface))";
+    const series: Point[] = [
+      { x: "late", label: "Overdue", value: late, color: late ? "var(--bad)" : soft },
+      // Only a real pile-up is marked: the heaviest day, when it has two or more.
+      ...days.map((t, i) => ({
+        x: dayKey(t),
+        label: i === 0 ? "Today" : new Date(t).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" }),
+        value: perDay[i],
+        color: heaviest > 1 && perDay[i] === heaviest ? "var(--accent)" : soft,
+      })),
+    ];
+    const short = (x: string) => (x === "late" ? "Late" : x === dayKey(now) ? "Today" : weekday(new Date(`${x}T12:00`).getTime()).slice(0, 2));
     const chart = (
-      <Bars
-        height={w.size === "large" ? 120 : 104}
-        bars={[
-          { key: "late", label: "Late", value: late, color: late ? "var(--bad)" : undefined },
-          // Only a real pile-up is marked: the heaviest day, when it has two or more.
-          ...days.map((t, i) => ({ key: dayKey(t), label: i === 0 ? "Today" : weekday(t).slice(0, 2), value: perDay[i], hl: heaviest > 1 && perDay[i] === heaviest })),
-        ]}
-      />
+      <div className={w.size === "large" ? g.chartFixed : g.chartGrow}>
+        <TrendChart data={series} kind={chartOf(w) === "line" ? "line" : "bars"} format={(n) => `${n} due`} names={{}} xTicks={series.map((p) => p.x)} xFormat={short} endDot={false} />
+      </div>
     );
     if (w.size === "medium") return chart;
     return (
@@ -613,25 +704,44 @@ function Boards({ w, d, now, open }: BodyProps) {
 
   // By priority.
   const high = groups[0].tasks.length;
-  const parts = groups.map((x) => ({ value: x.tasks.length, color: x.tone }));
+  const chart = chartOf(w);
+  const pieces: Part[] = groups.map((x) => ({ key: x.id, label: x.label, value: x.tasks.length, color: x.tone }));
+  const highLine = <span className={high ? g.capBad : g.cap}>{high} high priority</span>;
   if (w.size === "small") {
+    if (chart === "donut") {
+      return (
+        <div className={g.colCenter}>
+          <div className={g.donutSmall}><DonutChart mini parts={pieces} format={count} center={<span className={g.donutCenter}><b>{openCount}</b>open</span>} /></div>
+          {highLine}
+        </div>
+      );
+    }
     return (
       <div className={g.col}>
         <Big label="open">{openCount}</Big>
-        <Split parts={parts} thick />
-        <span className={high ? g.capBad : g.cap}>{high} high priority</span>
+        {chart === "bars" ? <div className={g.spark}><PartBars mini parts={pieces} format={count} /></div> : <StackedBar parts={pieces} format={(n) => `${n} open`} />}
+        {highLine}
       </div>
     );
   }
   return (
     <div className={g.col}>
-      <div className={g.sideBySide}>
-        <div className={g.col}>
-          <Big label="open tasks" size={w.size}>{openCount}</Big>
-          <Split parts={parts} thick />
+      {chart === "donut" ? (
+        <div className={g.donutRow}>
+          <DonutChart parts={pieces} format={(n) => `${n} open`} center={<span className={g.donutCenter}><b>{openCount}</b>open</span>} />
+          <PartLegend parts={pieces} />
         </div>
-        {legend(groups)}
-      </div>
+      ) : chart === "bars" ? (
+        <div className={w.size === "large" ? g.chartFixed : g.chartGrow}><PartBars parts={pieces} format={count} /></div>
+      ) : (
+        <div className={g.sideBySide}>
+          <div className={g.col}>
+            <Big label="open tasks" size={w.size}>{openCount}</Big>
+            <StackedBar parts={pieces} format={(n) => `${n} open`} />
+          </div>
+          {legend(groups)}
+        </div>
+      )}
       {w.size === "large" && (
         <div className={g.stack}>
           <span className={g.capHead}>Top of the list</span>
@@ -797,7 +907,15 @@ function Messages({ w, d, me }: BodyProps) {
     );
   }
   const total = d.week.reduce((n, x) => n + x.n, 0);
-  const bars = d.week.map((x, i) => ({ key: x.k, label: i === d.week.length - 1 ? "Today" : weekday(new Date(`${x.k}T12:00`).getTime()).slice(0, 2), value: x.n, hl: i === d.week.length - 1 }));
+  const kind = chartOf(w) as TrendKind;
+  const today = d.week[d.week.length - 1]?.k;
+  const soft = "color-mix(in srgb, var(--accent) 32%, var(--surface))";
+  const series: Point[] = d.week.map((x) => {
+    const t = new Date(`${x.k}T12:00`).getTime();
+    return { x: x.k, label: x.k === today ? "Today" : new Date(t).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" }), value: x.n, color: x.k === today ? "var(--accent)" : soft };
+  });
+  const short = (x: string) => (x === today ? "Today" : weekday(new Date(`${x}T12:00`).getTime()).slice(0, 2));
+  const say = (n: number) => `${n} ${n === 1 ? "message" : "messages"}`;
   const head = (
     <div className={g.bigRow}>
       <b className={g.big}>{total}</b>
@@ -805,11 +923,13 @@ function Messages({ w, d, me }: BodyProps) {
       {w.size !== "small" && <span className={g.bigLabel}>avg {(total / 7).toFixed(1)}/day</span>}
     </div>
   );
-  if (w.size === "small") return <div className={g.col}>{head}<span className={g.cap}>messages this week</span><Bars bars={bars} height={40} bare /></div>;
+  if (w.size === "small") return <div className={g.col}>{head}<span className={g.cap}>messages this week</span><div className={g.spark}><TrendChart mini data={series} kind={kind} format={say} names={{}} /></div></div>;
   return (
     <div className={g.col}>
       {head}
-      <Bars bars={bars} height={w.size === "large" ? 170 : 78} />
+      <div className={g.chartGrow}>
+        <TrendChart data={series} kind={kind} format={say} axisFormat={count} names={{}} xTicks={series.map((p) => p.x)} xFormat={short} yAxis={w.size === "large"} average={w.size === "large" ? total / 7 : undefined} />
+      </div>
       {w.size === "large" && d.busiest && (
         <p className={s.busy}><span>Busiest chat</span><span><b>{chatIdentity(d.busiest.chat, me, userById).label}</b> · {d.busiest.n}</span></p>
       )}

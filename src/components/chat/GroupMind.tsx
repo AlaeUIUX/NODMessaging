@@ -12,9 +12,10 @@ import { useChat, userById } from "@/lib/chat/store";
 import type { Attachment, Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { DragScroll } from "./Composer";
-import { IconCheck, IconEdit, IconFile, IconLink, IconPlus } from "./Icons";
+import { IconBookmark, IconCheck, IconEdit, IconFile, IconLink, IconOpen } from "./Icons";
 import { MindEditor } from "./Mind";
 import { BlockView, KIND_LABEL } from "./MindBlocks";
+import { HoldMenu, useHoldMenu } from "./MindHold";
 import { Sheet, useChatUi } from "./ui";
 import styles from "./chat.module.css";
 import gm from "./groupmind.module.css";
@@ -63,13 +64,12 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
   const { mind, update } = useMind(id);
   const editor = can(groupInfo(group), me, "editMind");
   const [shelf, setShelf] = useState<string>("all");
-  const [sheet, setSheet] = useState<React.ReactNode>(null);
+  const hold = useHoldMenu();
   const col = sharedOf(mind);
   const shelves = col?.pages.filter((p) => !p.parentId) ?? [];
   const loose = mind && col ? rootItems(mind, col) : [];
   const total = loose.length + shelves.reduce((n, p) => n + shelfItems(mind!, col!, p).length, 0);
   const shown = shelf === "all" ? shelves : shelves.filter((p) => p.id === shelf);
-  const close = () => setSheet(null);
   const title = `${group.name}’s Mind`;
   const who = chatIdentity(group, me, userById);
 
@@ -104,11 +104,24 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
     });
   };
 
-  const openItem = (b: Block) => setSheet(<ItemSheet groupId={group.id} id={b.id} onClose={close} onToast={onToast} />);
+  // Over the whole screen (not down the page), so it's right there when an item is tapped.
+  const openItem = (b: Block, picking = false) => ui.openSheet(<ItemSheet groupId={group.id} id={b.id} picking={picking} onClose={ui.closeSheet} onToast={onToast} />);
+  // Held like a message: its menu.
+  const itemMenu = (b: Block) => hold((el) => ui.openSheet(
+    <HoldMenu
+      anchor={el}
+      title={b.title}
+      onClose={ui.closeSheet}
+      actions={[
+        { id: "open", label: "Open", icon: <IconOpen />, run: () => openItem(b) },
+        { id: "save", label: "Save to my Mind", icon: <IconBookmark />, run: () => openItem(b, true) },
+      ]}
+    />,
+  ));
   const masonry = (items: Block[]) => (
     <div className={gm.masonry}>
       {items.map((b) => (
-        <div key={b.id} role="button" tabIndex={0} className={gm.item} onClick={() => openItem(b)} onKeyDown={(e) => { if (e.key === "Enter") openItem(b); }}>
+        <div key={b.id} role="button" tabIndex={0} className={gm.item} onClick={() => openItem(b)} onKeyDown={(e) => { if (e.key === "Enter") openItem(b); }} {...itemMenu(b)}>
           <BlockView block={b} shape="tile" />
         </div>
       ))}
@@ -133,7 +146,7 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
         </div>
 
         {shelves.length > 1 && (
-          <DragScroll className={gm.shelves}>
+          <DragScroll className={gm.shelves} sideWheel={false}>
             <button className={`${gm.shelf} ${shelf === "all" ? gm.shelfOn : ""}`} onClick={() => setShelf("all")}>All <em>{total}</em></button>
             {shelves.map((p) => (
               <button key={p.id} className={`${gm.shelf} ${shelf === p.id ? gm.shelfOn : ""}`} onClick={() => setShelf(p.id)}>
@@ -195,17 +208,17 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
           </div>
         </section>
       )}
-      {sheet}
     </div>
   );
 }
 
 /** One kept thing: open it, or save a copy to your own Mind. Changing it happens in Edit. */
-function ItemSheet({ groupId, id, onClose, onToast }: { groupId: string; id: string; onClose: () => void; onToast: (t: string) => void }) {
+function ItemSheet({ groupId, id, picking: startPicking, onClose, onToast }: { groupId: string; id: string; picking?: boolean; onClose: () => void; onToast: (t: string) => void }) {
   const { me } = useChat();
   const { mind } = useMind(groupMindId(groupId));
   const mine = useMind(me);
-  const [picking, setPicking] = useState(false);
+  // Opened from "Save to my Mind": straight to choosing where.
+  const [picking, setPicking] = useState(!!startPicking);
   const b = mind?.blocks[id];
   if (!b) return null;
   const saveMine = (colId: string) => {
@@ -233,7 +246,7 @@ function ItemSheet({ groupId, id, onClose, onToast }: { groupId: string; id: str
               </div>
             </>
           ) : (
-            <button className={`${styles.primaryWide} ${gm.rowBtn}`} onClick={() => setPicking(true)}><IconPlus size={16} /> Save to my Mind</button>
+            <button className={`${styles.primaryWide} ${gm.rowBtn}`} onClick={() => setPicking(true)}><IconBookmark size={16} /> Save to my Mind</button>
           )}
         </>
       )}

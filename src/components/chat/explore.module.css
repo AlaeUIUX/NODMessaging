@@ -33,7 +33,6 @@
   text-overflow: ellipsis;
 }
 /* The wide buttons stack a label over a note; these sit an icon beside their label. */
-.btn.btn { margin: 0; min-height: 44px; height: 44px; flex-direction: row; align-items: center; justify-content: center; gap: 6px; }
 .rowBtn.rowBtn { flex-direction: row; gap: 8px; }
 
 /* ---- the top pick: a collection, with its cover and two actions ---- */
@@ -66,14 +65,66 @@
 }
 .heroName { font: var(--t-title3); font-weight: var(--w-emph); letter-spacing: -.01em; color: var(--ink); }
 .heroDesc { margin: 0 0 4px; font: var(--t-subhead); color: var(--ink-2); text-wrap: pretty; }
-.heroActions { display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px; width: 100%; margin-top: 12px; }
+.heroBody { cursor: pointer; }
+.heroFoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; margin-top: 8px; }
+
+/* Add to Mind, small: a quiet pill (the hero's foot, a page's header). */
+.addPill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 13px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: var(--bg);
+  font: var(--t-footnote);
+  font-weight: var(--w-emph);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform var(--t-fast), background var(--t-mid), color var(--t-mid);
+}
+.addPill:active { transform: scale(.95); }
+.addPill:disabled { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); cursor: default; }
+.addPillBar { height: 40px; padding: 0 16px; box-shadow: var(--e2); }
+.addPillBar:disabled { background: color-mix(in srgb, var(--surface) 92%, var(--accent)); box-shadow: var(--e1); }
+.addPillQuiet { height: 32px; background: color-mix(in srgb, var(--surface) 90%, transparent); color: var(--ink-2); box-shadow: var(--e1); cursor: default; }
+
+/* Anything held for a menu: no text selection or system callout under the finger. */
+.holdable { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+/* On a card's cover: yours, or already in your Mind. */
+.badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  height: 24px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  color: var(--ink);
+  font: var(--t-caption1);
+  font-weight: var(--w-emph);
+  box-shadow: var(--e1);
+}
+.badgeOn { background: var(--accent); color: #fff; }
+.savedTag { flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px; font: var(--t-caption1); font-weight: var(--w-emph); color: var(--accent); }
+.miniSaved { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #fff; box-shadow: var(--e1); }
+.pageHint { margin-top: 4px; font: var(--t-footnote); color: var(--ink-3); text-wrap: pretty; }
 
 /* ---- collection cards: a cover with the next cards peeking above, like a stack in Mind ---- */
 
-.colGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px 10px; padding-top: 8px; }
-.colCard { position: relative; min-width: 0; }
+.colGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 10px; padding-top: 4px; }
+/* A card of its own (not just a cover on the page), so held for its menu it lifts as a whole card. */
+.colCard { position: relative; min-width: 0; padding: 14px 8px 10px; border-radius: 22px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--e1); }
 .colMain { width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 0; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .colMain:active { transform: scale(.98); }
+.colMain:focus { outline: none; }
+.colMain:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 16px; }
 .colCover {
   position: relative;
   display: block;
@@ -112,27 +163,6 @@
 .colReason { font: var(--t-caption1); color: color-mix(in srgb, var(--tone) 70%, var(--ink-2)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* the round + (and its done tick), on covers and tiles */
-.plus {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  box-shadow: var(--e1);
-  color: var(--ink);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  transition: transform var(--t-fast) var(--ease-spring), background var(--t-fast);
-}
-.plus:active { transform: scale(.88); }
-.plusDone, .plusDone:disabled { background: var(--accent); color: var(--bg); cursor: default; animation: popDone var(--t-slow) var(--ease-spring); }
-@keyframes popDone { from { transform: scale(.6); } to { transform: none; } }
 
 /* ---- things to save: a masonry of Mind tiles ---- */
 
@@ -141,12 +171,41 @@
 .item { position: relative; display: flex; flex-direction: column; gap: 4px; }
 .itemMain { cursor: pointer; border-radius: var(--r-md); }
 .itemMain:active { transform: scale(.98); }
-.itemPlus { top: 6px; right: 6px; width: 30px; height: 30px; }
-.itemReason { padding: 0 4px; font: var(--t-caption1); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Under the tile: why it's here, and Save. */
+.itemFoot { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 2px 0 4px; }
+.itemReason { flex: 1; min-width: 0; font: var(--t-caption1); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- collections one per row, and shelves that scroll a card at a time ---- */
+
+.colList { display: flex; flex-direction: column; gap: 14px; padding-top: 4px; }
+.shelf .colCover { aspect-ratio: 16 / 9; }
+.colList .colCover { aspect-ratio: 2.2 / 1; }
+.colDesc { font: var(--t-footnote); color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-wrap: pretty; }
+/* About 80% of the row is one card; the rest shows the next one, to say there's more. */
+.shelf {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 -16px;
+  padding: 4px 16px 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 16px;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+}
+.shelf::-webkit-scrollbar { display: none; }
+.shelf > * { flex: 0 0 80%; min-width: 0; scroll-snap-align: start; }
+.shelfThing > * { width: 100%; }
+/* Things keep to a collection card's height: a tall photo is cropped, not stretched down the page. */
+.shelfThing [role="button"] { max-height: 274px; overflow: hidden; border-radius: var(--r-md); }
+.shelfThing img { max-height: 200px; object-fit: cover; }
 
 /* ---- groups ---- */
 
-.rail { display: flex; gap: 10px; margin: 0 -16px; padding: 4px 16px 10px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; scroll-padding-inline: 16px; }
+/* Sideways rows move one card at a time, and glide there. */
+.rail { display: flex; gap: 10px; margin: 0 -16px; padding: 4px 16px 10px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; scroll-padding-inline: 16px; scroll-behavior: smooth; overscroll-behavior-x: contain; }
 .rail::-webkit-scrollbar { display: none; }
 .groupCard {
   flex: 0 0 214px;
@@ -181,7 +240,21 @@
 
 .groupFacts { display: flex; flex-wrap: wrap; gap: 12px; font: var(--t-footnote); color: var(--ink-2); }
 .groupFacts span { display: inline-flex; align-items: center; gap: 5px; }
-.topic { cursor: default; background: color-mix(in srgb, var(--ink) 6%, transparent); }
+/* A collection's topics: small quiet pills in its colour. */
+.topics { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 0; padding: 0; list-style: none; }
+.topic {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--tone) 13%, transparent);
+  color: color-mix(in srgb, var(--tone) 65%, var(--ink));
+  font: var(--t-footnote);
+  font-weight: var(--w-control);
+  line-height: 1;
+  white-space: nowrap;
+}
 .faces { display: flex; align-items: center; gap: 0; }
 .faces > span + span { margin-left: -8px; box-shadow: 0 0 0 2px var(--bg); border-radius: var(--r-pill); }
 .faces small { margin-left: 10px; font: var(--t-footnote); color: var(--ink-2); }
@@ -195,15 +268,14 @@
 .activityText b { color: var(--ink); font-weight: var(--w-emph); }
 .activityText small { color: var(--ink-3); font: var(--t-footnote); }
 .inline { display: inline; padding: 0; border: none; background: none; color: var(--ink); font: inherit; font-weight: var(--w-emph); cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--ink) 20%, transparent); text-underline-offset: 3px; }
-.strip { display: flex; gap: 8px; margin: 0 -16px; padding: 0 16px 4px 58px; overflow-x: auto; scrollbar-width: none; }
+.strip { display: flex; gap: 8px; margin: 0 -16px; padding: 0 16px 4px 58px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; scroll-padding-inline: 58px 16px; scroll-behavior: smooth; overscroll-behavior-x: contain; }
 .strip::-webkit-scrollbar { display: none; }
-.mini { position: relative; flex: 0 0 112px; }
+.mini { position: relative; flex: 0 0 112px; scroll-snap-align: start; }
 .miniMain { width: 112px; height: 112px; padding: 0; border: none; border-radius: 16px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--e1); cursor: pointer; display: block; }
 .miniMain img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .miniCard { position: relative; display: flex; flex-direction: column; justify-content: flex-end; gap: 3px; width: 100%; height: 100%; padding: 10px; text-align: left; font: var(--t-footnote); font-weight: var(--w-control); color: var(--ink); overflow: hidden; background: color-mix(in srgb, var(--tone) 13%, var(--surface)); }
 .miniCard i { position: absolute; left: 10px; top: 10px; font-style: normal; font-size: 18px; line-height: 1; }
 .miniCard em { font-style: normal; font: var(--t-caption2, var(--t-caption1)); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
-.miniPlus { top: 6px; right: 6px; width: 28px; height: 28px; }
 .activityGroup { display: flex; align-items: center; gap: 12px; margin-left: 42px; padding: 8px; border: none; border-radius: 18px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--e1); color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .activityGroup .groupThumb { width: 48px; height: 48px; border-radius: 12px; }
 
@@ -215,7 +287,9 @@
 /* ---- a public collection, opened ---- */
 
 .page.page { z-index: 40; background: var(--bg); }
-.pageBar { position: absolute; top: var(--inset-top); left: 12px; right: 12px; z-index: 30; display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; height: 56px; }
+.pageBar { position: absolute; top: var(--inset-top); left: 12px; right: 12px; z-index: 30; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; height: 56px; }
+.pageBar > :first-child { justify-self: start; }
+.pageBar > :last-child { justify-self: end; }
 .pageBar b { font: var(--t-headline); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; }
 .pageScroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: calc(var(--inset-top) + 60px) 16px calc(var(--inset-bottom) + 40px); }
 .pageScroll::-webkit-scrollbar { display: none; }
@@ -229,3 +303,4 @@
 .pageStack { margin-top: 22px; }
 .stackHead { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; padding: 0 4px; font: var(--t-subhead); color: var(--ink); }
 .stackHead em { font-style: normal; color: var(--ink-3); font: var(--t-footnote); }
+

@@ -48,7 +48,7 @@ function writeList(kind: "pinned" | "muted", userId: string, ids: Set<string>) {
 const TABS: { id: Tab; label: string; icon: string; w: number; h: number }[] = [
   { id: "chats", label: "Chats", icon: "/nod/chats.svg", w: 18, h: 18 },
   { id: "mind", label: "Mind", icon: "/nod/mind.svg", w: 16, h: 16 },
-  { id: "analytics", label: "Analytics", icon: "/nod/analytics.svg", w: 18, h: 18 },
+  { id: "analytics", label: "Dashboard", icon: "/nod/dashboard.svg", w: 16, h: 16 },
   { id: "explore", label: "Explore", icon: "/nod/explore.svg", w: 16, h: 16 },
 ];
 

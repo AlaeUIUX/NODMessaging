@@ -192,6 +192,59 @@ function copyOf(el: HTMLElement) {
   return c;
 }
 
+/**
+ * Hold for a menu, without dragging: a card or a tile that opens on a tap
+ * shows its menu (the way a message does) on a hold, or on a right-click.
+ * Moving first is a scroll, not a hold; the click a hold ends with isn't a tap.
+ *
+ *   const hold = useHoldMenu();
+ *   <div {...hold((el) => openMenu(el))} onClick={open}>
+ */
+export function useHoldMenu() {
+  const press = useRef<{ x: number; y: number; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const held = useRef(false);
+  useEffect(() => () => { if (press.current) clearTimeout(press.current.timer); }, []);
+  const stop = () => {
+    if (press.current) clearTimeout(press.current.timer);
+    press.current = null;
+  };
+  return (onHold: (el: HTMLElement) => void) => ({
+    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+      if (e.button !== 0) return;
+      const el = e.currentTarget;
+      held.current = false;
+      stop();
+      press.current = {
+        x: e.clientX, y: e.clientY,
+        timer: setTimeout(() => {
+          press.current = null;
+          held.current = true;
+          navigator.vibrate?.(8);
+          onHold(el);
+        }, HOLD_MS),
+      };
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      const p = press.current;
+      if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) stop();
+    },
+    onPointerUp: stop,
+    onPointerCancel: stop,
+    onPointerLeave: stop,
+    onClickCapture: (e: React.MouseEvent) => {
+      if (!held.current) return;
+      held.current = false;
+      e.stopPropagation();
+      e.preventDefault();
+    },
+    onContextMenu: (e: React.MouseEvent<HTMLElement>) => {
+      e.preventDefault();
+      stop();
+      onHold(e.currentTarget);
+    },
+  });
+}
+
 /* ===========================================================================
    The menu a hold opens
    =========================================================================== */

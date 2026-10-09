@@ -320,3 +320,4 @@
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--line), var(--e1);
 }
+.sheetChart { height: 170px; margin: 0 -6px; }

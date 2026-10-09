@@ -343,8 +343,65 @@
   -webkit-touch-callout: none;
   transition: transform var(--t-fast) var(--ease-out), opacity var(--t-mid) var(--ease-out);
 }
-.task:active { transform: scale(.98); }
-.task:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.task { display: flex; align-items: flex-start; gap: 8px; }
+.task:has(.taskMain:active) { transform: scale(.98); }
+.taskMain { flex: 1; min-width: 0; outline: none; }
+.task:has(.taskMain:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Up a group, down a group: two small round buttons on the task's right. */
+.steps { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; margin: -4px -4px -4px 0; }
+.step {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast);
+}
+.step:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.step:active { transform: scale(.88); }
+.step.stepDone:hover { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+/* Just stepped into this group: a moment of blue so the eye finds it. */
+.taskStepped { animation: stepped 1s var(--ease-out) both; }
+@keyframes stepped {
+  0% { box-shadow: 0 0 0 2px var(--accent), var(--e2); transform: scale(1.02); }
+  30% { transform: none; }
+  100% { box-shadow: 0 0 0 1px var(--line), var(--e1); }
+}
+
+/* Tighter cards, so more of the board fits. */
+.compact .task { padding: 9px 10px 9px 12px; }
+.compact .taskMeta { margin-top: 6px; }
+/* A group's expand button, beside its count: "+4 ⌄" folded, "⌃" open. */
+.colExpand {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 8px;
+  justify-content: center;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font: var(--t-caption1);
+  font-weight: var(--w-emph);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.colExpand svg { transition: transform var(--t-mid) var(--ease-out); }
+.colExpand:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.colExpand.colExpandOpen { padding: 0; background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink-2); }
+.colExpand.colExpandOpen svg { transform: rotate(180deg); }
+.colExpand:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 .task.taskSource { opacity: .3; transform: scale(.97); }
 .dropAbove::before, .dropEnd {
   border-radius: var(--r-pill);
