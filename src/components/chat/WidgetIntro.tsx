@@ -21,11 +21,11 @@ function Mini({ className, tone, name, children }: { className?: string; tone: s
   );
 }
 
-const RED = "var(--bad)";
-const AMBER = "var(--warn)";
-const BLUE = "var(--accent)";
-const SAGE = "#5B8A6B";
-const DENIM = "#3E67A6";
+const RED = "var(--prio-high)";
+const AMBER = "var(--prio-medium)";
+const BLUE = "var(--prio-low)";
+const SAGE = "var(--tone-together)";
+const DENIM = "var(--tone-work)";
 
 /** 1. A dashboard of little windows: three widgets rise in, each with its number or chart. */
 function Windows() {
@@ -97,8 +97,8 @@ function Views() {
         </span>
         <span className={`${w.pane} ${w.pane3}`}>
           <span className={w.tiles}>
-            <span><b style={{ color: AMBER }}>2</b>No one on it</span>
-            <span><b style={{ color: BLUE }}>3</b>No due date</span>
+            <span><b style={{ color: "var(--warn)" }}>2</b>No one on it</span>
+            <span><b style={{ color: "var(--chart-2)" }}>3</b>No due date</span>
           </span>
           <span className={w.paneRows}>
             <span><i style={{ background: AMBER }} />Record the demo video</span>

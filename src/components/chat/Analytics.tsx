@@ -8,7 +8,7 @@ import { useChat, userById } from "@/lib/chat/store";
 import type { Card, Chat, ChatState, Message, Task } from "@/lib/chat/types";
 import { useWidgets, WIDGETS, type Widget } from "@/lib/chat/widgets";
 import {
-  BLUE, ChecklistTrack, cumulative, DAY, daysInMonth, dummyBaseline, dummyMessages, euro, monthKey,
+  BLUE, BLUE_INK, ChecklistTrack, cumulative, DAY, daysInMonth, dummyBaseline, dummyMessages, euro, monthKey,
   monthName, people, plural, prevMonthKey, prevMonthName, Row, shortDate, shortTime, SHOWN, WEEK, type Upcoming,
 } from "./AnalyticsParts";
 import { outcome } from "./Artifacts";
@@ -233,7 +233,7 @@ export type NeedsCategory = "Votes" | "RSVP" | "Payment" | "Request";
 export const NEEDS_ACTION: Record<NeedsCategory, string> = { Votes: "Vote", RSVP: "Going", Payment: "Pay", Request: "Review" };
 const CARD_NEEDS_CATEGORY: Partial<Record<Card["type"], NeedsCategory>> = { poll: "Votes", event: "RSVP", plan: "RSVP", payment: "Payment", bill: "Payment" };
 export const NEEDS_TONE: Record<NeedsCategory, string> = { Votes: BLUE.base, RSVP: BLUE.a2, Payment: BLUE.a3, Request: BLUE.a4 };
-export const NEEDS_INK: Record<NeedsCategory, boolean> = { Votes: false, RSVP: false, Payment: true, Request: true };
+export const NEEDS_INK: Record<NeedsCategory, string> = { Votes: BLUE_INK.base, RSVP: BLUE_INK.a2, Payment: BLUE_INK.a3, Request: BLUE_INK.a4 };
 
 /** Open and untouched this long: stalled. */
 export const STALLED_AFTER = 3 * DAY;

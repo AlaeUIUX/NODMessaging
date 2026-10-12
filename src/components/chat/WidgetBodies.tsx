@@ -219,14 +219,14 @@ function Balances({ w, d, me, sheet, open }: BodyProps) {
   const labelled = w.view === "both";
   const owe = (compact?: boolean) => (
     <button className={g.balance} onClick={tap(() => sheet("owe"))}>
-      {labelled && <span className={s.balLabel}><i style={{ background: "var(--warn)" }} />You owe</span>}
+      {labelled && <span className={s.balLabel}><i style={{ background: "var(--warn-mark)" }} />You owe</span>}
       <b className={compact ? g.balSmall : g.balNum}><BigMoney cents={d.youOwe} /></b>
       {!compact && (d.oweRows.length ? <span className={g.pill}>Settle up</span> : <span className={g.cap}>All settled</span>)}
     </button>
   );
   const owed = (compact?: boolean) => (
     <button className={g.balance} onClick={tap(() => sheet("owed"))}>
-      {labelled && <span className={s.balLabel}><i style={{ background: "var(--ok)" }} />Owed to you</span>}
+      {labelled && <span className={s.balLabel}><i style={{ background: "var(--ok-mark)" }} />Owed to you</span>}
       <b className={compact ? g.balSmall : g.balNum}><BigMoney cents={d.owedToYou} /></b>
       {!compact && (d.owedByIds.size > 0 ? (
         <span className={`${s.faces} ${g.balFoot}`}>
@@ -375,7 +375,7 @@ function Polls({ w, d, now, me, open }: BodyProps) {
           {p.options.slice(0, w.size === "small" ? 1 : w.size === "medium" ? 2 : 3).map((o, i) => (
             <span key={o.label} className={g.pollOpt}>
               <span className={g.meterTop}><b>{o.label}{o.mine ? " ✓" : ""}</b><em>{pct(o.votes, p.voters)}%</em></span>
-              <span className={g.meterTrack}><i style={{ width: `${pct(o.votes, p.voters)}%`, background: i === 0 ? "var(--accent)" : "var(--ink-3)" }} /></span>
+              <span className={g.meterTrack}><i style={{ width: `${pct(o.votes, p.voters)}%`, background: i === 0 ? BLUE.base : BLUE.a3 }} /></span>
             </span>
           ))}
           {w.size !== "small" && <small className={g.cap}>{plural(p.voters, "vote")} · {p.open ? `closes ${until(p.closesAt - now)}` : "closed"}</small>}
@@ -522,7 +522,7 @@ function Tasks({ w, d, now, me, open }: BodyProps) {
   );
 }
 
-const PRIORITY_TONE = { high: "var(--bad)", medium: "var(--warn)", low: BLUE.a2, none: "var(--line-2)" } as const;
+const PRIORITY_TONE = { high: "var(--prio-high)", medium: "var(--prio-medium)", low: "var(--prio-low)", none: "var(--prio-none)" } as const;
 const priorityTone = (t: BoardTask) => PRIORITY_TONE[t.task.priority ?? "none"];
 
 export interface BoardGroup { id: string; label: string; tone: string; tasks: BoardTask[] }
@@ -545,16 +545,16 @@ export function groupBoardTasks(all: BoardTask[], view: string, now: number): Bo
       return due < now + WEEK ? "week" : "later";
     };
     return [
-      { id: "late", label: "Overdue", tone: "var(--bad)" },
-      { id: "today", label: "Today", tone: "var(--warn)" },
+      { id: "late", label: "Overdue", tone: "var(--bad-mark)" },
+      { id: "today", label: "Today", tone: "var(--warn-mark)" },
       { id: "week", label: "This week", tone: BLUE.a2 },
       { id: "later", label: "Later", tone: BLUE.a3 },
-      { id: "none", label: "No date", tone: "var(--line-2)" },
+      { id: "none", label: "No date", tone: "var(--prio-none)" },
     ].map((x) => ({ ...x, tasks: open.filter((t) => bucket(t) === x.id).sort(byDue) }));
   }
   if (view === "missing") {
     return [
-      { id: "who", label: "No one on it", tone: "var(--warn)", tasks: open.filter((t) => !t.task.assignee).sort(byDue) },
+      { id: "who", label: "No one on it", tone: "var(--warn-mark)", tasks: open.filter((t) => !t.task.assignee).sort(byDue) },
       { id: "due", label: "No due date", tone: BLUE.a2, tasks: open.filter((t) => t.task.due === null).sort((a, b) => priorityRank(a.task.priority) - priorityRank(b.task.priority)) },
     ];
   }
@@ -630,9 +630,9 @@ function Boards({ w, d, now, open }: BodyProps) {
         </div>
       );
     }
-    const soft = "color-mix(in srgb, var(--accent) 32%, var(--surface))";
+    const soft = BLUE.a4;
     const series: Point[] = [
-      { x: "late", label: "Overdue", value: late, color: late ? "var(--bad)" : soft },
+      { x: "late", label: "Overdue", value: late, color: late ? "var(--bad-mark)" : soft },
       // Only a real pile-up is marked: the heaviest day, when it has two or more.
       ...days.map((t, i) => ({
         x: dayKey(t),
@@ -909,7 +909,7 @@ function Messages({ w, d, me }: BodyProps) {
   const total = d.week.reduce((n, x) => n + x.n, 0);
   const kind = chartOf(w) as TrendKind;
   const today = d.week[d.week.length - 1]?.k;
-  const soft = "color-mix(in srgb, var(--accent) 32%, var(--surface))";
+  const soft = BLUE.a4;
   const series: Point[] = d.week.map((x) => {
     const t = new Date(`${x.k}T12:00`).getTime();
     return { x: x.k, label: x.k === today ? "Today" : new Date(t).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" }), value: x.n, color: x.k === today ? "var(--accent)" : soft };

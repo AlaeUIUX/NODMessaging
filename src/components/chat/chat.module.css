@@ -3946,24 +3946,82 @@ div.actionRow:hover { background: transparent; }
 .inkDot { width: 24px; height: 24px; }
 
 /* ==========================================================================
+   Status and data colours, app-wide: the Dashboard's charts and the same
+   states in chats (due chips, priorities, plan flags, Mind dates). Clean
+   Tailwind hues, the way shadcn/ui charts use them. Every state comes twice:
+   as text, dark enough to read on the surface, and as a mark (a dot, a bar, a
+   slice), brighter than text can be. A mark is never used for text.
+   ========================================================================== */
+
+.theme {
+  --ok: #1F8A56;
+  --ok-soft: color-mix(in srgb, #30A46C 14%, transparent);
+  --warn: #C2410C;
+  --warn-soft: color-mix(in srgb, #F97316 13%, transparent);
+  --bad: #DC2626;
+  --bad-soft: color-mix(in srgb, #EF4444 12%, transparent);
+  --ok-mark: #10B981;
+  --warn-mark: #F97316;
+  --bad-mark: #EF4444;
+
+  /* Priority: high and medium are the bad and warn marks, low a calm blue, none recedes. */
+  --prio-high: var(--bad-mark);
+  --prio-medium: var(--warn-mark);
+  --prio-low: #3B82F6;
+  --prio-low-ink: #1D4ED8;
+  --prio-none: #D6D3D1;
+
+  /* One blue in four steps, 1 the strongest: stages, needs-you kinds, anything ranked.
+     Each has the ink that reads on it. */
+  --chart-1: var(--accent);
+  --chart-2: #2563EB;
+  --chart-3: #60A5FA;
+  --chart-4: #BFDBFE;
+  --chart-1-ink: #fff;
+  --chart-2-ink: #fff;
+  --chart-3-ink: #172554;
+  --chart-4-ink: #172554;
+
+  /* The Dashboard's widget groups (Money is ink). */
+  --tone-work: #2563EB;
+  --tone-together: #0D9488;
+  --tone-time: #7C3AED;
+}
+.theme[data-theme="dark"] {
+  --ok: #4CC38A;
+  --warn: #FB923C;
+  --warn-soft: color-mix(in srgb, #F97316 18%, transparent);
+  --bad: #F87171;
+  --bad-soft: color-mix(in srgb, #EF4444 18%, transparent);
+  --ok-mark: #34D399;
+  --warn-mark: #FB923C;
+  --bad-mark: #F87171;
+  --prio-low: #60A5FA;
+  --prio-low-ink: #93C5FD;
+  --prio-none: #44403C;
+  /* On a dark surface the light end stands out, so the scale runs the other way. */
+  --chart-2: #3B82F6;
+  --chart-3: #1D4ED8;
+  --chart-4: #1E3A8A;
+  --chart-1-ink: #0C1A3D;
+  --chart-2-ink: #fff;
+  --chart-3-ink: #fff;
+  --chart-4-ink: #DBEAFE;
+  --tone-work: #3B82F6;
+  --tone-together: #14B8A6;
+  --tone-time: #8B5CF6;
+}
+
+/* ==========================================================================
    Mind — pages, sections, blocks. Built from the chat app's parts: the same
    type ramp, radius scale, durations, cards and sheets.
    ========================================================================== */
 
 .theme {
   --mb-shadow: 0 0 0 1px var(--line), var(--e2);
-  --ok: #1F8A56;
-  --ok-soft: color-mix(in srgb, #30A46C 14%, transparent);
-  --warn: #8A6212;
-  --warn-soft: color-mix(in srgb, #C99432 18%, transparent);
-  --bad: #C13338;
-  --bad-soft: color-mix(in srgb, #E5484D 14%, transparent);
 }
 .theme[data-theme="dark"] {
   --mb-shadow: var(--bubble-rim), var(--e2);
-  --ok: #4CC38A;
-  --warn: #E2B35A;
-  --bad: #FF7A72;
 }
 
 .mindStack { display: grid; gap: 14px; padding-top: 6px; }

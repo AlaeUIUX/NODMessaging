@@ -172,9 +172,10 @@ export function ProjectBuilder({ onSend, onClose }: { onSend: Send; onClose: () 
    The card in the thread
 --------------------------------------------------------------------------- */
 
-/** Column colours step up from a faint grey to ink; the done column is the accent. */
+/** Column colours climb the Dashboard's blue scale: the first column its lightest step, the done column its
+ * strongest, the ones between from step 3 to step 2 (a three-column board reads like the Dashboard's stages). */
 const shade = (i: number, n: number) =>
-  i === n - 1 ? "var(--accent)" : `color-mix(in srgb, var(--ink) ${Math.round(18 + (i / Math.max(1, n - 2)) * 40)}%, transparent)`;
+  i === n - 1 ? "var(--chart-1)" : i === 0 ? "var(--chart-4)" : `color-mix(in srgb, var(--chart-2) ${Math.round((i / Math.max(1, n - 2)) * 100)}%, var(--chart-3))`;
 
 function movedLabel(ms: number) {
   return ms < 60_000 ? "just now" : `${relative(ms)} ago`;

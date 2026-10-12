@@ -22,8 +22,10 @@ export const DAY = 86_400_000;
 export const WEEK = 7 * DAY;
 export const SHOWN = 2;
 
-/** The mockup's own blue scale — kept as literal hex (not design-system tokens) since it's one approved, specific palette, same shades for Needs-you's blocks and the Tasks gauge. */
-export const BLUE = { base: "#00359E", a2: "#4A6FD6", a3: "#9DB2EC", a4: "#D5DEF6" };
+/** The dashboard's blue scale, strongest first: Needs-you's blocks, the Tasks gauge, board stages. Tokens (chat.module.css), so dark mode gets its own steps. */
+export const BLUE = { base: "var(--chart-1)", a2: "var(--chart-2)", a3: "var(--chart-3)", a4: "var(--chart-4)" };
+/** What reads on each step of the scale. */
+export const BLUE_INK = { base: "var(--chart-1-ink)", a2: "var(--chart-2-ink)", a3: "var(--chart-3-ink)", a4: "var(--chart-4-ink)" };
 
 export const monthKey = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${d.getMonth()}`; };
 export const prevMonthKey = (t: number) => { const d = new Date(t); d.setMonth(d.getMonth() - 1); return monthKey(d.getTime()); };
@@ -188,12 +190,12 @@ export function ChecklistTrack({ done, total }: { done: number; total: number })
 }
 
 /** The needs-you breakdown: a proportional-width bar, one block per category. */
-export function NeedsBlocks({ blocks }: { blocks: { label: string; value: number; color: string; ink?: boolean }[] }) {
+export function NeedsBlocks({ blocks }: { blocks: { label: string; value: number; color: string; ink: string }[] }) {
   return (
     <div className={s.blocks}>
       {blocks.filter((b) => b.value > 0).map((b) => (
         <div key={b.label} style={{ flex: b.value }}>
-          <i style={{ background: b.color, color: b.ink ? "var(--ink)" : "#fff" }}>{b.value}</i>
+          <i style={{ background: b.color, color: b.ink }}>{b.value}</i>
           <span>{b.label}</span>
         </div>
       ))}

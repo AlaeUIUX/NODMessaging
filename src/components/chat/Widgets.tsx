@@ -42,10 +42,10 @@ export const KIND_ICON: Record<WidgetKind, (size: number) => ReactNode> = {
   messages: (n) => <IconMessage size={n} />,
 };
 
-/** Each group's colour: the add sheet's tiles, and the icon in a widget's corner. */
-const GROUP_TONE: Record<string, keyof typeof TONES> = { Money: "graphite", Work: "denim", Together: "sage", Time: "ochre" };
+/** Each group's colour: the add sheet's tiles, and the icon in a widget's corner (tokens in chat.module.css). */
+const GROUP_TONE: Record<string, string> = { Money: TONES.graphite, Work: "var(--tone-work)", Together: "var(--tone-together)", Time: "var(--tone-time)" };
 const groupOf = (k: WidgetKind) => WIDGET_GROUPS.find((x) => x.kinds.includes(k))!.title;
-const toneOf = (k: WidgetKind) => (groupOf(k) === "Money" ? "var(--ink)" : TONES[GROUP_TONE[groupOf(k)]]);
+const toneOf = (k: WidgetKind) => (groupOf(k) === "Money" ? "var(--ink)" : GROUP_TONE[groupOf(k)]);
 
 /** A widget's name: its board's for a one-board widget, the side for a one-sided balance, else its kind's. */
 export function widgetTitle(w: Widget, boards: BoardSummary[]) {
@@ -549,7 +549,7 @@ export function AddWidgetSheet({ render, boards, intro, onAdd, onStarter, onClos
               <div className={styles.addGrid}>
                 {grp.kinds.map((k, i) => (
                   <button key={k} className={styles.addTile} style={{ ["--i" as string]: gi * 3 + i }} onClick={() => setDraft(newWidget(k))}>
-                    <span className={styles.addIcon} style={{ background: TONES[GROUP_TONE[grp.title]] }}>{KIND_ICON[k](24)}</span>
+                    <span className={styles.addIcon} style={{ background: GROUP_TONE[grp.title] }}>{KIND_ICON[k](24)}</span>
                     {WIDGETS[k].label}
                   </button>
                 ))}
