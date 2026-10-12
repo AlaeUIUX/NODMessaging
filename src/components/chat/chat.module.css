@@ -4327,7 +4327,8 @@ figure.mb { margin: 0; }
 .mbk_image.mb_row figcaption, .mbk_image.mb_detail figcaption { display: flex; flex-direction: column; gap: 2px; padding: 0; min-width: 0; }
 .mbk_image figcaption b { font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); }
 .mbk_image figcaption small { font: var(--t-footnote); color: var(--ink-3); }
-.mbk_image.mb_detail { gap: 12px; background: none; box-shadow: none; }
+/* In detail the card itself is invisible: only the photo is rounded, and nothing under it is clipped (the caption sat on the clipped corner). */
+.mbk_image.mb_detail { gap: 12px; background: none; box-shadow: none; overflow: visible; border-radius: 0; }
 .mbk_image.mb_detail img { border-radius: var(--r-md); max-height: 320px; }
 
 /* palette */
@@ -4502,6 +4503,40 @@ button.mindPickOn { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ink) !impor
 .mbHabitBtn:active { transform: scale(.95); }
 .mbHabitBtn.mbHabitDone { background: var(--ok-soft); color: var(--ok); }
 .mbOpen { width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); display: flex; align-items: center; justify-content: center; text-decoration: none !important; }
+
+/* videos: the real still under the play button; in detail, the player */
+.mbThumb { overflow: hidden; }
+.mbThumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.mbThumb .mbPlay { position: relative; }
+.mbThumb em { z-index: 1; }
+/* A row's still is too small for both the play button and the length. */
+.mb_row .mbThumb em { display: none; }
+a.mbThumb { color: inherit; text-decoration: none; }
+.mb_detail .mbPlay { width: 52px; height: 52px; }
+.mbPlayBtn { width: 100%; padding: 0; border: none; font: inherit; cursor: pointer; }
+.mbPlayBtn:active .mbPlay { transform: scale(.92); }
+.mbPlay { transition: transform var(--t-fast); }
+.mbPlayer { background: #000; }
+.mbPlayer iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+/* books: a real cover keeps the spine shading the drawn ones have */
+.mbCover.mbCoverArt { overflow: hidden; }
+.mbCoverArt img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.mbCoverArt::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(90deg, rgba(0, 0, 0, .2) 0 4px, rgba(255, 255, 255, .16) 4px 5px, transparent 5px 92%, rgba(0, 0, 0, .06)); box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .12); pointer-events: none; }
+.mbk_book.mb_detail { align-items: center; text-align: center; background: none; }
+.mbk_book.mb_detail .mbText { align-items: center; }
+/* The sheet under a book's detail has the shelf switch; the pill would say it twice. */
+.mbk_book.mb_detail .mbShelf { display: none; }
+.mbk_book.mb_detail .mbText small { white-space: normal; }
+.mbFacts { font-variant-numeric: tabular-nums; }
+.mbBlurb { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; font: var(--t-footnote); color: var(--ink-2); white-space: pre-line; }
+.mbBlurbShut { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.mbBlurb button { padding: 0; border: none; background: none; color: var(--accent); font: var(--t-footnote); font-weight: var(--w-emph); cursor: pointer; }
+
+/* palettes, in detail: every colour's code on it */
+.mbSwatches i { display: flex; align-items: flex-end; justify-content: center; font-style: normal; }
+.mb_detail .mbSwatches { height: 120px; }
+.mb_detail .mbSwatches small { padding-bottom: 8px; font: var(--t-caption2); font-weight: var(--w-emph); letter-spacing: .04em; opacity: .85; }
 
 /* chat toast with actions (Save to Mind) */
 .toast.toastActions { height: auto; min-height: 46px; padding: 6px 6px 6px 14px; gap: 8px; white-space: nowrap; pointer-events: auto; }

@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { initials } from "@/lib/chat/avatar";
 import { emojify } from "@/lib/chat/emoji";
+import { embedUrl, hostOf, parseVideo, videoProvider, type VideoRef } from "@/lib/chat/links";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { daysUntil, isPast, lastSevenDays, todayKey, type Block } from "@/lib/chat/mind";
+import { colorName, inkOn } from "@/lib/chat/palette";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Message } from "@/lib/chat/types";
 import { INKS, outcome, pathOf } from "./Artifacts";
@@ -45,7 +47,13 @@ export function relDay(ts: number) {
   return days > 0 ? `in ${days} days` : `${-days} days ago`;
 }
 
-export function BlockView({ block, shape, onToggle }: { block: Block; shape: BlockShape; onToggle?: () => void }) {
+export function BlockView({ block, shape, onToggle, autoPlay }: {
+  block: Block;
+  shape: BlockShape;
+  onToggle?: () => void;
+  /** Videos, in detail: start playing straight away (it was tapped to be watched). */
+  autoPlay?: boolean;
+}) {
   const cls = `${styles.mb} ${styles[`mb_${shape}`]} ${styles[`mbk_${block.kind}`] ?? ""}`;
   switch (block.kind) {
     case "book": return <BookBlock block={block} shape={shape} cls={cls} />;
@@ -58,15 +66,7 @@ export function BlockView({ block, shape, onToggle }: { block: Block; shape: Blo
         </span>
       </div>
     );
-    case "video": return (
-      <div className={cls}>
-        <span className={styles.mbThumb} style={{ ["--c" as string]: toneFor(block.title) }}>
-          <span className={styles.mbPlay}><IconPlay size={shape === "row" ? 12 : 16} /></span>
-          {block.duration && <em>{block.duration}</em>}
-        </span>
-        <span className={styles.mbText}><b>{block.title}</b><small>{block.source}</small></span>
-      </div>
-    );
+    case "video": return <VideoBlock block={block} shape={shape} cls={cls} autoPlay={autoPlay} />;
     case "quote": return (
       <figure className={cls}>
         <blockquote>{block.title}</blockquote>
@@ -108,8 +108,14 @@ export function BlockView({ block, shape, onToggle }: { block: Block; shape: Blo
     );
     case "palette": return (
       <div className={cls}>
-        <span className={styles.mbSwatches}>{block.colors?.map((c) => <i key={c} style={{ background: c }} title={c} />)}</span>
-        <span className={styles.mbText}><b>{block.title}</b>{shape === "detail" && <small>{block.colors?.join(" · ")}</small>}</span>
+        <span className={styles.mbSwatches}>
+          {block.colors?.map((c, i) => (
+            <i key={`${i}${c}`} style={{ background: c, color: inkOn(c) }} title={`${colorName(c)} ${c}`}>
+              {shape === "detail" && <small>{c.replace("#", "")}</small>}
+            </i>
+          ))}
+        </span>
+        <span className={styles.mbText}><b>{block.title}</b>{shape === "detail" && <small>{block.colors?.map(colorName).join(" · ")}</small>}</span>
       </div>
     );
     case "file": return (
@@ -176,20 +182,116 @@ function FileLink({ block }: { block: Block }) {
   );
 }
 
+/** A book's cover: the real one when the catalogue had it, else one drawn from its title. */
 function BookBlock({ block, shape, cls }: { block: Block; shape: BlockShape; cls: string }) {
   const label = block.shelf === "reading" ? "Reading" : block.shelf === "read" ? "Finished" : "Want to read";
+  const shelf = <span className={`${styles.mbShelf} ${block.shelf === "reading" ? styles.mbShelfOn : ""}`}>{label}</span>;
+  // The drawn cover stays underneath a real one: it shows while the picture loads, and if it never does.
+  const cover = (
+    <span className={`${styles.mbCover} ${block.image ? styles.mbCoverArt : ""}`} style={{ ["--c" as string]: toneFor(block.title) }}>
+      <b>{block.title}</b>
+      {shape !== "row" && <small>{block.source}</small>}
+      {block.image && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={block.image} alt={`${block.title}, the cover`} loading="lazy" draggable={false} onError={(e) => { e.currentTarget.hidden = true; }} />
+      )}
+    </span>
+  );
+  if (shape === "detail") {
+    const facts = [block.year, block.pages ? `${block.pages} pages` : "", block.isbn ? `ISBN ${block.isbn}` : ""].filter(Boolean).join(" · ");
+    return (
+      <div className={cls}>
+        {cover}
+        <span className={styles.mbText}>
+          <b>{block.title}</b>
+          {block.source && <small>{block.source}</small>}
+          {facts && <small className={styles.mbFacts}>{facts}</small>}
+          {shelf}
+        </span>
+        {block.body && <Blurb text={block.body} />}
+      </div>
+    );
+  }
   return (
     <div className={cls}>
-      <span className={styles.mbCover} style={{ ["--c" as string]: toneFor(block.title) }}>
-        <b>{block.title}</b>
-        {shape !== "row" && <small>{block.source}</small>}
-      </span>
+      {cover}
       <span className={styles.mbText}>
         {shape === "row" && <b>{block.title}</b>}
         {shape === "row" && <small>{block.source}</small>}
-        <span className={`${styles.mbShelf} ${block.shelf === "reading" ? styles.mbShelfOn : ""}`}>{label}</span>
+        {shelf}
       </span>
     </div>
+  );
+}
+
+/** A long description, a few lines of it until More. */
+function Blurb({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 240;
+  return (
+    <span className={styles.mbBlurb}>
+      <span className={long && !open ? styles.mbBlurbShut : undefined}>{text}</span>
+      {long && (
+        <button type="button" onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}>{open ? "Less" : "More"}</button>
+      )}
+    </span>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+   Videos — a still with a play button; in detail, the player itself
+--------------------------------------------------------------------------- */
+
+function VideoBlock({ block, shape, cls, autoPlay }: { block: Block; shape: BlockShape; cls: string; autoPlay?: boolean }) {
+  const video = block.url ? parseVideo(block.url) : null;
+  const site = video ? videoProvider(video) : block.url ? hostOf(block.url) : "";
+  const by = [block.source, site].filter((x, i, all) => x && all.indexOf(x) === i).join(" · ");
+  const still = (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {block.image && <img src={block.image} alt="" loading="lazy" draggable={false} />}
+      <span className={styles.mbPlay}><IconPlay size={shape === "row" ? 12 : shape === "detail" ? 20 : 16} /></span>
+      {block.duration && <em>{block.duration}</em>}
+    </>
+  );
+  return (
+    <div className={cls}>
+      {shape === "detail" && video ? (
+        <VideoPlayer key={video.id} video={video} title={block.title} autoPlay={!!autoPlay}>{still}</VideoPlayer>
+      ) : shape === "detail" && block.url ? (
+        // Not a video NOD can play here: the still opens it where it lives.
+        <a className={styles.mbThumb} style={{ ["--c" as string]: toneFor(block.title) }} href={block.url} target="_blank" rel="noopener noreferrer" aria-label={`Watch ${block.title} on ${site}`}>{still}</a>
+      ) : (
+        <span className={styles.mbThumb} style={{ ["--c" as string]: toneFor(block.title) }}>{still}</span>
+      )}
+      <span className={styles.mbText}><b>{block.title}</b>{by && <small>{by}</small>}</span>
+    </div>
+  );
+}
+
+/**
+ * YouTube or Vimeo, playing right here. Tapping a video in Mind opens it
+ * already playing; elsewhere (Explore, a group) the still waits for a tap.
+ */
+function VideoPlayer({ video, title, autoPlay, children }: { video: VideoRef; title: string; autoPlay: boolean; children: React.ReactNode }) {
+  const [playing, setPlaying] = useState(autoPlay);
+  if (playing) {
+    return (
+      <span className={`${styles.mbThumb} ${styles.mbPlayer}`}>
+        {/* YouTube refuses embeds that send no referrer (its "error 153"), so the origin goes along. */}
+        <iframe
+          src={embedUrl(video, true)}
+          title={title}
+          allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+          referrerPolicy="strict-origin-when-cross-origin"
+        />
+      </span>
+    );
+  }
+  return (
+    <button type="button" className={`${styles.mbThumb} ${styles.mbPlayBtn}`} style={{ ["--c" as string]: toneFor(title) }} onClick={(e) => { e.stopPropagation(); setPlaying(true); }} aria-label={`Play ${title}`}>
+      {children}
+    </button>
   );
 }
 

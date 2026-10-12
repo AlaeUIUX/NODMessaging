@@ -25,9 +25,12 @@ export interface Block {
   id: string;
   kind: BlockKind;
   title: string;
+  /** Notes: the text. Quotes: who said it. Books: what the book is about. */
   body?: string;
   url?: string;
+  /** Links: the site. Videos: the channel. Books: the author. */
   source?: string;
+  /** A picture: the image itself, a book's cover, a video's still. */
   image?: string;
   /** Uploaded image or file, bytes in IndexedDB (see lib/chat/media). */
   attachment?: Attachment;
@@ -49,6 +52,10 @@ export interface Block {
   at?: number;
   /** Habits: the days it was done (YYYY-MM-DD). */
   days?: string[];
+  /** Books, as the catalogue knows them. */
+  isbn?: string;
+  year?: number;
+  pages?: number;
   ref?: { chatId: string; messageId: string };
   note?: string;
 }
@@ -176,6 +183,13 @@ function build(collections: SeedCollection[], current: string | null): Mind {
 }
 
 const photo = (id: string, w = 700) => `https://images.unsplash.com/${id}?w=${w}&q=70&fm=jpg`;
+/** A cover from Apple Books' image server, at the size Mind asks for (see /api/books). */
+const appleCover = (path: string) => `https://is1-ssl.mzstatic.com/image/thumb/${path}/600x600bb.jpg`;
+/** A YouTube video as Mind keeps it once its link has been read. */
+const youtube = (id: string, title: string, channel: string, duration: string, tags?: string[]): Item => ({
+  kind: "video", title, source: channel, duration, tags,
+  url: `https://www.youtube.com/watch?v=${id}`, image: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+});
 const card = (front: string, back: string, due = false, tags: string[] = []): Item => ({ kind: "flashcard", title: front, back, due, tags });
 const one = (items: Item[]) => [{ title: "", emoji: "", items }];
 
@@ -221,9 +235,21 @@ function alaeMind(): Mind {
           title: "Grammar", emoji: "📚", view: "shelf", views: ["shelf", "list"], defaultKind: "link",
           sections: [
             { title: "Books", emoji: "📚", items: [
-              { kind: "book", title: "Hammer's German Grammar and Usage", source: "Martin Durrell", shelf: "reading" },
-              { kind: "book", title: "Grammatik aktiv A1–B1", source: "Cornelsen", shelf: "reading" },
-              { kind: "book", title: "Schaum's Outline of German Grammar", source: "Elke Gschossmann-Hendershot", shelf: "want" },
+              {
+                kind: "book", title: "Hammer's German Grammar and Usage", source: "Martin Durrell", shelf: "reading", year: 2002, pages: 616,
+                image: appleCover("Publication115/v4/1a/06/77/1a0677dd-d134-82f9-a72e-bc28c8448424/9780429620201.jpg"),
+                url: "https://books.apple.com/us/book/hammers-german-grammar-and-usage/id1569162093",
+              },
+              {
+                kind: "book", title: "Grammatik aktiv A1–B1", source: "Friederike Jin", shelf: "reading", year: 2013, pages: 256,
+                image: appleCover("Publication116/v4/9a/e0/f4/9ae0f466-952e-1289-a9ae-d34749422ba3/1039550007.jpg"),
+                url: "https://books.apple.com/us/book/grammatik-aktiv-deutsch-als-fremdsprache-2-aktualisierte/id6448269689",
+              },
+              {
+                kind: "book", title: "Schaum's Outline of German Grammar", source: "Elke Gschossmann-Hendershot", shelf: "want", year: 1975, pages: 244,
+                image: appleCover("Publication/v4/c7/b0/38/c7b038ef-6ce3-4369-f54c-7c9dbc249a92/9780071823357.jpg"),
+                url: "https://books.apple.com/us/book/schaums-outline-of-german-grammar/id795267059",
+              },
             ] },
             { title: "Links", emoji: "🔗", items: [
               { kind: "link", title: "Dative or accusative? The only chart you need", source: "learngerman.dw.com", url: "https://learngerman.dw.com", tags: ["cases"] },
@@ -234,8 +260,8 @@ function alaeMind(): Mind {
         {
           title: "Listening", emoji: "🎧", view: "shelf", views: ["shelf", "list"], defaultKind: "video",
           sections: one([
-            { kind: "video", title: "German cases in 12 minutes", source: "Learn German with Anja", duration: "12:04", tags: ["cases"] },
-            { kind: "video", title: "Street interviews: what do you do after work?", source: "Easy German", duration: "18:32" },
+            youtube("8VowGvnRU_s", "Understand the GERMAN CASES - Accusative, Dative, Nominative, Genitive", "Learn German with Anja", "16:42", ["cases"]),
+            youtube("g_h1DtGIAfQ", "Do Germans Like to Work? | Easy German 636", "Easy German", "13:58"),
           ]),
         },
       ],
@@ -509,6 +535,18 @@ export function dropDraft(id: string) {
 /** Every person's Mind on this device, by whose it is (not group Minds, not copies being edited). */
 export function peopleMinds(): [string, Mind][] {
   return Object.entries(load()).filter(([id, m]) => !id.startsWith("draft:") && !id.startsWith("group:") && (m as Mind)?.version === 4) as [string, Mind][];
+}
+
+/**
+ * Fills in an item after the fact (a title looked up from its link, a book's
+ * cover), if it's still there. `fn` sees the item as it is now and returns
+ * what to change, or null. A Mind that's gone (a closed editor's copy) is
+ * left alone rather than made again.
+ */
+export function amendBlock(storeId: string, blockId: string, fn: (b: Block) => Partial<Block> | null) {
+  const b = (load(true)[storeId] as Mind | undefined)?.blocks?.[blockId];
+  const patch = b ? fn(b) : null;
+  if (patch) updateMind(storeId, (m) => (m.blocks[blockId] ? patchBlock(m, blockId, patch) : m));
 }
 
 export function useMind(userId: string) {

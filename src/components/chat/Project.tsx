@@ -9,6 +9,7 @@ import { newProject, newTask, parseDue, parseTaskCommand, PRIORITIES, projectsOf
 import { useChat, userById } from "@/lib/chat/store";
 import type { Card, Chat, Message, ProjectCard, Task, User } from "@/lib/chat/types";
 import Avatar from "./Avatar";
+import { DateField } from "./DatePicker";
 import { IconArrowDown, IconArrowUp, IconBack, IconBoard, IconCheck, IconChevron, IconChevronDown, IconClock, IconEdit, IconLink, IconMore, IconPlus, IconTrash } from "./Icons";
 import StatusBar from "./StatusBar";
 import { relative, Sheet, smooth, uid, useChatUi, useDialog, useNow } from "./ui";
@@ -77,11 +78,6 @@ function AssigneePicker({ people, me, value, onChange }: { people: User[]; me: s
   );
 }
 
-const toDateInput = (t: number) => {
-  const d = new Date(t);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
-
 function DuePicker({ value, onChange }: { value: number | null; onChange: (due: number | null) => void }) {
   // Worked out on each render, so "Tomorrow" stays right across midnight.
   const presets = [
@@ -101,17 +97,7 @@ function DuePicker({ value, onChange }: { value: number | null; onChange: (due: 
         ))}
         {value !== null && <button className={`${styles.choice} ${s.clear}`} onClick={() => onChange(null)}>Clear</button>}
       </div>
-      <label className={`${s.dateField} ${value !== null && !matched ? s.dateFieldOn : ""}`}>
-        <span>On a date</span>
-        <input
-          type="date"
-          value={value !== null ? toDateInput(value) : ""}
-          onChange={(e) => {
-            const [y, m, d] = e.target.value.split("-").map(Number);
-            onChange(y ? endOfDay(new Date(y, m - 1, d).getTime()) : null);
-          }}
-        />
-      </label>
+      <DateField label="On a date" value={value} start={presets[0].at ?? undefined} set={value !== null && !matched} onChange={(at) => onChange(endOfDay(at))} />
     </>
   );
 }

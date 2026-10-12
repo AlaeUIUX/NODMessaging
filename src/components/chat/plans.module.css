@@ -4,27 +4,15 @@
    ========================================================================== */
 
 /* ---- builder ---- */
+/* "Other day": opens the calendar (DatePicker). */
 .dateChip {
-  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 0 14px 0 12px;
-  overflow: hidden;
 }
 .dateChip svg { flex-shrink: 0; opacity: .7; }
-/* The native field sits on top, invisible, so a tap opens the system picker. */
-.dateChip input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  border: none;
-  font-size: 16px;
-  cursor: pointer;
-}
-.dateChip:focus-within { box-shadow: 0 0 0 2px var(--accent); }
+.dateChip:focus-visible { box-shadow: 0 0 0 2px var(--accent); outline: none; }
 
 .lines {
   width: 100%;

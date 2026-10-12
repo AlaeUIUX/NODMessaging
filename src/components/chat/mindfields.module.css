@@ -1,0 +1,379 @@
+/* ==========================================================================
+   Mind's add sheet: a field you can paste into, the photo and file pickers,
+   the date pill and its calendar, the book search and the palette maker.
+   Tokens come from the app theme (chat.module.css).
+   ========================================================================== */
+
+/* ---- a field with Paste at the end ---- */
+.fieldWrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; flex-shrink: 0; }
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 52px;
+  padding: 0 8px 0 14px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  transition: box-shadow var(--t-fast);
+}
+.field:focus-within { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 16%, transparent); }
+.lead { display: flex; flex-shrink: 0; color: var(--ink-3); }
+/* width 0 + flex 1: the field's own width decides, never the input's built-in size. */
+.input { flex: 1; width: 0; min-width: 0; height: 40px; padding: 0; border: none; outline: none; background: transparent; color: var(--ink); font: var(--t-body); text-overflow: ellipsis; }
+.input::placeholder { color: var(--ink-3); }
+.input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
+.paste {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 13px 0 10px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: var(--bg);
+  font: var(--t-footnote);
+  font-weight: var(--w-emph);
+  cursor: pointer;
+  transition: transform var(--t-fast), opacity var(--t-fast);
+}
+.paste:active { transform: scale(.94); }
+.clear {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  margin-right: 4px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.hint, .note { margin: 0 4px; font: var(--t-footnote); color: var(--ink-3); text-wrap: pretty; }
+.hint { color: var(--ink-2); }
+.spin {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  border-top-color: var(--ink-2);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Phones say "opens your library"; computers mention drop and paste. */
+.onPointer { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .onTouch { display: none; }
+  .onPointer { display: inline; }
+}
+
+/* ---- photos and files ---- */
+.pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  min-height: 140px;
+  padding: 18px 16px;
+  border: none;
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+  outline: 1.5px dashed color-mix(in srgb, var(--ink) 20%, transparent);
+  outline-offset: -1.5px;
+  color: var(--ink);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--t-mid), outline-color var(--t-mid), transform var(--t-fast);
+}
+.pick:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.pick:active { transform: scale(.985); }
+.pick.pickOver { background: var(--accent-soft); outline-color: var(--accent); }
+.pickIcon {
+  width: 50px;
+  height: 50px;
+  margin-bottom: 8px;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--e2);
+  transition: transform var(--t-mid) var(--ease-spring);
+}
+.pick:active .pickIcon { transform: scale(.9); }
+.pick b { font: var(--t-headline); }
+.pick small { font: var(--t-footnote); color: var(--ink-3); }
+
+.photo {
+  position: relative;
+  flex-shrink: 0;
+  min-height: 160px;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--fill);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.photo img { display: block; width: 100%; max-height: 280px; object-fit: cover; animation: fadeIn var(--t-mid) var(--ease-out) both; }
+@keyframes fadeIn { from { opacity: 0; } }
+.photoTools { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; }
+.pill, .round {
+  flex-shrink: 0;
+  height: 32px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  color: var(--ink);
+  box-shadow: var(--e1), 0 0 0 .5px var(--glass-edge);
+  cursor: pointer;
+  transition: transform var(--t-fast);
+}
+.pill { display: inline-flex; align-items: center; gap: 5px; padding: 0 12px; font: var(--t-footnote); font-weight: var(--w-emph); }
+.round { width: 32px; display: flex; align-items: center; justify-content: center; }
+.pill:active, .round:active { transform: scale(.94); }
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 12px 12px 12px 14px;
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.fileRow .pill, .fileRow .round { background: var(--surface); }
+.fileText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fileText b { font: var(--t-subhead); font-weight: var(--w-emph); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fileText small { font: var(--t-footnote); color: var(--ink-3); }
+
+/* ---- a video, before it's added ---- */
+.video {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: linear-gradient(135deg, #44403C, #1C1917);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.video img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: fadeIn var(--t-mid) var(--ease-out) both; }
+.play {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, .92);
+  color: #1C1917;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--e2);
+}
+.video i, .video em {
+  position: absolute;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, .58);
+  color: #fff;
+  font: var(--t-caption1);
+  font-weight: var(--w-emph);
+  font-style: normal;
+}
+.video i { left: 8px; top: 8px; }
+.video em { right: 8px; bottom: 8px; font-variant-numeric: tabular-nums; }
+
+/* ---- books ---- */
+.books { display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+.bookList { display: flex; flex-direction: column; gap: 2px; }
+.bookRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 12px 8px 8px;
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast), box-shadow var(--t-fast);
+  animation: fadeIn var(--t-mid) var(--ease-out) both;
+}
+.bookRow:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.bookRow.bookOn { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 45%, transparent); }
+.cover {
+  position: relative;
+  width: 44px;
+  aspect-ratio: 2 / 3;
+  flex-shrink: 0;
+  border-radius: 3px 6px 6px 3px;
+  overflow: hidden;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--c) 78%, #fff), var(--c));
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--e1), 0 0 0 .5px rgba(28, 25, 23, .1);
+}
+.cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cover b { font: var(--t-headline); }
+.bookText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.bookText b { font: var(--t-subhead); font-weight: var(--w-emph); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.bookText small { font: var(--t-footnote); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bookText em { font: var(--t-caption1); font-style: normal; color: var(--ink-3); }
+.check {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  box-shadow: inset 0 0 0 1.5px var(--line-2);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--t-fast), box-shadow var(--t-fast);
+}
+.check.checkOn { background: var(--accent); box-shadow: none; }
+.manual { align-self: flex-start; margin: 0 4px; padding: 4px 0; border: none; background: none; color: var(--accent); font: var(--t-subhead); font-weight: var(--w-control); cursor: pointer; }
+.inlineLink { padding: 0; border: none; background: none; color: var(--accent); font: inherit; font-weight: var(--w-control); cursor: pointer; }
+
+/* ---- palettes, the Coolors way ---- */
+.palette { display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+.swatches {
+  display: flex;
+  flex-direction: column;
+  height: 300px;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--line), var(--e1);
+}
+.swatch {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 16px;
+  transition: background-color 300ms var(--ease-out), color 300ms var(--ease-out);
+  animation: swatchIn 300ms var(--ease-out) both;
+}
+@keyframes swatchIn { from { flex-grow: .001; } }
+.swatchCode {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  cursor: pointer;
+}
+.swatchCode b { font: 600 17px/20px var(--font-geist), system-ui, sans-serif; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.swatchCode small { font: var(--t-caption1); opacity: .74; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.swatchCode input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: none; opacity: 0; cursor: pointer; }
+.swatchesDense .swatchCode small { display: none; }
+.swatchesDense .swatchCode b { font-size: 15px; }
+.swatchTools { display: flex; align-items: center; flex-shrink: 0; }
+.swatchTools button {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: none;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: .55;
+  cursor: pointer;
+  transition: opacity var(--t-fast), background var(--t-fast);
+}
+.swatchTools button:hover, .swatchTools button:focus-visible { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); }
+.swatchTools button:disabled { opacity: .18; background: none; cursor: default; }
+.swatchTools button.toolOn { opacity: 1; }
+.insert {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--e2);
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity var(--t-fast), transform var(--t-fast);
+}
+.insert:focus-visible { opacity: 1; pointer-events: auto; }
+@media (hover: hover) and (pointer: fine) {
+  .swatches:hover .insert { opacity: 1; pointer-events: auto; }
+  .insert:hover { transform: scale(1.12); }
+}
+
+.paletteBar { display: flex; align-items: center; gap: 8px; }
+.barPair { display: flex; gap: 6px; }
+.barIcon {
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform var(--t-fast), opacity var(--t-fast);
+}
+.barIcon:active { transform: scale(.92); }
+.barIcon:disabled { opacity: .35; cursor: default; transform: none; }
+.generate {
+  flex: 1;
+  height: 46px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font: var(--t-callout);
+  font-weight: var(--w-emph);
+  cursor: pointer;
+  transition: transform var(--t-fast);
+}
+.generate:active { transform: scale(.97); }
+
+@media (prefers-reduced-motion: reduce) {
+  .swatch, .photo img, .video img, .bookRow { animation: none; }
+  .swatch { transition: none; }
+}

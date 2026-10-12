@@ -1,26 +1,34 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { initials, TONES } from "@/lib/chat/avatar";
 import { Emoji, emojify, firstEmoji } from "@/lib/chat/emoji";
+import { findUrl, hostOf, isbnOf, isIsbnQuery, normalizeUrl, parseVideo, splitUrl, videoProvider, videoThumb, watchUrl } from "@/lib/chat/links";
+import { findBooks, sameTitle, unfurl, type BookHit, type LinkMeta } from "@/lib/chat/lookup";
 import { toAttachment } from "@/lib/chat/media";
 import {
-  blankPage, childrenOf, collectionItems, commitDraft, detach, draftOf, dropDraft, learnChat, locate, makeCollection, newId, nowMs,
+  amendBlock, blankPage, childrenOf, collectionItems, commitDraft, detach, draftOf, dropDraft, learnChat, locate, makeCollection, newId, nowMs,
   pageItems, patchBlock, patchCollection, patchPage, place, removeBlock, rootItems, tagsOf, todayKey, useMind,
   type Block, type BlockKind, type Collection, type Mind, type MindView, type Page, type TaskStatus,
 } from "@/lib/chat/mind";
+import { paletteName, randomPalette, swatchesOf, type Swatch } from "@/lib/chat/palette";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Chat } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { BlockView, KIND_LABEL } from "./MindBlocks";
+import { DateField } from "./DatePicker";
+import { BookSearch, FilePicker, PasteButton, PasteField, PhotoPicker, VideoPreview } from "./MindFields";
+import PaletteEditor from "./PaletteEditor";
 import {
   IconArrowRight, IconArrowUp, IconBack, IconBoard, IconCheck, IconChevron, IconChevronDown, IconClose, IconEdit, IconGrid,
-  IconFolder, IconGlobe, IconInbox, IconListView, IconMessage, IconMore, IconOpen, IconPalette, IconPlus, IconShelf, IconSmile, IconTrash,
+  IconFolder, IconGlobe, IconInbox, IconLink, IconListView, IconMessage, IconMore, IconOpen, IconPalette, IconPlus, IconShelf, IconSmile, IconTrash, IconVideo,
 } from "./Icons";
 import { HoldMenu, useHold, type HoldAction, type HoldBind, type HoldSrc } from "./MindHold";
 import Logo from "./Logo";
-import { Segmented, Sheet, Toggle } from "./ui";
+import { getPermission, PermissionAlert, Segmented, setPermission, Sheet, Toggle } from "./ui";
 import styles from "./chat.module.css";
+import fieldStyles from "./mindfields.module.css";
 
 /**
  * Mind: collections of stacks, built one + at a time. A stack holds items and
@@ -78,6 +86,8 @@ const KINDS: { kind: BlockKind; label: string; emoji: string; group: "Capture" |
   { kind: "date", label: "Date", emoji: "📅", group: "Track" },
 ];
 const KIND_EMOJI = Object.fromEntries(KINDS.map((k) => [k.kind, k.emoji])) as Record<BlockKind, string>;
+/** The picture an item brings to a folder's peek: a photo, a book's cover, a video's still. */
+const peekImage = (b: Block) => (b.kind === "image" || b.kind === "book" || b.kind === "video" ? b.image : undefined);
 
 
 
@@ -429,9 +439,9 @@ function FolderCard({ ctx, col, i, hold, before, lifted }: { ctx: Ctx; col: Coll
         <small>{col.pages.length} stack{col.pages.length === 1 ? "" : "s"} · {items.length} item{items.length === 1 ? "" : "s"}</small>
       </span>
       <span className={styles.folderPeek} aria-hidden="true">
-        {peek.map((b) => (b.kind === "image" && b.image
+        {peek.map((b) => (peekImage(b)
           // eslint-disable-next-line @next/next/no-img-element
-          ? <img key={b.id} src={b.image} alt="" />
+          ? <img key={b.id} src={peekImage(b)} alt="" />
           : <span key={b.id}><Emoji char={KIND_EMOJI[b.kind] ?? "💬"} /></span>))}
       </span>
     </button>
@@ -672,9 +682,9 @@ function StackCard({ ctx, col, page, i, view, onOpen, hold, mark, lifted }: { ct
         {kids.length > 0 && <em className={styles.mindStackBadge}>{kids.length} inside</em>}
       </span>
       <span className={styles.folderPeek} aria-hidden="true">
-        {peek.map((b) => (b.kind === "image" && b.image
+        {peek.map((b) => (peekImage(b)
           // eslint-disable-next-line @next/next/no-img-element
-          ? <img key={b.id} src={b.image} alt="" />
+          ? <img key={b.id} src={peekImage(b)} alt="" />
           : <span key={b.id}><Emoji char={KIND_EMOJI[b.kind] ?? "💬"} /></span>))}
       </span>
       <span className={styles.folderText}>
@@ -861,9 +871,8 @@ function pathTo(col: Collection, page: Page | null) {
  */
 function MindAddSheet({ ctx, col, page, sectionId }: { ctx: Ctx; col: Collection; page?: Page; sectionId?: string }) {
   const here = page ? page.title : col.name;
-  const to = page
-    ? { collectionId: col.id, pageId: page.id, sectionId: sectionId ?? page.sections[page.sections.length - 1]?.id }
-    : { collectionId: col.id, root: true };
+  // A section's own + puts things in it; the stack's + leaves it to the kind (see homeSection).
+  const to = page ? { collectionId: col.id, pageId: page.id, sectionId } : { collectionId: col.id, root: true };
   const organise: { id: string; emoji: string; label: string; run: () => void }[] = [
     { id: "stack", emoji: "🗂️", label: "Stack", run: () => ctx.openSheet(<NewPageSheet ctx={ctx} col={col} parentId={page?.id} />) },
     ...(page ? [{ id: "section", emoji: "🔖", label: "Section", run: () => ctx.openSheet(<NewSectionSheet ctx={ctx} page={page} />) }] : []),
@@ -1543,11 +1552,51 @@ const PLACEHOLDER: Partial<Record<BlockKind, string>> = {
   todo: "New task",
   link: "Paste a link, or a title",
   quote: "A sentence worth keeping",
-  video: "Video title",
-  book: "Book title",
+  video: "Paste a video link",
+  book: "A book's title or ISBN",
   image: "Write a note, or tap + for a photo",
   amount: "What for, and how much? e.g. Invoice 044 1200",
 };
+/** Stacks whose quick-add field offers Paste while it's empty. */
+const PASTE_KINDS: BlockKind[] = ["link", "video", "book"];
+
+/** What a found book fills in on an item. */
+const bookFields = (hit: BookHit): Partial<Block> => ({
+  title: hit.title, source: hit.author || undefined, image: hit.cover, url: hit.url, isbn: hit.isbn, year: hit.year, pages: hit.pages, body: hit.description,
+});
+
+/**
+ * Looks up what wasn't known yet when an item was made, and fills it in when
+ * the answer comes: a link's or a video's title (only while the title is
+ * still a stand-in like the site's name), a video's channel and still, a
+ * book's cover and author (only when the catalogue's title matches what was
+ * typed, or it was an ISBN).
+ */
+function enrich(store: string, id: string, block: Block, titleStandIn: boolean) {
+  if ((block.kind === "link" || block.kind === "video") && block.url) {
+    const standIn = block.title;
+    void unfurl(block.url).then((meta) => {
+      if (!meta) return;
+      amendBlock(store, id, (b) => {
+        const patch: Partial<Block> = {};
+        if (titleStandIn && meta.title && b.title === standIn) patch.title = meta.title;
+        if (b.kind === "video") {
+          if (!b.source && meta.author) patch.source = meta.author;
+          if (!b.image && meta.image) patch.image = meta.image;
+          if (!b.duration && meta.duration) patch.duration = meta.duration;
+        }
+        return Object.keys(patch).length ? patch : null;
+      });
+    });
+  } else if (block.kind === "book" && !block.image) {
+    const typed = block.title;
+    void findBooks(block.isbn ?? typed).then((hits) => {
+      const hit = hits?.[0];
+      if (!hit || !(block.isbn || sameTitle(typed, hit))) return;
+      amendBlock(store, id, (b) => (b.title === typed ? bookFields(hit) : null));
+    });
+  }
+}
 
 function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; col: Collection; pageId: string; leaving: boolean; onBack: () => void; onOpen: (id: string) => void }) {
   const page = col.pages.find((p) => p.id === pageId)!;
@@ -1557,6 +1606,7 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
   const [draft, setDraft] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const composeRef = useRef<HTMLInputElement>(null);
 
   const all = pageItems(ctx.mind, page);
   const pageTags = tagsOf(all);
@@ -1572,16 +1622,22 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
     const kind: BlockKind = ["image", "file", "palette", "progress", "habit", "date", "chat"].includes(page.defaultKind) ? "note" : page.defaultKind;
     const id = newId();
     const b: Block = { id, kind, title: text, tags: [], createdAt: nowMs() };
+    // A link (or a video, or a book) typed bare gets its real title once it's been looked up.
+    let standIn = false;
     if (kind === "flashcard") {
       const [front, ...rest] = text.split(/\s*(?:=|—|–| - |:)\s*/);
       b.title = front;
       b.back = rest.join(" ") || "…";
       b.due = true;
-    } else if (kind === "link") {
-      const url = text.match(/(https?:\/\/)?([\w-]+\.)+[a-z]{2,}(\/\S*)?/i)?.[0];
-      b.source = url ? url.replace(/^https?:\/\//, "").split("/")[0] : "link";
-      b.url = url ? (url.startsWith("http") ? url : `https://${url}`) : undefined;
-      b.title = text.replace(url ?? "", "").trim() || b.source;
+    } else if (kind === "link" || kind === "video") {
+      const { url, rest } = splitUrl(text);
+      const video = url ? parseVideo(url) : null;
+      const host = url ? hostOf(url) : "";
+      b.url = video ? watchUrl(video) : url ?? undefined;
+      if (kind === "link") b.source = host || "link";
+      if (video) b.image = videoThumb(video) ?? undefined;
+      b.title = rest || (video ? videoProvider(video) : host) || text;
+      standIn = !rest && !!url;
     } else if (kind === "todo") {
       if (page.view === "board" || all.some((x) => x.status)) b.status = "todo";
     } else if (kind === "amount") {
@@ -1591,8 +1647,10 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
       b.paid = false;
     } else if (kind === "book") {
       b.shelf = "want";
+      if (isIsbnQuery(text)) b.isbn = isbnOf(text) ?? undefined;
     }
-    ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: b } }, id, { collectionId: col.id, pageId: page.id, sectionId: page.sections[page.sections.length - 1]?.id }));
+    ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: b } }, id, { collectionId: col.id, pageId: page.id, sectionId: homeSection(ctx.mind, page, kind) }));
+    if (b.url || kind === "book") enrich(ctx.store, id, b, standIn);
     setDraft("");
   };
 
@@ -1827,15 +1885,24 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
             <IconPlus size={18} />
           </button>
           <input
+            ref={composeRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") quickAdd(); }}
             placeholder={PLACEHOLDER[page.defaultKind] ?? `Add to ${page.title}`}
             aria-label={`Quick add to ${page.title}`}
           />
-          <button className={`${styles.mindComposeSend} ${draft.trim() ? styles.mindComposeReady : ""}`} onClick={quickAdd} disabled={!draft.trim()} aria-label="Add">
-            <IconArrowUp size={16} />
-          </button>
+          {/* Stacks of links, videos and books offer Paste while the field is empty; then it's Add. */}
+          {!draft.trim() && PASTE_KINDS.includes(page.defaultKind) ? (
+            <PasteButton
+              onPaste={(t) => { setDraft(page.defaultKind === "book" ? t : findUrl(t) ?? t); composeRef.current?.focus({ preventScroll: true }); }}
+              onRefused={() => composeRef.current?.focus({ preventScroll: true })}
+            />
+          ) : (
+            <button className={`${styles.mindComposeSend} ${draft.trim() ? styles.mindComposeReady : ""}`} onClick={quickAdd} disabled={!draft.trim()} aria-label="Add">
+              <IconArrowUp size={16} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -1869,61 +1936,129 @@ function KindGrid({ onPick, first }: { onPick: (k: BlockKind) => void; first?: B
   );
 }
 
-const PALETTES: { name: string; colors: string[] }[] = [
-  { name: "Sage & oak", colors: ["#8A9A7B", "#C9B79C", "#EDE6DA", "#5B4636", "#2F3A2F"] },
-  { name: "Terracotta", colors: ["#C4573F", "#E2A07D", "#F3E3D3", "#7A4A36", "#2B2B2B"] },
-  { name: "Coastal", colors: ["#3E67A6", "#8DB3D9", "#EAF1F7", "#C9B79C", "#1F2A36"] },
-  { name: "Plum night", colors: ["#86507A", "#C79BBE", "#F2E6EF", "#3C2A38", "#C99432"] },
-];
 const SAMPLE_IMAGES = ["photo-1586023492125-27b2c045efd7", "photo-1616137466211-f939a420be84", "photo-1519710164239-da123dc03ef4", "photo-1505693416388-ac5ce068fe85"];
+const DAY_MS = 86_400_000;
+/** A week from now, at this hour: where a new date starts. */
+function inAWeek(hour: number) {
+  const d = new Date(nowMs() + 7 * DAY_MS);
+  d.setHours(hour, 0, 0, 0);
+  return d.getTime();
+}
+/** Where a new item goes in a stack when no section was picked: beside the last of its kind, else the last section. */
+function homeSection(mind: Mind, page: Page, kind: BlockKind) {
+  const withKind = [...page.sections].reverse().find((s) => s.blockIds.some((id) => mind.blocks[id]?.kind === kind));
+  return (withKind ?? page.sections[page.sections.length - 1])?.id;
+}
+type Shelf = NonNullable<Block["shelf"]>;
+const SHELVES: { id: Shelf; label: string }[] = [{ id: "want", label: "Want to read" }, { id: "reading", label: "Reading" }, { id: "read", label: "Finished" }];
+const isPhoto = (file: File | null) => (file?.type.startsWith("image/") ? file : null);
 
+/**
+ * Making one item. Each kind asks for what it needs, the main thing first: a
+ * link to paste, a photo to pick, a book to find, a palette to generate.
+ * Links and videos read their own title (and a video its channel and still);
+ * books come from Apple Books and Open Library, covers and all.
+ */
 function AddItemSheet({ ctx, to, kind: initial }: { ctx: Ctx; to: { collectionId: string; pageId?: string; sectionId?: string; root?: boolean }; kind: BlockKind }) {
   const [kind, setKind] = useState<BlockKind>(initial === "chat" ? "note" : initial);
   const [a, setA] = useState("");
   const [b, setB] = useState("");
   const [c, setC] = useState("");
-  const [date, setDate] = useState(() => new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10));
+  // Once a title or channel is typed, what the link says no longer replaces it.
+  const [typedA, setTypedA] = useState(false);
+  const [typedB, setTypedB] = useState(false);
+  const [url, setUrl] = useState("");
+  const [found, setFound] = useState<{ url: string; meta: LinkMeta | null } | null>(null);
+  const [book, setBook] = useState<BookHit | null>(null);
+  const [byHand, setByHand] = useState(false);
+  const [shelf, setShelf] = useState<Shelf>("want");
+  const [at, setAt] = useState(() => inAWeek(9));
   const [flag, setFlag] = useState(false);
-  const [palette, setPalette] = useState(0);
+  const [swatches, setSwatches] = useState<Swatch[]>(() => randomPalette(5));
   const [image, setImage] = useState<string>(SAMPLE_IMAGES[0]);
   const [upload, setUpload] = useState<File | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [asking, setAsking] = useState<{ host: HTMLElement; answer: (ok: boolean) => void } | null>(null);
   const col = ctx.mind.collections.find((x) => x.id === to.collectionId);
   const page = col?.pages.find((p) => p.id === to.pageId);
   const where = page ? page.title : to.root ? col?.name ?? "" : "To sort";
-  const meta = KINDS.find((k) => k.kind === kind)!;
+  const info = KINDS.find((k) => k.kind === kind)!;
 
-  const fields: Record<BlockKind, [string, string?, string?]> = {
-    note: ["Title", "Write something…"], todo: ["What needs doing?"], link: ["Title", "Website, e.g. dw.com"],
-    video: ["Video title", "Channel", "Length, e.g. 12:04 (optional)"], book: ["Book title", "Author"], quote: ["The quote", "Who said it, or what it means"],
-    flashcard: ["Front, e.g. gemütlich", "Back, e.g. cosy"], image: ["Caption"], file: ["Name (optional)"], palette: ["Palette name (optional)"],
+  // A pasted link is read for its title; a video's for its channel and still too.
+  const link = kind === "link" || kind === "video" ? normalizeUrl(url) ?? findUrl(url) : null;
+  const video = link ? parseVideo(link) : null;
+  useEffect(() => {
+    if (!link) return;
+    let live = true;
+    const wait = setTimeout(() => { void unfurl(link).then((meta) => { if (live) setFound({ url: link, meta }); }); }, 300);
+    return () => { live = false; clearTimeout(wait); };
+  }, [link]);
+  const meta = link && found?.url === link ? found.meta : null;
+  const looking = !!link && found?.url !== link;
+  const title = typedA ? a : meta?.title || a;
+  const channel = typedB ? b : meta?.author || b;
+  const still = meta?.image ?? (video ? videoThumb(video) ?? undefined : undefined);
+  const photo = isPhoto(upload);
+
+  const fields: Partial<Record<BlockKind, [string, string?, string?]>> = {
+    note: ["Title", "Write something…"], todo: ["What needs doing?"],
+    quote: ["The quote", "Who said it, or what it means"], flashcard: ["Front, e.g. gemütlich", "Back, e.g. cosy"],
     progress: ["What are you tracking?", "Done so far", "Out of"], habit: ["A habit, e.g. Review for 10 minutes"],
-    amount: ["What for? e.g. Invoice 044", "From whom? e.g. Acme Co", "Amount in €"], date: ["What's happening? e.g. Pitch day"], chat: [""],
+    amount: ["What for? e.g. Invoice 044", "From whom? e.g. Acme Co", "Amount in €"], date: ["What's happening? e.g. Pitch day"],
   };
-  const [f1, f2, f3] = fields[kind];
-  const ready = kind === "file" ? !!upload : kind === "palette" || kind === "image" ? true : !!a.trim();
+  const simple = fields[kind];
+  const ready = kind === "file" ? !!upload
+    : kind === "image" || kind === "palette" ? true
+    : kind === "link" ? !!link || !!title.trim()
+    : kind === "video" ? !!link
+    : kind === "book" ? (byHand ? !!a.trim() : !!book)
+    : !!a.trim();
+
+  /** Asks for the photo library the way iOS does, once; then it just opens. */
+  const askPhotos = (from: HTMLElement) => new Promise<boolean>((resolve) => {
+    if (getPermission("photos") === "granted") { resolve(true); return; }
+    const host = (from.closest('[role="dialog"]')?.parentElement ?? document.body) as HTMLElement;
+    setAsking({ host, answer: (ok) => { setPermission("photos", ok ? "granted" : "denied"); setAsking(null); resolve(ok); } });
+  });
 
   const create = async () => {
     const id = newId();
     const t = a.trim();
-    const base: Block = { id, kind, title: t, tags: [], createdAt: Date.now() };
+    const base: Block = { id, kind, title: t, tags: [], createdAt: nowMs() };
     let block: Block = base;
+    let standIn = false;
     if (kind === "note") block = { ...base, body: b.trim() };
     if (kind === "todo") block = { ...base, status: page?.view === "board" ? "todo" : undefined };
-    if (kind === "link") { const site = b.trim().replace(/^https?:\/\//, ""); block = { ...base, source: site.split("/")[0] || "link", url: site ? `https://${site}` : undefined }; }
-    if (kind === "video") block = { ...base, source: b.trim(), duration: c.trim() || undefined };
-    if (kind === "book") block = { ...base, source: b.trim(), shelf: "want" };
+    if (kind === "link") {
+      const site = link ? hostOf(link) : "";
+      standIn = !title.trim() && !!link;
+      block = { ...base, title: title.trim() || site || "Link", source: site || "link", url: link ?? undefined };
+    }
+    if (kind === "video") {
+      standIn = !title.trim();
+      block = {
+        ...base,
+        title: title.trim() || (video ? videoProvider(video) : link ? hostOf(link) : "Video"),
+        source: channel.trim() || undefined,
+        url: video ? watchUrl(video) : link ?? undefined,
+        image: still,
+        duration: meta?.duration,
+      };
+    }
+    if (kind === "book") block = book && !byHand ? { ...base, ...bookFields(book), shelf } : { ...base, source: b.trim(), shelf };
     if (kind === "quote") block = { ...base, body: b.trim() };
     if (kind === "flashcard") block = { ...base, back: b.trim() || "…", due: true };
     if (kind === "progress") block = { ...base, value: Number(b) || 0, total: Math.max(1, Number(c) || 10) };
     if (kind === "habit") block = { ...base, days: [] };
-    if (kind === "amount") block = { ...base, source: b.trim(), amount: Number(c.replace(",", ".")) || 0, paid: flag, at: new Date(`${date}T12:00`).getTime() };
-    if (kind === "date") block = { ...base, at: new Date(`${date}T09:00`).getTime() };
-    if (kind === "palette") block = { ...base, title: t || PALETTES[palette].name, colors: PALETTES[palette].colors };
+    if (kind === "amount") block = { ...base, source: b.trim(), amount: Number(c.replace(",", ".")) || 0, paid: flag, at };
+    if (kind === "date") block = { ...base, at };
+    if (kind === "palette") {
+      const colors = swatches.map((s) => s.hex);
+      block = { ...base, title: t || paletteName(colors), colors };
+    }
     if (kind === "image") {
-      if (upload) {
-        const att = await toAttachment(upload);
-        block = { ...base, title: t || upload.name.replace(/\.[^.]+$/, ""), attachment: att ?? undefined, source: "Uploaded by you" };
+      if (photo) {
+        const att = await toAttachment(photo);
+        block = { ...base, title: t || photo.name.replace(/\.[^.]+$/, ""), attachment: att ?? undefined, source: "Uploaded by you" };
       } else {
         block = { ...base, title: t || "Saved image", image: `https://images.unsplash.com/${image}?w=700&q=70&fm=jpg`, source: "Saved by you" };
       }
@@ -1932,49 +2067,84 @@ function AddItemSheet({ ctx, to, kind: initial }: { ctx: Ctx; to: { collectionId
       const att = await toAttachment(upload);
       block = { ...base, title: t || upload.name, size: upload.size, attachment: att ?? undefined };
     }
-    ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: block } }, id, { collectionId: to.collectionId, pageId: to.pageId, sectionId: to.sectionId, root: to.root }));
+    const sectionId = to.sectionId ?? (page ? homeSection(ctx.mind, page, kind) : undefined);
+    ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: block } }, id, { collectionId: to.collectionId, pageId: to.pageId, sectionId, root: to.root }));
+    // Added before the link answered: its title and still follow when they come.
+    if (block.url && (kind === "link" || kind === "video") && (standIn || !meta)) enrich(ctx.store, id, block, standIn);
     ctx.closeSheet();
-    ctx.flash(`${meta.emoji} Added to ${where}`);
+    ctx.flash(`${info.emoji} Added to ${where}`);
   };
+  const enter = (e: React.KeyboardEvent) => { if (e.key === "Enter" && ready) void create(); };
 
   return (
-    <Sheet title={`${meta.label} · ${where}`} onClose={ctx.closeSheet} action={{ label: "Add", disabled: !ready, onClick: () => { void create(); } }}>
+    <Sheet title={`${info.label} · ${where}`} onClose={ctx.closeSheet} action={{ label: "Add", disabled: !ready, onClick: () => { void create(); } }}>
       <div className={styles.chipGrid}>
         {KINDS.map((k) => (
           <button key={k.kind} className={`${styles.choice} ${kind === k.kind ? styles.choiceOn : ""}`} onClick={() => setKind(k.kind)}>{k.label}</button>
         ))}
       </div>
-      <input className={`${styles.plainInput} ${styles.mindTitleInput}`} data-autofocus placeholder={f1} value={a} onChange={(e) => setA(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && ready) void create(); }} />
-      {f2 && (kind === "note"
-        ? <textarea className={`${styles.plainInput} ${styles.mindNote}`} placeholder={f2} value={b} onChange={(e) => setB(e.target.value)} rows={3} />
-        : <input className={styles.plainInput} placeholder={f2} value={b} onChange={(e) => setB(e.target.value)} inputMode={kind === "progress" ? "numeric" : undefined} />)}
-      {f3 && <input className={styles.plainInput} placeholder={f3} value={c} onChange={(e) => setC(e.target.value)} inputMode={kind === "progress" || kind === "amount" ? "decimal" : undefined} />}
-      {(kind === "date" || kind === "amount") && (
-        <label className={styles.mindField}><span>{kind === "date" ? "On" : "Due"}</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
-      )}
-      {kind === "amount" && <div className={styles.mindField}><span>Already paid</span><Toggle on={flag} onChange={setFlag} label="Already paid" /></div>}
-      {kind === "palette" && (
-        <div className={styles.mindPalettes}>
-          {PALETTES.map((p, i) => (
-            <button key={p.name} className={palette === i ? styles.mindPickOn : undefined} onClick={() => setPalette(i)}>
-              <span className={styles.mbSwatches}>{p.colors.map((c2) => <i key={c2} style={{ background: c2 }} />)}</span>
-              <small>{p.name}</small>
-            </button>
-          ))}
-        </div>
-      )}
-      {(kind === "image" || kind === "file") && (
+
+      {(kind === "link" || kind === "video") && (
         <>
-          <input ref={fileRef} type="file" accept={kind === "image" ? "image/*" : undefined} hidden onChange={(e) => setUpload(e.target.files?.[0] ?? null)} />
-          <button className={styles.secondaryWide} onClick={() => fileRef.current?.click()}>
-            {upload ? `✓ ${upload.name}` : kind === "image" ? "Upload a photo" : "Choose a file"}
-          </button>
-          {kind === "image" && !upload && (
+          <PasteField
+            value={url}
+            onChange={setUrl}
+            pick={(text) => findUrl(text) ?? text}
+            icon={kind === "video" ? <IconVideo size={18} /> : <IconLink size={18} />}
+            label={kind === "video" ? "Video link" : "Link"}
+            placeholder={kind === "video" ? "Paste a YouTube or Vimeo link" : "Paste a link, e.g. dw.com"}
+            autoFocus
+            busy={looking}
+            onEnter={() => { if (ready) void create(); }}
+          />
+          {kind === "video" && link && <VideoPreview image={still} duration={meta?.duration} site={video ? videoProvider(video) : meta?.site} />}
+          {(kind === "link" || link) && (
+            <input
+              className={`${styles.plainInput} ${styles.mindTitleInput}`}
+              placeholder={looking ? "Reading the title…" : "Title"}
+              value={title}
+              onChange={(e) => { setTypedA(true); setA(e.target.value); }}
+              onKeyDown={enter}
+              aria-label="Title"
+            />
+          )}
+          {kind === "video" && link && (
+            <input
+              className={styles.plainInput}
+              placeholder={looking ? "Finding the channel…" : "Channel (optional)"}
+              value={channel}
+              onChange={(e) => { setTypedB(true); setB(e.target.value); }}
+              onKeyDown={enter}
+              aria-label="Channel"
+            />
+          )}
+          {kind === "video" && !link && <p className={styles.sheetNote}>The title and channel fill in from the link. Tap the video in Mind and it plays right there.</p>}
+        </>
+      )}
+
+      {kind === "book" && (byHand ? (
+        <>
+          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} data-autofocus placeholder="Book title" value={a} onChange={(e) => setA(e.target.value)} onKeyDown={enter} aria-label="Book title" />
+          <input className={styles.plainInput} placeholder="Author" value={b} onChange={(e) => setB(e.target.value)} onKeyDown={enter} aria-label="Author" />
+          <Segmented value={shelf} options={SHELVES} onChange={setShelf} />
+          <button type="button" className={fieldStyles.manual} onClick={() => setByHand(false)}>Search Apple Books and Open Library instead</button>
+        </>
+      ) : (
+        <BookSearch picked={book} onPick={setBook} onManual={() => setByHand(true)} autoFocus>
+          <Segmented value={shelf} options={SHELVES} onChange={setShelf} />
+        </BookSearch>
+      ))}
+
+      {kind === "image" && (
+        <>
+          <PhotoPicker file={photo} onFile={setUpload} before={askPhotos} />
+          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} placeholder="Title" value={a} onChange={(e) => setA(e.target.value)} onKeyDown={enter} aria-label="Title" />
+          {!photo && (
             <>
-              <p className={styles.sheetLabel}>Or pick a sample</p>
+              <p className={styles.sheetLabel}>Or use a sample</p>
               <div className={styles.mindPickImages}>
                 {SAMPLE_IMAGES.map((src) => (
-                  <button key={src} className={image === src ? styles.mindPickOn : undefined} onClick={() => setImage(src)} aria-label="Choose image">
+                  <button key={src} className={image === src ? styles.mindPickOn : undefined} onClick={() => setImage(src)} aria-label="Use this sample" aria-pressed={image === src}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={`https://images.unsplash.com/${src}?w=200&q=60&fm=jpg`} alt="" />
                   </button>
@@ -1984,6 +2154,35 @@ function AddItemSheet({ ctx, to, kind: initial }: { ctx: Ctx; to: { collectionId
           )}
         </>
       )}
+
+      {kind === "file" && (
+        <>
+          <FilePicker file={upload} onFile={setUpload} />
+          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} placeholder="Name (optional)" value={a} onChange={(e) => setA(e.target.value)} onKeyDown={enter} aria-label="Name" />
+        </>
+      )}
+
+      {kind === "palette" && (
+        <>
+          <PaletteEditor value={swatches} onChange={setSwatches} />
+          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} placeholder={paletteName(swatches.map((s) => s.hex))} value={a} onChange={(e) => setA(e.target.value)} onKeyDown={enter} aria-label="Palette name (optional)" />
+        </>
+      )}
+
+      {simple && (
+        <>
+          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} data-autofocus placeholder={simple[0]} value={a} onChange={(e) => setA(e.target.value)} onKeyDown={enter} aria-label={simple[0]} />
+          {simple[1] && (kind === "note"
+            ? <textarea className={`${styles.plainInput} ${styles.mindNote}`} placeholder={simple[1]} value={b} onChange={(e) => setB(e.target.value)} rows={3} aria-label={simple[1]} />
+            : <input className={styles.plainInput} placeholder={simple[1]} value={b} onChange={(e) => setB(e.target.value)} inputMode={kind === "progress" ? "numeric" : undefined} aria-label={simple[1]} />)}
+          {simple[2] && <input className={styles.plainInput} placeholder={simple[2]} value={c} onChange={(e) => setC(e.target.value)} inputMode={kind === "progress" || kind === "amount" ? "decimal" : undefined} aria-label={simple[2]} />}
+          {kind === "date" && <DateField label="Date" value={at} onChange={setAt} />}
+          {kind === "amount" && <DateField label="Due" value={at} onChange={setAt} />}
+          {kind === "amount" && <div className={styles.mindField}><span>Already paid</span><Toggle on={flag} onChange={setFlag} label="Already paid" /></div>}
+        </>
+      )}
+
+      {asking && createPortal(<PermissionAlert kind="photos" onResolve={asking.answer} />, asking.host)}
     </Sheet>
   );
 }
@@ -2077,8 +2276,19 @@ function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
     <Sheet title={KIND_LABEL[b.kind]} onClose={ctx.closeSheet} action={action}>
       {(close) => (
         <>
-          <div className={styles.mindDetail}><BlockView block={b} shape="detail" onToggle={() => toggleItem(update, b)} /></div>
-          {b.kind === "book" && <Segmented value={b.shelf ?? "want"} options={[{ id: "want", label: "Want" }, { id: "reading", label: "Reading" }, { id: "read", label: "Finished" }]} onChange={(v) => set({ shelf: v })} />}
+          {b.kind === "palette" ? (
+            // A palette opens in the palette maker: lock, generate, add, undo, all saved as you go.
+            <>
+              <input className={`${styles.plainInput} ${styles.mindTitleInput}`} value={b.title} onChange={(e) => set({ title: e.target.value })} placeholder={paletteName(b.colors ?? [])} aria-label="Palette name" />
+              <PaletteSaver key={b.id} colors={b.colors ?? []} onColors={(colors) => set({ colors })} />
+            </>
+          ) : (
+            // Tapping a video means watching it: it plays straight away.
+            <div className={styles.mindDetail}><BlockView block={b} shape="detail" onToggle={() => toggleItem(update, b)} autoPlay /></div>
+          )}
+          {b.kind === "date" && <DateField label="Date" value={b.at ?? nowMs()} onChange={(at) => set({ at })} />}
+          {b.kind === "amount" && <DateField label="Due" value={b.at ?? nowMs()} onChange={(at) => set({ at })} />}
+          {b.kind === "book" && <Segmented value={b.shelf ?? "want"} options={SHELVES} onChange={(v) => set({ shelf: v })} />}
           {b.kind === "todo" && b.status && <Segmented value={b.status} options={COLUMNS} onChange={(v) => set({ status: v, done: v === "done" })} />}
           {b.kind === "flashcard" && <Segmented value={b.due ? "due" : "known"} options={[{ id: "due", label: "Still learning" }, { id: "known", label: "I know it" }]} onChange={(v) => set({ due: v === "due" })} />}
           {b.kind === "amount" && <Segmented value={b.paid ? "paid" : "unpaid"} options={[{ id: "unpaid", label: "Unpaid" }, { id: "paid", label: "Paid" }]} onChange={(v) => set({ paid: v === "paid" })} />}
@@ -2169,6 +2379,12 @@ function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
       )}
     </Sheet>
   );
+}
+
+/** The palette maker on a saved palette: its colours are written back as they change. */
+function PaletteSaver({ colors, onColors }: { colors: string[]; onColors: (colors: string[]) => void }) {
+  const [swatches, setSwatches] = useState(() => swatchesOf(colors));
+  return <PaletteEditor value={swatches} onChange={(next) => { setSwatches(next); onColors(next.map((s) => s.hex)); }} />;
 }
 
 function WhereRow({ depth, emoji, title, count, on, onPick }: { depth: number; emoji: string; title: string; count: number; on: boolean; onPick: () => void }) {

@@ -82,7 +82,7 @@ const link = (col: string, title: string, source: string, note?: string): Public
 const img = (col: string, q: string, title: string): PublicItem => it(col, { kind: "image", title, image: pic(q), source: "Explore" });
 const note = (col: string, title: string, body: string): PublicItem => it(col, { kind: "note", title, body });
 const todo = (col: string, title: string): PublicItem => it(col, { kind: "todo", title });
-const book = (col: string, title: string, source: string): PublicItem => it(col, { kind: "book", title, source, shelf: "want" });
+const book = (col: string, title: string, source: string, image?: string, url?: string): PublicItem => it(col, { kind: "book", title, source, shelf: "want", image, url });
 
 const now = Date.now();
 
@@ -170,9 +170,9 @@ export const PUBLIC_COLLECTIONS: PublicCollection[] = [
     topics: ["design", "work", "reading"], saves: 3100, updatedAt: now - 5 * HOUR,
     stacks: [
       { title: "Books", emoji: "📖", view: "shelf", defaultKind: "book", items: [
-        book("pc-design-reading", "Refactoring UI", "Adam Wathan & Steve Schoger"),
-        book("pc-design-reading", "The Design of Everyday Things", "Don Norman"),
-        book("pc-design-reading", "Atomic Design", "Brad Frost"),
+        book("pc-design-reading", "Refactoring UI", "Adam Wathan & Steve Schoger", "https://covers.openlibrary.org/b/id/10527062-L.jpg", "https://openlibrary.org/works/OL23977983W"),
+        book("pc-design-reading", "The Design of Everyday Things", "Don Norman", "https://is1-ssl.mzstatic.com/image/thumb/Publication122/v4/c3/e2/a3/c3e2a3ac-a308-18ad-4895-6ce058b56952/9780465072996.jpg/600x600bb.jpg", "https://books.apple.com/us/book/the-design-of-everyday-things/id1209990641"),
+        book("pc-design-reading", "Atomic Design", "Brad Frost", "https://covers.openlibrary.org/b/id/12750057-L.jpg", "https://openlibrary.org/works/OL22297494W"),
       ] },
       { title: "Articles", emoji: "📰", view: "list", defaultKind: "link", items: [
         link("pc-design-reading", "Naming colour tokens", "medium.com"),

@@ -33,6 +33,15 @@ npm run lint    # ESLint
 - **Persistence:** chat state and drafts go to `localStorage`
   (`src/lib/chat/storage.ts`). Attachment bytes go to IndexedDB so messages stay
   small (`src/lib/chat/media.ts`).
+- **Lookups** (route handlers in `src/app/api/`, no keys needed):
+  - `/api/books?q=` finds books by title, author, ISBN or a link to the book.
+    It asks Apple Books (the catalogue behind the iPhone's Books app) and Open
+    Library together and merges what they agree on. Set `GOOGLE_BOOKS_API_KEY`
+    to add Google Books.
+  - `/api/unfurl?url=` reads what a link is: title, channel, still. YouTube,
+    Vimeo and TikTok answer through oEmbed; other pages through their Open
+    Graph tags. Only public addresses are fetched.
+  - `/api/receipt` reads receipt photos with Claude (needs `ANTHROPIC_API_KEY`).
 
 ## Layout
 

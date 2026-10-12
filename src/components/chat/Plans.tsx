@@ -5,13 +5,14 @@ import { initials } from "@/lib/chat/avatar";
 import { sortStops } from "@/lib/chat/ops";
 import { until } from "@/lib/chat/open";
 import {
-  addDays, allStops, atMinutes, canEditPlan, costPerPerson, dayLabel, euros, focusDayIndex, fromHhmm, fromIsoDate,
-  hhmm, isoDate, midnight, minutesOf, parsePlanText, parseStopLine, planStatus, rangeLabel, timeLabel, timeParts, toStop,
+  addDays, allStops, atMinutes, canEditPlan, costPerPerson, dayLabel, euros, focusDayIndex, fromHhmm,
+  hhmm, midnight, minutesOf, parsePlanText, parseStopLine, planStatus, rangeLabel, timeLabel, timeParts, toStop,
   type ParsedStop,
 } from "@/lib/chat/plan";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Card, CardOp, Message, PlanCard, PlanDay, PlanStop, Rsvp } from "@/lib/chat/types";
 import Avatar from "./Avatar";
+import { useCalendar } from "./DatePicker";
 import { IconCalendar, IconCheck, IconLock, IconPlus, IconRoute, IconTrash } from "./Icons";
 import { Sheet, Toggle, uid, useChatUi, useNow } from "./ui";
 import styles from "./chat.module.css";
@@ -138,6 +139,8 @@ export function PlanBuilder({ onSend, onClose }: { onSend: Send; onClose: () => 
   const parsed = parsePlanText(text);
   const count = parsed.reduce((n, d) => n + d.length, 0);
   const custom = !choices.some((c) => c.date === date);
+  // Any other day comes from the calendar, from today on.
+  const calendar = useCalendar({ value: date, min: choices[0].date, onPick: setDate });
 
   const applyTemplate = (id: string) => {
     const t = TEMPLATES.find((x) => x.id === id)!;
@@ -180,18 +183,17 @@ export function PlanBuilder({ onSend, onClose }: { onSend: Send; onClose: () => 
             {c.label}
           </button>
         ))}
-        <label className={`${styles.choice} ${s.dateChip} ${custom ? styles.choiceOn : ""}`}>
+        <button
+          className={`${styles.choice} ${s.dateChip} ${custom ? styles.choiceOn : ""}`}
+          aria-pressed={custom}
+          aria-haspopup="dialog"
+          aria-expanded={calendar.open}
+          onClick={(e) => calendar.show(e.currentTarget)}
+        >
           <IconCalendar size={15} />
           <span>{custom ? dayLabel(date) : "Other day"}</span>
-          <input
-            type="date"
-            aria-label="Pick a date"
-            value={isoDate(date)}
-            min={isoDate(choices[0].date)}
-            onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* not allowed here; the field still works */ } }}
-            onChange={(e) => { const d = fromIsoDate(e.target.value); if (d !== null) setDate(d); }}
-          />
-        </label>
+        </button>
+        {calendar.node}
       </div>
 
       <p className={styles.sheetLabel}>Stops</p>
