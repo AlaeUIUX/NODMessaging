@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { chatIdentity, initials } from "@/lib/chat/avatar";
-import { dayKey } from "@/lib/chat/mind";
+import { dayKey, shiftDays } from "@/lib/chat/mind";
 import { money } from "@/lib/chat/ops";
 import { priorityRank, PRIORITIES } from "@/lib/chat/project";
 import { userById } from "@/lib/chat/store";
@@ -34,6 +34,8 @@ interface BodyProps { w: Widget; d: DashData; now: number; me: string; open: Ope
 /** A row's tap is its own, not the widget's. */
 const tap = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
 const rows = (size: WidgetSize, medium: number, large: number) => (size === "small" ? 1 : size === "medium" ? medium : large);
+/** A list of rows: as many as fit whole in the widget, on whatever phone (widgets.module.css, .fit). */
+const LIST = `${g.stack} ${g.fit}`;
 const pct = (n: number, of: number) => (of ? Math.round((n / of) * 100) : 0);
 
 export function WidgetBody(p: BodyProps) {
@@ -167,7 +169,7 @@ function Spend({ w, d, open }: BodyProps) {
     return (
       <div className={g.col}>
         {w.size === "medium" ? <span className={g.cap}>{money(d.spent)} spent in {monthName(d.heroNow)}</span> : <>{label}<Big size={w.size}><BigMoney cents={d.spent} /></Big></>}
-        <div className={g.stack}>
+        <div className={LIST}>
           {list.slice(0, rows(w.size, 2, 5)).map((r) => (
             <Meter key={r.key} label={r.title} value={r.amount} of={max} right={money(r.amount)} onClick={r.go} />
           ))}
@@ -251,7 +253,7 @@ function Balances({ w, d, me, sheet, open }: BodyProps) {
   return (
     <div className={g.sideBySide}>
       {mine ? owe() : owed()}
-      <div className={g.stack}>
+      <div className={LIST}>
         {list.length === 0 ? <Empty done>{mine ? "You don’t owe anyone." : "Nobody owes you."}</Empty> : list.slice(0, 2).map((r) => (
           <Line key={r.key} title={r.title} sub={`${r.detail} · ${chatIdentity(r.chat, me, userById).label}`} right={money(r.amount)} onClick={() => open(r.chat, r.message)} />
         ))}
@@ -272,7 +274,7 @@ function Needs({ w, d, me, open }: BodyProps) {
   const parts = NEEDS.map((c) => ({ value: d.needsCounts[c], color: NEEDS_TONE[c] }));
   const kinds = NEEDS.filter((c) => d.needsCounts[c]).map((c) => `${d.needsCounts[c]} ${c === "Votes" ? "to vote" : c === "RSVP" ? "to answer" : c === "Payment" ? "to pay" : "to review"}`);
   const list = (count: number) => (
-    <div className={g.stack}>
+    <div className={LIST}>
       {d.needsEntries.slice(0, count).map((it) => (
         <Line key={it.key} dot={NEEDS_TONE[it.category]} title={it.title} sub={`${it.detail} · ${chatIdentity(it.chat, me, userById).label}`} right={<span className={g.pill}>{NEEDS_ACTION[it.category]}</span>} onClick={() => open(it.chat, it.message)} />
       ))}
@@ -356,7 +358,7 @@ function Polls({ w, d, now, me, open }: BodyProps) {
     return (
       <div className={g.col}>
         {w.size === "medium" ? <span className={g.cap}>{waiting.length} to vote on</span> : <Big label="to vote on" size="large">{waiting.length}</Big>}
-        <div className={g.stack}>
+        <div className={LIST}>
           {waiting.slice(0, rows(w.size, 2, 5)).map((p) => (
             <Line key={p.key} title={p.question} sub={`Closes ${until(p.closesAt - now)} · ${chatIdentity(p.chat, me, userById).label}`} right={<span className={g.pill}>Vote</span>} onClick={() => open(p.chat, p.message)} />
           ))}
@@ -368,7 +370,7 @@ function Polls({ w, d, now, me, open }: BodyProps) {
   const shown = d.polls.filter((p) => p.voters > 0).slice(0, w.size === "large" ? 2 : 1);
   if (shown.length === 0) return <Empty>No votes yet in your polls.</Empty>;
   return (
-    <div className={g.stack}>
+    <div className={LIST}>
       {shown.map((p) => (
         <button key={p.key} className={g.poll} onClick={tap(() => open(p.chat, p.message))}>
           <b className={w.size === "small" ? g.clamp : g.oneLine}>{p.question}</b>
@@ -402,7 +404,7 @@ function Plans({ w, d, now, open }: BodyProps) {
       );
     }
     return (
-      <div className={g.stack}>
+      <div className={LIST}>
         {stops.slice(0, rows(w.size, 2, 6)).map((x) => (
           <Line key={x.key} title={x.title} sub={`${x.plan.title}${x.place ? ` · ${x.place}` : ""}`} right={when(x)} onClick={() => open(x.plan.chat, x.plan.message)} />
         ))}
@@ -421,7 +423,7 @@ function Plans({ w, d, now, open }: BodyProps) {
     );
   }
   return (
-    <div className={g.stack}>
+    <div className={LIST}>
       {d.plans.slice(0, rows(w.size, 2, 6)).map((p) => (
         <Meter key={p.key} label={p.title} value={p.done} of={p.total} right={`${p.done}/${p.total}`} color="var(--accent)" onClick={() => open(p.chat, p.message)} />
       ))}
@@ -453,7 +455,7 @@ function Tasks({ w, d, now, me, open }: BodyProps) {
       );
     }
     return (
-      <div className={g.stack}>
+      <div className={LIST}>
         {dated.length === 0 ? <Empty>None of your tasks has a due date.</Empty> : dated.slice(0, rows(w.size, 2, 6)).map((t) => (
           <Line key={t.task.id} dot={priorityTone(t)} title={t.task.title} sub={t.board} right={<span className={t.task.due! < now ? g.late : undefined}>{dueText(t.task.due!, now)}</span>} onClick={() => open(t.chat, t.message)} />
         ))}
@@ -511,7 +513,7 @@ function Tasks({ w, d, now, me, open }: BodyProps) {
         </div>
       )}
       {w.size === "large" && (
-        <div className={g.stack}>
+        <div className={LIST}>
           <span className={g.capHead}>Due next{d.overdueTasks ? <em className={g.late}> · {d.overdueTasks} overdue</em> : null}</span>
           {mine.filter((t) => t.task.due !== null).sort((a, b) => a.task.due! - b.task.due!).slice(0, 4).map((t) => (
             <Line key={t.task.id} dot={priorityTone(t)} title={t.task.title} sub={t.board} right={<span className={t.task.due! < now ? g.late : undefined}>{dueText(t.task.due!, now)}</span>} onClick={() => open(t.chat, t.message)} />
@@ -598,7 +600,7 @@ function Boards({ w, d, now, open }: BodyProps) {
       );
     }
     return (
-      <div className={g.stack}>
+      <div className={LIST}>
         {w.size === "large" && (
           <ul className={g.legend}>
             <li><i style={{ background: BLUE.base }} /><span>Done</span></li>
@@ -618,7 +620,7 @@ function Boards({ w, d, now, open }: BodyProps) {
 
   if (w.view === "deadlines") {
     const late = groups[0].tasks.length;
-    const days = Array.from({ length: 7 }, (_, i) => now + i * DAY);
+    const days = Array.from({ length: 7 }, (_, i) => shiftDays(now, i));
     const perDay = days.map((t) => all.filter((x) => x.stage !== "done" && x.task.due !== null && x.task.due >= now && dayKey(x.task.due) === dayKey(t)).length);
     const heaviest = Math.max(...perDay);
     if (w.size === "small") {
@@ -630,15 +632,13 @@ function Boards({ w, d, now, open }: BodyProps) {
         </div>
       );
     }
-    const soft = BLUE.a4;
+    // Overdue stays red; each day is as blue as it is busy (TrendChart), so a pile-up shows itself.
     const series: Point[] = [
-      { x: "late", label: "Overdue", value: late, color: late ? "var(--bad-mark)" : soft },
-      // Only a real pile-up is marked: the heaviest day, when it has two or more.
+      { x: "late", label: "Overdue", value: late, color: late ? "var(--bad-mark)" : undefined },
       ...days.map((t, i) => ({
         x: dayKey(t),
         label: i === 0 ? "Today" : new Date(t).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" }),
         value: perDay[i],
-        color: heaviest > 1 && perDay[i] === heaviest ? "var(--accent)" : soft,
       })),
     ];
     const short = (x: string) => (x === "late" ? "Late" : x === dayKey(now) ? "Today" : weekday(new Date(`${x}T12:00`).getTime()).slice(0, 2));
@@ -651,7 +651,7 @@ function Boards({ w, d, now, open }: BodyProps) {
     return (
       <div className={g.col}>
         {chart}
-        <div className={g.stack}>{[...groups[0].tasks, ...groups[1].tasks, ...groups[2].tasks].slice(0, 3).map((t) => taskLine(t))}</div>
+        <div className={LIST}>{[...groups[0].tasks, ...groups[1].tasks, ...groups[2].tasks].slice(0, 3).map((t) => taskLine(t))}</div>
       </div>
     );
   }
@@ -676,7 +676,7 @@ function Boards({ w, d, now, open }: BodyProps) {
           <div><b style={{ color: who.tasks.length ? "var(--warn)" : undefined }}>{who.tasks.length}</b><span>No one on it</span></div>
           <div><b style={{ color: due.tasks.length ? BLUE.a2 : undefined }}>{due.tasks.length}</b><span>No due date</span></div>
         </div>
-        <div className={g.stack}>{list.slice(0, rows(w.size, 1, 5)).map((t) => taskLine(t, <span className={g.tag}>{tag(t)}</span>))}</div>
+        <div className={LIST}>{list.slice(0, rows(w.size, 1, 5)).map((t) => taskLine(t, <span className={g.tag}>{tag(t)}</span>))}</div>
       </div>
     );
   }
@@ -697,7 +697,7 @@ function Boards({ w, d, now, open }: BodyProps) {
     return (
       <div className={g.col}>
         {w.size === "medium" ? <span className={g.cap}>{list.length} open and untouched for 3+ days</span> : <Big label="open, untouched 3+ days" size="large">{list.length}</Big>}
-        <div className={g.stack}>{list.slice(0, rows(w.size, 2, 5)).map((t) => taskLine(t, <span className={g.tag}>{age(t)}</span>))}</div>
+        <div className={LIST}>{list.slice(0, rows(w.size, 2, 5)).map((t) => taskLine(t, <span className={g.tag}>{age(t)}</span>))}</div>
       </div>
     );
   }
@@ -743,7 +743,7 @@ function Boards({ w, d, now, open }: BodyProps) {
         </div>
       )}
       {w.size === "large" && (
-        <div className={g.stack}>
+        <div className={LIST}>
           <span className={g.capHead}>Top of the list</span>
           {groups.flatMap((x) => x.tasks).slice(0, 4).map((t) => taskLine(t))}
         </div>
@@ -812,7 +812,7 @@ function Checklists({ w, d, open }: BodyProps) {
   return (
     <div className={g.col}>
       <Big label={`${d.listDone} of ${d.listTotal} ticked`}>{overall}%</Big>
-      <div className={g.stack}>{list.length === 0 ? <Empty done>Every list is done.</Empty> : list.slice(0, rows(w.size, 2, 6)).map(row)}</div>
+      <div className={LIST}>{list.length === 0 ? <Empty done>Every list is done.</Empty> : list.slice(0, rows(w.size, 2, 6)).map(row)}</div>
     </div>
   );
 }
@@ -841,7 +841,7 @@ function Next({ w, d, now, open }: BodyProps) {
   return (
     <div className={g.sideBySide}>
       {hero}
-      <div className={g.stack}>
+      <div className={LIST}>
         {list.slice(1, 3).map((u) => (
           <Line key={u.key} title={u.title} sub={whenText(u, now)} onClick={() => open(u.chat, u.message)} />
         ))}
@@ -855,7 +855,7 @@ function Next({ w, d, now, open }: BodyProps) {
 export const whenText = (u: Upcoming, now: number) => (u.at < now ? "Overdue" : `${dayLabel(u.at, now)}${u.timed ? ` ${clock(u.at)}` : ""}`);
 
 function Week({ w, d, now, open }: BodyProps) {
-  const days = Array.from({ length: 7 }, (_, i) => now + i * DAY);
+  const days = Array.from({ length: 7 }, (_, i) => shiftDays(now, i));
   const count = (t: number) => d.upcoming.filter((u) => dayKey(Math.max(u.at, now)) === dayKey(t)).length;
   return (
     <div className={g.col}>
@@ -873,7 +873,7 @@ function Week({ w, d, now, open }: BodyProps) {
       ) : w.size === "medium" ? (
         <span className={g.cap}>{plural(d.upcoming.length, "thing")} this week{nextUp(d, "all", now)[0] ? ` · next: ${nextUp(d, "all", now)[0].title}` : ""}</span>
       ) : (
-        <div className={g.stack}>
+        <div className={LIST}>
           {d.upcoming.slice(0, 5).map((u) => (
             <Line key={u.key} dot={<span className={g.lineIcon}>{u.icon}</span>} title={u.title} sub={u.sub} right={<span className={u.at < now ? g.late : undefined}>{whenText(u, now)}</span>} onClick={() => open(u.chat, u.message)} />
           ))}
@@ -899,7 +899,7 @@ function Messages({ w, d, me }: BodyProps) {
       );
     }
     return (
-      <div className={g.stack}>
+      <div className={LIST}>
         {d.chatsWeek.slice(0, rows(w.size, 3, 6)).map(({ chat, n }) => (
           <Meter key={chat.id} label={chatIdentity(chat, me, userById).label} value={n} of={max} right={n} />
         ))}
@@ -909,10 +909,9 @@ function Messages({ w, d, me }: BodyProps) {
   const total = d.week.reduce((n, x) => n + x.n, 0);
   const kind = chartOf(w) as TrendKind;
   const today = d.week[d.week.length - 1]?.k;
-  const soft = BLUE.a4;
   const series: Point[] = d.week.map((x) => {
     const t = new Date(`${x.k}T12:00`).getTime();
-    return { x: x.k, label: x.k === today ? "Today" : new Date(t).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" }), value: x.n, color: x.k === today ? "var(--accent)" : soft };
+    return { x: x.k, label: x.k === today ? "Today" : new Date(t).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" }), value: x.n };
   });
   const short = (x: string) => (x === today ? "Today" : weekday(new Date(`${x}T12:00`).getTime()).slice(0, 2));
   const say = (n: number) => `${n} ${n === 1 ? "message" : "messages"}`;

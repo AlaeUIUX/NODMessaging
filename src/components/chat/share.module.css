@@ -1,0 +1,187 @@
+/* ==========================================================================
+   Sharing from Mind: the share and send sheets, the card in a chat, and the
+   shared page. Tokens come from the app theme (chat.module.css); the page
+   borrows Explore's collection page (explore.module.css).
+   ========================================================================== */
+
+/* ---- what's being shared, at the top of both sheets ---- */
+.what { display: flex; align-items: center; gap: 12px; padding: 4px 2px 6px; flex-shrink: 0; }
+.whatIcon {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  background: color-mix(in srgb, var(--tone, var(--ink)) 16%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--ink)) 22%, transparent);
+}
+.whatText, .rowText, .headText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.whatText b { font: var(--t-headline); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.whatText small, .rowText small { font: var(--t-footnote); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rowText b { font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- a search field ---- */
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  height: 50px;
+  padding: 0 10px 0 14px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink-3);
+}
+.field:focus-within { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 16%, transparent); }
+.field input { flex: 1; width: 0; min-width: 0; height: 40px; padding: 0; border: none; outline: none; background: transparent; color: var(--ink); font: var(--t-body); }
+.field input::placeholder { color: var(--ink-3); }
+.clear { width: 24px; height: 24px; flex-shrink: 0; border: none; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 10%, transparent); color: var(--ink-2); display: grid; place-items: center; cursor: pointer; }
+
+/* ---- rows of people and chats ---- */
+.list { display: flex; flex-direction: column; flex-shrink: 0; }
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 54px;
+  padding: 6px 6px 6px 4px;
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+button.row { cursor: pointer; transition: background var(--t-fast); }
+button.row:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.row.rowOn { background: var(--accent-soft); }
+.mailIcon, .accessIcon {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink-2);
+}
+.addPill, .quiet {
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--r-pill);
+  display: inline-flex;
+  align-items: center;
+  font: var(--t-footnote);
+  font-weight: var(--w-emph);
+  cursor: pointer;
+}
+.addPill { background: var(--ink); color: var(--bg); }
+.quiet { background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink-2); }
+.ownerTag { flex-shrink: 0; padding-right: 6px; font: var(--t-footnote); color: var(--ink-3); }
+.addAs { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; padding: 6px 4px 2px; font: var(--t-footnote); color: var(--ink-3); }
+.remove { width: 28px; height: 28px; flex-shrink: 0; border: none; border-radius: var(--r-pill); background: none; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; }
+.remove:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
+
+/* View | Edit, small enough for the end of a row */
+.mini { flex-shrink: 0; display: inline-grid; grid-template-columns: 1fr 1fr; padding: 2px; border-radius: 10px; background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.mini button { height: 28px; padding: 0 10px; border: none; border-radius: 8px; background: none; color: var(--ink-2); font: var(--t-caption1); font-weight: var(--w-emph); cursor: pointer; transition: background var(--t-fast), color var(--t-fast); }
+.mini button.miniOn { background: var(--surface); color: var(--ink); box-shadow: var(--e1); }
+
+/* general access */
+.access { display: grid; gap: 12px; flex-shrink: 0; padding: 12px; border-radius: var(--r-lg); background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.accessLine { display: flex; align-items: center; gap: 12px; }
+.accessLine .rowText small { white-space: normal; }
+
+.buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; flex-shrink: 0; }
+.btn {
+  height: 50px;
+  border: none;
+  border-radius: var(--r-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink);
+  font: var(--t-callout);
+  font-weight: var(--w-emph);
+  cursor: pointer;
+  transition: transform var(--t-fast);
+}
+.btn:active { transform: scale(.98); }
+.btn.btnPrimary { background: var(--ink); color: var(--bg); }
+
+.check { width: 22px; height: 22px; flex-shrink: 0; border-radius: var(--r-pill); box-shadow: inset 0 0 0 1.5px var(--line-2); color: var(--bg); display: grid; place-items: center; }
+.check.checkOn { background: var(--accent); box-shadow: none; }
+.note { margin: 0 4px; font: var(--t-footnote); color: var(--ink-3); text-wrap: pretty; }
+.link { padding: 0; border: none; background: none; color: var(--accent); font: var(--t-footnote); font-weight: var(--w-emph); cursor: pointer; }
+
+/* ---- the card in a chat ---- */
+.card { display: flex; flex-direction: column; gap: 12px; }
+/* The kicker's own bottom margin would double the gap. */
+.card > p:first-child { margin: 0; }
+.cardGone { opacity: .75; }
+.head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.icon {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+  background: color-mix(in srgb, var(--tone, var(--ink)) 16%, var(--card-bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--ink)) 22%, transparent);
+}
+.headText b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.peek { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.peekTile {
+  aspect-ratio: 1;
+  border-radius: 12px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  background: color-mix(in srgb, var(--c) 14%, var(--card-bg));
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.peekTile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.foot { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.role {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  max-width: 100%;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink-2);
+  font: var(--t-caption1);
+  font-weight: var(--w-emph);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.role.roleEdit { background: var(--accent-soft); color: var(--accent); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.actions button { gap: 5px; }
+.primary { background: var(--ink) !important; color: var(--bg) !important; }
+.waiting { display: inline-flex; align-items: center; gap: 4px; font: var(--t-footnote); font-weight: var(--w-emph); color: var(--ink-3); }
+/* A shared item inside the card: one tap target, its own controls quiet */
+.itemFrame { cursor: pointer; border-radius: var(--r-md); }
+.itemFrame * { pointer-events: none; }
+
+/* ---- the shared page ---- */
+.pageAccess { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 2px; }
+.pageActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.pageActions .second { background: color-mix(in srgb, var(--surface) 92%, transparent); color: var(--ink); }
+
+.linkToast { bottom: 40px; }
+
+/* A photo shared on its own shouldn't fill the whole chat. */
+.itemFrame img { max-height: 240px; }

@@ -75,6 +75,11 @@ interface FoundLink { id: string; message: Message; url: string; domain: string;
 const MD_LINK = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
 const BARE_URL = /https?:\/\/[^\s<>()[\]]+/g;
 
+/** A link's path as words ("/caf%C3%A9" → "/café"); a stray % (a "50%" sale) stays as typed instead of throwing. */
+function readablePath(path: string) {
+  try { return decodeURIComponent(path); } catch { return path; }
+}
+
 function linksIn(message: Message): FoundLink[] {
   const out: FoundLink[] = [];
   const body = message.body;
@@ -95,7 +100,7 @@ function linksIn(message: Message): FoundLink[] {
       message,
       url: parsed.href,
       domain: parsed.hostname.replace(/^www\./, ""),
-      label: text ?? (path ? decodeURIComponent(path) : parsed.hostname),
+      label: text ?? (path ? readablePath(path) : parsed.hostname),
       // A link sent on its own has no sentence worth repeating.
       context: context === text ? "" : context,
     });

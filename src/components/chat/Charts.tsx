@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import {
   Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Line, Pie, PieChart, ReferenceDot, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -13,7 +13,9 @@ import c from "./charts.module.css";
  * readout per mark on bars and donuts. One look everywhere: 2px lines, a 10%
  * wash under an area, columns at most 22px wide with 4px rounded tops, a 2px
  * gap between touching pieces, hairline grid, labels in ink (never the
- * series colour). Every chart stops its taps here, so exploring one doesn't
+ * series colour). Every column fades from its colour at the top to a lighter
+ * wash at its foot; columns over time are coloured by how much they hold (the
+ * more, the bluer). Every chart stops its taps here, so exploring one doesn't
  * also open the widget's sheet.
  */
 
@@ -24,6 +26,30 @@ export interface Part { key: string; label: string; value: number; color: string
 
 const ACCENT = "var(--accent)";
 const TICK = { fill: "var(--ink-3)", fontSize: 10 };
+
+/** A share of the most there is (0 to 1) as a blue: the lightest step of the scale for little, the strongest for the most. */
+function heat(t: number) {
+  const x = Math.max(0, Math.min(1, t));
+  return x < 0.5
+    ? `color-mix(in srgb, var(--chart-2) ${Math.round(x * 200)}%, var(--chart-4))`
+    : `color-mix(in srgb, var(--chart-1) ${Math.round((x - 0.5) * 200)}%, var(--chart-2))`;
+}
+
+/** One fade per column (`${id}-${i}`): its colour at the top, lighter at its foot. */
+function ColumnFades({ id, colors }: { id: string; colors: string[] }) {
+  return (
+    <defs>
+      {colors.map((color, i) => (
+        <linearGradient key={i} id={`${id}-${i}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" style={{ stopColor: color }} />
+          <stop offset="1" style={{ stopColor: `color-mix(in srgb, ${color} 55%, var(--surface))` }} />
+        </linearGradient>
+      ))}
+    </defs>
+  );
+}
+/** An id an SVG url() can point at. */
+const svgId = (id: string) => `fade${id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
 /* ---- the readout ---- */
 
@@ -50,7 +76,7 @@ function Readout({ active, payload, format, names, title }: {
         const key = String(p.dataKey ?? "");
         return (
           <span key={key} className={c.tipRow}>
-            <i style={{ background: p.payload?.color && key === "value" && !names.value ? p.payload.color : p.color }} />
+            <i style={{ background: p.payload?.color && key === "value" ? p.payload.color : p.color }} />
             <strong>{format(p.value as number)}</strong>
             {names[key] && <em>{names[key]}</em>}
           </span>
@@ -106,13 +132,18 @@ export function TrendChart({ data, kind, format, axisFormat, xFormat, names, min
   /** A dot where the current series ends (today). */
   endDot?: boolean;
 }) {
+  const fade = svgId(useId());
   const hasCompare = data.some((p) => typeof p.compare === "number");
   const last = [...data].reverse().find((p) => typeof p.value === "number");
   const area = kind === "area";
+  // Columns take their colour from what they hold, unless a point brings its own (overdue in red).
+  const most = Math.max(0, ...data.map((p) => p.value ?? 0));
+  const points = kind === "bars" ? data.map((p) => ({ ...p, color: p.color ?? heat(most ? (p.value ?? 0) / most : 0) })) : data;
   return (
     <div className={c.box} onClick={mini ? undefined : keep}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: mini ? 3 : 10, right: yAxis ? 2 : 6, bottom: 0, left: 6 }} barCategoryGap="22%">
+        <ComposedChart data={points} margin={{ top: mini ? 3 : 10, right: yAxis ? 2 : 6, bottom: 0, left: 6 }} barCategoryGap="22%">
+          {kind === "bars" && <ColumnFades id={fade} colors={points.map((p) => p.color!)} />}
           {!mini && <CartesianGrid vertical={false} stroke="var(--line)" />}
           <XAxis
             dataKey="x"
@@ -162,7 +193,7 @@ export function TrendChart({ data, kind, format, axisFormat, xFormat, names, min
           )}
           {kind === "bars" ? (
             <Bar dataKey="value" fill={ACCENT} radius={[4, 4, 0, 0]} maxBarSize={mini ? 8 : 22} isAnimationActive={!mini}>
-              {data.map((p) => <Cell key={p.x} fill={p.color ?? ACCENT} />)}
+              {points.map((p, i) => <Cell key={p.x} fill={`url(#${fade}-${i})`} />)}
             </Bar>
           ) : area ? (
             <Area
@@ -236,10 +267,12 @@ export function DonutChart({ parts, center, format, mini }: { parts: Part[]; cen
 
 /** Columns, one per part, each with its figure on the cap. */
 export function PartBars({ parts, format, mini }: { parts: Part[]; format: (n: number) => string; mini?: boolean }) {
+  const fade = svgId(useId());
   return (
     <div className={c.box} onClick={mini ? undefined : keep}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={parts} margin={{ top: mini ? 2 : 16, right: 4, bottom: 0, left: 4 }} barCategoryGap="24%">
+          <ColumnFades id={fade} colors={parts.map((p) => p.color)} />
           {!mini && <CartesianGrid vertical={false} stroke="var(--line)" />}
           <XAxis dataKey="label" hide={mini} interval={0} tickLine={false} axisLine={false} tick={TICK} tickMargin={6} height={mini ? 0 : 22} />
           <YAxis hide domain={[0, "dataMax"]} />
@@ -251,7 +284,7 @@ export function PartBars({ parts, format, mini }: { parts: Part[]; format: (n: n
             />
           )}
           <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={mini ? 10 : 22} minPointSize={2} isAnimationActive={!mini}>
-            {parts.map((p) => <Cell key={p.key} fill={p.color} />)}
+            {parts.map((p, i) => <Cell key={p.key} fill={`url(#${fade}-${i})`} />)}
             {!mini && <LabelList dataKey="value" position="top" offset={6} fill="var(--ink-2)" fontSize={11} formatter={(v) => (typeof v === "number" ? format(v) : "")} />}
           </Bar>
         </BarChart>

@@ -58,14 +58,14 @@ type Category = "together" | "money" | "artifacts";
 
 const CATEGORY: Record<Card["type"], Category> = {
   poll: "together", checklist: "together", reminder: "together", event: "together",
-  plan: "together", project: "together", location: "together",
+  plan: "together", project: "together", location: "together", mind: "together",
   payment: "money", bill: "money",
   sketch: "artifacts", tictactoe: "artifacts", wheel: "artifacts",
 };
 
 export const KIND_LABEL: Record<Card["type"], string> = {
   poll: "Poll", checklist: "Checklist", reminder: "Reminder", event: "Event", location: "Location",
-  plan: "Plan", project: "Board", bill: "Bill", payment: "Payment",
+  plan: "Plan", project: "Board", bill: "Bill", payment: "Payment", mind: "From Mind",
   sketch: "Doodle", tictactoe: "Tic-tac-toe", wheel: "Wheel",
 };
 
@@ -217,6 +217,9 @@ function summarize(message: Message, me: string, now: number): Omit<ActivityItem
         category, title: c.prompt || "Doodle", stats: [{ kind: "type", text: plural(c.strokes.length, "stroke") }],
         detail: c.strokes.length ? "In progress" : "Empty canvas", needsMe: false, resolved: false,
       };
+    // Something shared from Mind is a pointer, not a task: it has nothing to finish.
+    case "mind":
+      return null;
     case "wheel": {
       const last = c.spins[c.spins.length - 1];
       return {
@@ -504,13 +507,11 @@ export function buildDashboard(state: ChatState, me: string, now: number) {
 }
 export type DashData = ReturnType<typeof buildDashboard>;
 
-export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onSettings }: {
+export default function AnalyticsTab({ onOpenChat, onSettings }: {
+  /** A tapped item opens in its chat, scrolled to and highlighted. */
   onOpenChat: (chat: Chat, messageId?: string) => void;
   /** Your avatar opens Settings, as on every tab. */
   onSettings: () => void;
-  /** "v1" opens the item in its chat (scrolled to and highlighted); "v2" opens the item's own page. */
-  mode: "v1" | "v2";
-  onOpenWidget: (chat: Chat, message: Message) => void;
 }) {
   const { state, me } = useChat();
   const meUser = userById(me);
@@ -522,7 +523,7 @@ export default function AnalyticsTab({ onOpenChat, mode, onOpenWidget, onSetting
   const [sheet, setSheet] = useState<SheetKind>(null);
   /** The widget a sheet was opened from: a board sheet follows its view and board. */
   const [from, setFrom] = useState<Widget | null>(null);
-  const open = (chat: Chat, message: Message) => (mode === "v2" ? onOpenWidget(chat, message) : onOpenChat(chat, message.id));
+  const open = (chat: Chat, message: Message) => onOpenChat(chat, message.id);
 
   const widgets = useWidgets(me);
   const [editing, setEditing] = useState(false);

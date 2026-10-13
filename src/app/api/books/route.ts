@@ -51,7 +51,9 @@ function parse(q: string): Query | null {
     let url: URL;
     try { url = new URL(/^https?:\/\//i.test(q) ? q : `https://${q}`); } catch { return null; }
     const host = url.hostname.replace(/^www\./, "");
-    const path = decodeURIComponent(url.pathname);
+    // A malformed escape ("%zz") leaves the path as it is rather than failing the request.
+    let path = url.pathname;
+    try { path = decodeURIComponent(path); } catch { /* keep it encoded */ }
     if (/(^|\.)apple\.com$/.test(host)) {
       const id = path.match(/\/id(\d+)/)?.[1];
       if (id) return { appleId: id, appleCountry: path.match(/^\/([a-z]{2})\//)?.[1] };

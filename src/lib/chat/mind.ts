@@ -21,6 +21,23 @@ export type BlockKind =
   | "palette" | "progress" | "habit" | "amount" | "date" | "chat";
 export type TaskStatus = "todo" | "doing" | "done";
 
+/** What someone it's shared with may do: look, or change it too. */
+export type ShareRole = "view" | "edit";
+
+/** Who may open a collection or an item shared from Mind, the way Drive shares a file (see lib/chat/share.ts). */
+export interface Sharing {
+  /** Anyone with the link (a chat it was sent into has it): nobody, or what they may do. */
+  link: "off" | ShareRole;
+  /** Specific people, and what each may do. */
+  people: Record<string, ShareRole>;
+  /** Invited by email before they're on NOD: the role they get once they are. */
+  emails: Record<string, ShareRole>;
+  /** Whether people it's shared with may make their own copy. */
+  copy: boolean;
+  /** Asking for access (or for edit access), waiting for the owner. */
+  requests: { userId: string; role: ShareRole; at: number }[];
+}
+
 export interface Block {
   id: string;
   kind: BlockKind;
@@ -34,8 +51,11 @@ export interface Block {
   image?: string;
   /** Uploaded image or file, bytes in IndexedDB (see lib/chat/media). */
   attachment?: Attachment;
+  /** Your own words for it, global across Mind (the same tag in any collection), for search and the filter. */
   tags: string[];
   createdAt: number;
+  /** Last changed (its title, text, tags, done…); unset until it first is. See modifiedAt. */
+  updatedAt?: number;
   status?: TaskStatus;
   shelf?: "want" | "reading" | "read";
   done?: boolean;
@@ -58,6 +78,8 @@ export interface Block {
   pages?: number;
   ref?: { chatId: string; messageId: string };
   note?: string;
+  /** Shared on its own (a collection shared whole covers its items too). */
+  sharing?: Sharing;
 }
 
 export interface Section { id: string; title: string; emoji: string; collapsed: boolean; blockIds: string[] }
@@ -95,6 +117,8 @@ export interface Collection {
   from?: { id: string; by: string };
   /** Published to Explore: when, and the line people see under its name. It stays in step with what's in it. */
   published?: { at: number; description: string };
+  /** Shared with people, or with anyone who has the link. */
+  sharing?: Sharing;
 }
 
 export interface Mind {
@@ -105,6 +129,8 @@ export interface Mind {
   blocks: Record<string, Block>;
   /** How Mind's home shows the collections: as folders (the default) or a list, one per row. */
   home?: "grid" | "list";
+  /** A shared collection's copy being edited: the items it started with, so saving can tell what the editor removed from what the owner added meanwhile. */
+  draftBase?: string[];
 }
 
 /* ---------------------------------------------------------------------------
@@ -124,8 +150,18 @@ export function daysUntil(ts: number) {
   return Math.round((b.getTime() - a.getTime()) / DAY);
 }
 export function isPast(ts: number) { return ts < Date.now(); }
+/**
+ * The same time of day, n calendar days on (or back). Not n × 24 hours: the
+ * day the clocks change is 23 or 25 hours long, and stepping by 24h there
+ * lists one day twice, or skips one.
+ */
+export function shiftDays(t: number, n: number) {
+  const d = new Date(t);
+  d.setDate(d.getDate() + n);
+  return d.getTime();
+}
 export function lastSevenDays() {
-  return Array.from({ length: 7 }, (_, i) => dayKey(Date.now() - (6 - i) * DAY));
+  return Array.from({ length: 7 }, (_, i) => dayKey(shiftDays(Date.now(), i - 6)));
 }
 
 /* ---------------------------------------------------------------------------
@@ -532,6 +568,79 @@ export function dropDraft(id: string) {
   write();
 }
 
+/*
+ * A collection shared with edit access is edited the same way, on a copy:
+ * a Mind holding just that collection and its items, stored under a draft id
+ * of its own, so the full Mind editor works on it. Save puts it back into
+ * the owner's Mind, leaving alone what only the owner sets (sharing,
+ * publishing, which chats it collects from).
+ */
+/** Each person editing a shared collection works on a copy of their own, so two editors never share one. */
+export const shareKey = (owner: string, collectionId: string, editor: string) => `share:${owner}:${collectionId}:${editor}`;
+
+/** What a collection shares: everything in it except its "To sort" pile, the owner's inbox of saves. */
+export const sharedItems = (m: Mind, c: Collection) => collectionItems(m, { ...c, vault: [] });
+
+/**
+ * One collection of a Mind, as the people it's shared with get it: a Mind of
+ * its own with only that collection's shared items. Null if it's gone.
+ */
+export function projectCollection(m: Mind | null | undefined, collectionId: string): Mind | null {
+  const found = m?.collections.find((c) => c.id === collectionId);
+  if (!m || !found) return null;
+  const col = { ...found, vault: [] };
+  const blocks = Object.fromEntries(sharedItems(m, col).map((b) => [b.id, b]));
+  return { version: 4, collections: [col], current: col.id, blocks };
+}
+
+/** A fresh copy of someone's collection for `editor` to edit; returns the key the editor works under. */
+export function startShareDraft(owner: string, collectionId: string, editor: string) {
+  const key = shareKey(owner, collectionId, editor);
+  const copy = projectCollection(mindOf(owner), collectionId);
+  if (copy) updateMind(draftOf(key), () => ({ ...(JSON.parse(JSON.stringify(copy)) as Mind), draftBase: Object.keys(copy.blocks) }));
+  return key;
+}
+
+/**
+ * Puts `editor`'s edited copy back into its owner's Mind. The copy's stacks
+ * and items win (the last save does), but what the owner did meanwhile isn't
+ * thrown away: items they added stay (at the top of the collection), an item
+ * they moved to another collection stays there, and each item's own sharing
+ * is theirs. The owner's "To sort" pile is left as it is.
+ */
+export function commitShareDraft(owner: string, collectionId: string, editor: string) {
+  const draft = load(true)[draftOf(shareKey(owner, collectionId, editor))] as Mind | undefined;
+  const edited = draft?.collections[0];
+  if (!draft || !edited) return;
+  const base = new Set(draft.draftBase ?? []);
+  const saved = collectionItems(draft, edited);
+  const savedIds = new Set(saved.map((b) => b.id));
+  updateMind(owner, (m) => {
+    const before = m.collections.find((c) => c.id === collectionId);
+    if (!before) return m;
+    const blocks = { ...m.blocks };
+    const current = sharedItems(m, before);
+    // Removed by the editor: there when the copy was made, gone from it now.
+    current.forEach((b) => { if (base.has(b.id) && !savedIds.has(b.id)) delete blocks[b.id]; });
+    // Added by the owner since: never in the copy.
+    const ownerAdded = current.filter((b) => !base.has(b.id) && !savedIds.has(b.id)).map((b) => b.id);
+    const elsewhere = new Set(m.collections.filter((c) => c.id !== collectionId).flatMap((c) => collectionItems(m, c).map((b) => b.id)));
+    const keep = (ids: string[]) => ids.filter((id) => !elsewhere.has(id));
+    saved.forEach((b) => {
+      if (!elsewhere.has(b.id)) blocks[b.id] = { ...b, sharing: m.blocks[b.id]?.sharing };
+    });
+    const col: Collection = {
+      ...edited,
+      pages: edited.pages.map((p) => ({ ...p, sections: p.sections.map((s) => ({ ...s, blockIds: keep(s.blockIds) })) })),
+      items: [...keep(edited.items), ...ownerAdded],
+      // Anything the editor put in To sort (a deleted stack's items) joins the owner's pile.
+      vault: [...keep(edited.vault), ...before.vault],
+      sharing: before.sharing, published: before.published, from: before.from, chatIds: before.chatIds,
+    };
+    return { ...m, blocks, collections: m.collections.map((c) => (c.id === collectionId ? col : c)) };
+  });
+}
+
 /** Every person's Mind on this device, by whose it is (not group Minds, not copies being edited). */
 export function peopleMinds(): [string, Mind][] {
   return Object.entries(load()).filter(([id, m]) => !id.startsWith("draft:") && !id.startsWith("group:") && (m as Mind)?.version === 4) as [string, Mind][];
@@ -572,7 +681,7 @@ export function childrenOf(c: Collection, pageId: string) {
 }
 export function tagsOf(items: Block[]) {
   const count = new Map<string, number>();
-  items.forEach((b) => b.tags.forEach((t) => count.set(t, (count.get(t) ?? 0) + 1)));
+  items.forEach((b) => (b.tags ?? []).forEach((t) => count.set(t, (count.get(t) ?? 0) + 1)));
   return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
 }
 
@@ -598,8 +707,12 @@ export function patchPage(mind: Mind, pageId: string, fn: (p: Page) => Page): Mi
   return { ...mind, collections: mind.collections.map((c) => ({ ...c, pages: c.pages.map((p) => (p.id === pageId ? fn(p) : p)) })) };
 }
 export function patchBlock(mind: Mind, id: string, patch: Partial<Block>): Mind {
-  return { ...mind, blocks: { ...mind.blocks, [id]: { ...mind.blocks[id], ...patch } } };
+  // Gone meanwhile (deleted in another tab while a sheet was open): nothing to change, and no half-made item left behind.
+  if (!mind.blocks[id]) return mind;
+  return { ...mind, blocks: { ...mind.blocks, [id]: { ...mind.blocks[id], ...patch, updatedAt: Date.now() } } };
 }
+/** When an item last changed: its last edit, or when it was made. */
+export const modifiedAt = (b: Block) => b.updatedAt ?? b.createdAt;
 
 /** Take an item out of wherever it is. */
 export function detach(mind: Mind, blockId: string): Mind {

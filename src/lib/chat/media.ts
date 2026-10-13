@@ -126,9 +126,13 @@ function initialUrl(a: Attachment) {
   return a.url ?? a.dataUrl ?? urls.get(a.id) ?? null;
 }
 
-/** A displayable URL for an attachment: remote, inline, or loaded from IndexedDB. */
+/**
+ * A displayable URL for an attachment: remote, inline, or loaded from IndexedDB.
+ * What was loaded is remembered with the attachment it belongs to, so a viewer
+ * that swipes to the next photo never hands back the previous one's.
+ */
 export function useMediaUrl(a: Attachment): string | null {
-  const [url, setUrl] = useState<string | null>(() => initialUrl(a));
+  const [loaded, setLoaded] = useState<{ id: string; url: string } | null>(null);
   useEffect(() => {
     if (initialUrl(a) || a.stored !== "idb") return;
     let live = true;
@@ -136,9 +140,9 @@ export function useMediaUrl(a: Attachment): string | null {
       if (!blob || !live) return;
       const u = URL.createObjectURL(blob);
       urls.set(a.id, u);
-      setUrl(u);
+      setLoaded({ id: a.id, url: u });
     });
     return () => { live = false; };
   }, [a]);
-  return url ?? initialUrl(a);
+  return initialUrl(a) ?? (loaded?.id === a.id ? loaded.url : null);
 }

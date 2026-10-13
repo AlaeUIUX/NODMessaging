@@ -326,6 +326,14 @@ function LiveChatBlock({ block, shape, cls }: { block: Block; shape: BlockShape;
     ?? state.data.archive[ref.chatId]?.find((m) => m.id === ref.messageId);
   const where = chat ? (chat.kind === "group" ? chat.name : userById(chat.memberIds.find((id) => id !== me) ?? chat.memberIds[0]).name) : "a chat";
 
+  // In a collection someone shared with you, a save from a chat you're not in stays theirs to read.
+  if (chat && !chat.memberIds.includes(me)) {
+    return (
+      <div className={`${cls} ${styles.mbGone}`}>
+        <span className={styles.mbText}><b>{block.title}</b><small>Saved from a chat you’re not in</small></span>
+      </div>
+    );
+  }
   if (!message || message.deletedAt) {
     return (
       <div className={`${cls} ${styles.mbGone}`}>

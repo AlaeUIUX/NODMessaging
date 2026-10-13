@@ -6,6 +6,7 @@ import {
   accountIds, LANGUAGES, readThemePref, removeAccount, requestTheme, resetDemoData, usePrefs, type ThemePref,
 } from "@/lib/chat/account";
 import { clearMedia } from "@/lib/chat/media";
+import { describe, ruleFor, useMutes } from "@/lib/chat/mutes";
 import { formatPhone, updatePerson } from "@/lib/chat/people";
 import { useChat, userById } from "@/lib/chat/store";
 import type { AvatarTone } from "@/lib/chat/types";
@@ -17,7 +18,7 @@ import {
 import Logo from "./Logo";
 import { AvatarPicker, ProfileFields, profileReady, type ProfileDraft } from "./Profile";
 import StatusBar from "./StatusBar";
-import { getPermission, PermissionAlert, Segmented, setPermission, Sheet, Toggle, type PermissionKind } from "./ui";
+import { getPermission, PermissionAlert, Segmented, setPermission, Sheet, Toggle, useNow, type PermissionKind } from "./ui";
 import styles from "./chat.module.css";
 import s from "./account.module.css";
 
@@ -242,14 +243,12 @@ function NotificationsPage({ leaving, onBack }: { leaving: boolean; onBack: () =
   const [prefs, set] = usePrefs(me);
   const [perm, setPerm] = useState(getPermission("notifications"));
   const [asking, setAsking] = useState(false);
-  const [muted, setMuted] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(`nod.chat.muted.${me}`) ?? "[]"); } catch { return []; } });
+  // The same rules the inbox and chats use (lib/chat/mutes), so a mute set anywhere shows here.
+  const { rules, set: setRule } = useMutes(me);
+  const now = useNow(60_000);
+  const muted = Object.keys(rules).filter((id) => ruleFor(rules, id, now));
   const on = perm === "granted";
-  const unmute = (id: string) => {
-    const next = muted.filter((x) => x !== id);
-    setMuted(next);
-    try { localStorage.setItem(`nod.chat.muted.${me}`, JSON.stringify(next)); } catch { /* private mode */ }
-    window.dispatchEvent(new Event("nod:muted"));
-  };
+  const unmute = (id: string) => setRule(id, null);
   const flip = (v: boolean) => {
     if (v && perm === "prompt") { setAsking(true); return; }
     setPermission("notifications", v ? "granted" : "denied");
@@ -280,6 +279,7 @@ function NotificationsPage({ leaving, onBack }: { leaving: boolean; onBack: () =
               key={id}
               icon={<Avatar glyph={idn.glyph} tone={idn.tone} photo={idn.photo} size={32} shape="circle" />}
               title={idn.label}
+              sub={describe(ruleFor(rules, id, now), now)}
               trailing={<button className={s.pill} onClick={() => unmute(id)}><IconBellOff size={13} /> Unmute</button>}
             />
           );

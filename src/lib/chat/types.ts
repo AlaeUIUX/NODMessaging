@@ -43,6 +43,12 @@ export type Card =
   | { type: "sketch"; prompt: string; strokes: SketchStroke[] }
   | { type: "tictactoe"; players: [string, string | null]; board: (string | null)[] }
   | { type: "wheel"; question: string; options: string[]; spins: { by: string; index: number; at: number }[] }
+  /**
+   * From Mind: a whole collection, or one item in it, shared into the chat.
+   * Only a pointer: the card shows what's there now, to whoever may see it
+   * (lib/chat/share.ts). The title and icon are kept for when it's gone.
+   */
+  | { type: "mind"; owner: string; collectionId: string; blockId?: string; title: string; emoji: string }
   /* Shared work: synced as operations (see lib/chat/ops.ts), not whole-card replaces. */
   | PlanCard
   | BillCard

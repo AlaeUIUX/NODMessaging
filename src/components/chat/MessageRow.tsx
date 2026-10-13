@@ -307,6 +307,11 @@ export default memo(function MessageRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The exit animations below each end on their own timer. They're only cancelled when the row goes:
+  // cancelling on the next change would leave a quick second change's predecessor on screen for good.
+  const exits = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => exits.current.forEach(clearTimeout), []);
+
   // A deleted message fades its old content out before the placeholder fades in.
   const [vanishing, setVanishing] = useState<Message | null>(null);
   const prevMessage = useRef(message);
@@ -315,8 +320,7 @@ export default memo(function MessageRow({
     prevMessage.current = message;
     if (!was.deletedAt && message.deletedAt) {
       setVanishing(was);
-      const t = setTimeout(() => setVanishing(null), 220);
-      return () => clearTimeout(t);
+      exits.current.push(setTimeout(() => setVanishing(null), 220));
     }
   }, [message]);
 
@@ -328,8 +332,7 @@ export default memo(function MessageRow({
     prevReactions.current = message.reactions;
     if (!gone.length) return;
     setLeavingReactions((cur) => [...cur, ...gone]);
-    const t = setTimeout(() => setLeavingReactions((cur) => cur.filter((r) => !gone.includes(r))), 220);
-    return () => clearTimeout(t);
+    exits.current.push(setTimeout(() => setLeavingReactions((cur) => cur.filter((r) => !gone.includes(r))), 220));
   }, [message.reactions]);
 
   const time = new Date(message.createdAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });

@@ -33,7 +33,8 @@ function inline(node: Node): string {
     case "S": case "STRIKE": case "DEL": return wrap("~~");
     case "CODE": return inner.trim() ? `\`${inner}\`` : "";
     case "A": {
-      const href = node.getAttribute("href") ?? "";
+      // Brackets and spaces are escaped, so a link like …/wiki/Foo_(bar) survives the "(url)" around it whole.
+      const href = (node.getAttribute("href") ?? "").replace(/[()\s]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
       return /^https?:\/\//.test(href) ? `[${inner}](${href})` : inner;
     }
     case "BR": return "\n";

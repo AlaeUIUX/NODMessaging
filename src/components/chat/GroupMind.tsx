@@ -82,7 +82,6 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
         title={title}
         onClose={ui.closeSheet}
         onSaved={() => onToast(`Saved ${title} for everyone`)}
-        onOpenChat={() => {}}
       />,
     );
   };
@@ -100,7 +99,7 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
       const { mind: m, col: c } = ensureShared(m0, group);
       const page = c.pages.find((p) => !p.parentId);
       const bid = newId();
-      return place({ ...m, blocks: { ...m.blocks, [bid]: { ...block, id: bid, tags: [], createdAt: Date.now() } } }, bid, { collectionId: c.id, pageId: page?.id, sectionId: page?.sections[0]?.id, root: !page });
+      return place({ ...m, blocks: { ...m.blocks, [bid]: { ...block, id: bid, tags: [], createdAt: Date.now(), updatedAt: undefined } } }, bid, { collectionId: c.id, pageId: page?.id, sectionId: page?.sections[0]?.id, root: !page });
     });
   };
 
@@ -224,7 +223,7 @@ function ItemSheet({ groupId, id, picking: startPicking, onClose, onToast }: { g
   const saveMine = (colId: string) => {
     const target = mine.mind?.collections.find((c) => c.id === colId);
     const copy = newId();
-    mine.update((m) => place({ ...m, blocks: { ...m.blocks, [copy]: { ...b, id: copy, tags: [], createdAt: Date.now() } } }, copy, { collectionId: colId, root: true }));
+    mine.update((m) => place({ ...m, blocks: { ...m.blocks, [copy]: { ...b, id: copy, tags: [], createdAt: Date.now(), updatedAt: undefined } } }, copy, { collectionId: colId, root: true }));
     onToast(`Saved to ${target ? `${target.emoji} ${target.name}` : "your Mind"}`);
   };
   return (

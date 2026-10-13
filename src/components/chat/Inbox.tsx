@@ -205,11 +205,9 @@ function toggle(set: Set<string>, id: string) {
   return next;
 }
 
-export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
+export default function Inbox({ onOpen, pushed }: {
   onOpen: (chat: Chat, messageId?: string) => void;
   pushed: boolean;
-  analyticsMode: "v1" | "v2";
-  onOpenWidget: (chat: Chat, message: Message) => void;
 }) {
   const { state, me, setMe, isOnline, lastReadAt, typingUsers } = useChat();
   const [query, setQuery] = useState("");
@@ -337,7 +335,7 @@ export default function Inbox({ onOpen, pushed, analyticsMode, onOpenWidget }: {
       <StatusBar />
 
       {tab === "mind" ? <MindTab onOpenChat={onOpen} onSettings={openSettings} /> : tab === "analytics" ? (
-        <AnalyticsTab onOpenChat={onOpen} mode={analyticsMode} onOpenWidget={onOpenWidget} onSettings={openSettings} />
+        <AnalyticsTab onOpenChat={onOpen} onSettings={openSettings} />
       ) : tab === "explore" ? (
         <ExploreTab onOpenChat={onOpen} onSettings={openSettings} />
       ) : (

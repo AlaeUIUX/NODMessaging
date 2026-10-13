@@ -5,27 +5,25 @@ import Link from "next/link";
 import { getForceFailure, setForceFailure } from "@/lib/chat/api";
 import { getPrefs, resetDemoData, THEME_EVENT, useAccounts, type ThemePref } from "@/lib/chat/account";
 import { effectiveRule, isQuiet, readMutes } from "@/lib/chat/mutes";
+import { parseShareToken, shareToken, type ShareRef } from "@/lib/chat/share";
 import { USERS } from "@/lib/chat/seed";
 import { ChatProvider, useChat, userById } from "@/lib/chat/store";
-import type { Chat, Message } from "@/lib/chat/types";
+import type { Chat } from "@/lib/chat/types";
 import ChatView from "./ChatView";
 import { IconArrowRight, IconChecklist, IconMoneyReceive, IconMoon, IconPin, IconSun, IconUserGroup } from "./Icons";
 import Inbox from "./Inbox";
 import Logo from "./Logo";
 import Onboarding from "./Onboarding";
+import { SharedLink } from "./Share";
 import StageField from "./StageField";
-import { getPermission, useBackLayer } from "./ui";
-import WidgetPage from "./WidgetPage";
+import { getPermission } from "./ui";
 import styles from "./chat.module.css";
 
 const LEAVE_MS = 220;
 const THEME_KEY = "nod.theme";
 const STAGE_KEY = "nod.stage";
-const ANALYTICS_KEY = "nod.analyticsMode";
 
 type Theme = "light" | "dark";
-/** Analytics v1: a tapped item opens in its chat, scrolled to and highlighted. v2: it opens its own page. */
-export type AnalyticsMode = "v1" | "v2";
 
 /** What "Automatic" resolves to right now. */
 const systemTheme = (): Theme => (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -46,6 +44,13 @@ function writePref(key: string, value: string) {
   try { localStorage.setItem(key, value); } catch { /* private mode */ }
 }
 
+/** Takes a one-time parameter (an invite or share code) out of the address, without a new history entry. */
+function dropParam(name: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.delete(name);
+  window.history.replaceState(window.history.state, "", url);
+}
+
 /** Each demo person organises their Mind differently (see lib/chat/mind seeds). */
 const MIND_PERSONAS: Record<string, string> = {
   me: "Alae keeps three collections: German, Work and Trip ideas.",
@@ -55,12 +60,7 @@ const MIND_PERSONAS: Record<string, string> = {
   salman: "Salman starts with a blank Mind.",
 };
 
-function DevDrawer({ stage, onStage, analyticsMode, onAnalyticsMode }: {
-  stage: string;
-  onStage: (v: string) => void;
-  analyticsMode: AnalyticsMode;
-  onAnalyticsMode: (v: AnalyticsMode) => void;
-}) {
+function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => void }) {
   const { me, setMe, peers } = useChat();
   const [failing, setFailing] = useState(getForceFailure());
 
@@ -104,17 +104,6 @@ function DevDrawer({ stage, onStage, analyticsMode, onAnalyticsMode }: {
             ))}
           </div>
         </div>
-        <div>
-          <span className={styles.devLabel}>Dashboard</span>
-          <div className={styles.devIds}>
-            <button className={analyticsMode === "v1" ? styles.devOn : undefined} onClick={() => onAnalyticsMode("v1")}>
-              v1 · in chat
-            </button>
-            <button className={analyticsMode === "v2" ? styles.devOn : undefined} onClick={() => onAnalyticsMode("v2")}>
-              v2 · own page
-            </button>
-          </div>
-        </div>
         <label className={styles.devToggle}>
           <input
             type="checkbox"
@@ -152,15 +141,14 @@ function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
       const now = Date.now();
       const first = announced.current === null;
       const seen = (announced.current ??= new Set());
-      let muted: string[] = [];
-      try { muted = JSON.parse(localStorage.getItem(`nod.chat.muted.${me}`) ?? "[]"); } catch { /* private mode */ }
       const prefs = getPrefs(me);
       // `started`: already under way when this tab opened, so it was due before we could say so.
       const notify = (key: string, chat: Chat, title: string, body: string, started: boolean) => {
         if (seen.has(key)) return;
         seen.add(key);
         if (first && started) return;
-        if (!muted.includes(chat.id) && getPermission("notifications") === "granted") onBanner({ id: Date.now(), chatId: chat.id, title, body: prefs.previews ? body : "Tap to open the chat" });
+        // Muted chats are left out by onBanner (showBanner), from the same rules the inbox uses.
+        if (getPermission("notifications") === "granted") onBanner({ id: Date.now(), chatId: chat.id, title, body: prefs.previews ? body : "Tap to open the chat" });
       };
       for (const chat of latest.current.chats) {
         if (!chat.memberIds.includes(me)) continue;
@@ -199,17 +187,14 @@ function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
 }
 
 /** iPhone 16 Pro-style shell: titanium band, side keys, black bezel, Dynamic Island. */
-function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
+function Device() {
   const [openChat, setOpenChat] = useState<Chat | null>(null);
   const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
   // A channel switch swaps the chat in place, without sliding a new screen in.
   const [instant, setInstant] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [banner, setBanner] = useState<Banner | null>(null);
-  const [widget, setWidget] = useState<{ chat: Chat; message: Message } | null>(null);
-  const [widgetLeaving, setWidgetLeaving] = useState(false);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const widgetLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deviceRef = useRef<HTMLDivElement>(null);
   // Another identity: whatever chat was open belongs to the previous one.
   const [shownFor, setShownFor] = useState<string | null>(null);
@@ -220,7 +205,6 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
   if (shownFor !== me) {
     setShownFor(me);
     if (openChat) setOpenChat(null);
-    if (widget) setWidget(null);
   }
   const latestChats = useRef(state.data.chats);
   useEffect(() => { latestChats.current = state.data.chats; }, [state.data.chats]);
@@ -288,26 +272,6 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
     if (window.history.state?.nodChat) window.history.replaceState({ ...window.history.state, nodChat: chat.id }, "");
   }, []);
 
-  // Analytics v2: an item's own page, pushed over the tabs like a chat.
-  const onOpenWidget = useCallback((chat: Chat, message: Message) => {
-    if (widgetLeaveTimer.current) clearTimeout(widgetLeaveTimer.current);
-    setWidgetLeaving(false);
-    setWidget({ chat, message });
-  }, []);
-  const closeWidget = useCallback(() => {
-    setWidgetLeaving(true);
-    widgetLeaveTimer.current = setTimeout(() => {
-      setWidget(null);
-      setWidgetLeaving(false);
-    }, LEAVE_MS);
-  }, []);
-  const hideWidgetImmediate = useCallback(() => {
-    if (widgetLeaveTimer.current) clearTimeout(widgetLeaveTimer.current);
-    setWidget(null);
-    setWidgetLeaving(false);
-  }, []);
-  useBackLayer("nodWidget", !!widget, hideWidgetImmediate);
-
   const hide = useCallback((immediate?: boolean) => {
     if (immediate) {
       // A swipe-back already slid the screen away; just unmount it.
@@ -329,8 +293,6 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
   const popImmediate = useRef(false);
   useEffect(() => { openRef.current = openChat; }, [openChat]);
   const open = (chat: Chat, messageId?: string) => {
-    // A banner tap (or an item page's "show in chat") while an item page is open replaces it.
-    hideWidgetImmediate();
     show(chat, messageId);
     if (window.history.state?.nodChat) {
       // Switching chats (a banner tap) while a contact page or board is open: this entry now
@@ -349,10 +311,24 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
     const code = new URLSearchParams(window.location.search).get("join");
     if (!code) return;
     joined.current = true;
+    // Used once: a reload after leaving the group mustn't join it again.
+    dropParam("join");
     const group = joinByCode(code);
     if (group) setTimeout(() => open(group), 300);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.hydrated, signedIn, joinByCode]);
+
+  // A share link from Mind (nod.app/m/<token>, here ?mind=<token>) opens what it points at, or asks for access.
+  const [linkShare, setLinkShare] = useState<ShareRef | null>(null);
+  const shareOpened = useRef(false);
+  useEffect(() => {
+    if (shareOpened.current || !state.hydrated || !signedIn) return;
+    const ref = parseShareToken(new URLSearchParams(window.location.search).get("mind") ?? "");
+    if (!ref) return;
+    shareOpened.current = true;
+    dropParam("mind");
+    setTimeout(() => setLinkShare(ref), 300);
+  }, [state.hydrated, signedIn]);
 
   const back = (immediate?: boolean) => {
     if (!window.history.state?.nodChat) { hide(immediate); return; }
@@ -390,13 +366,7 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
             <Onboarding key="welcome" mode="first" onDone={(id) => setMe(id)} />
           ) : (
             <>
-              <Inbox
-                key={me}
-                onOpen={open}
-                pushed={(!!openChat && !leaving) || (!!widget && !widgetLeaving)}
-                analyticsMode={analyticsMode}
-                onOpenWidget={onOpenWidget}
-              />
+              <Inbox key={me} onOpen={open} pushed={!!openChat && !leaving} />
               {openLive && openLive.memberIds.includes(me) && !openLive.removedAt && (
                 <ChatView
                   key={openLive.id}
@@ -408,17 +378,7 @@ function Device({ analyticsMode }: { analyticsMode: AnalyticsMode }) {
                   instant={instant}
                 />
               )}
-              {widget && (
-                <WidgetPage
-                  key={widget.message.id}
-                  chat={widget.chat}
-                  message={widget.message}
-                  leaving={widgetLeaving}
-                  onClose={closeWidget}
-                  onCloseInstant={hideWidgetImmediate}
-                  onOpenChat={open}
-                />
-              )}
+              {linkShare && <SharedLink key={shareToken(linkShare)} share={linkShare} onClose={() => setLinkShare(null)} />}
               <ReminderWatcher onBanner={showBanner} />
             </>
           )}
@@ -453,7 +413,6 @@ export default function ChatApp() {
   const [system, setSystem] = useState<Theme>("light");
   const theme: Theme = pref === "system" ? system : pref;
   const [stage, setStage] = useState(STAGE_COLORS[0].value);
-  const [analyticsMode, setAnalyticsMode] = useState<AnalyticsMode>("v1");
 
   useEffect(() => {
     // Restoring saved preferences after mount keeps server and client HTML identical.
@@ -462,7 +421,6 @@ export default function ChatApp() {
     setPref(saved === "dark" || saved === "system" ? saved : "light");
     setSystem(systemTheme());
     setStage(readPref(STAGE_KEY, STAGE_COLORS[0].value));
-    setAnalyticsMode(readPref(ANALYTICS_KEY, "v1") === "v2" ? "v2" : "v1");
     // Settings → Appearance asks for a theme; "Automatic" follows the device.
     const onPick = (e: Event) => { const t = (e as CustomEvent<ThemePref>).detail; setPref(t); writePref(THEME_KEY, t); };
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -487,11 +445,6 @@ export default function ChatApp() {
   const pickStage = (value: string) => {
     setStage(value);
     writePref(STAGE_KEY, value);
-  };
-
-  const pickAnalyticsMode = (value: AnalyticsMode) => {
-    setAnalyticsMode(value);
-    writePref(ANALYTICS_KEY, value);
   };
 
   const stageIsDark = stage === "#1C1917";
@@ -556,7 +509,7 @@ export default function ChatApp() {
             <div><b>Collect from everyone</b><span>Payments, files, places and events, sent straight into the chat.</span></div>
           </div>
 
-          <Device analyticsMode={analyticsMode} />
+          <Device />
         </section>
 
         <footer className={styles.footer}>
@@ -564,7 +517,7 @@ export default function ChatApp() {
           <span>NOD · Interactive prototype</span>
         </footer>
 
-        <DevDrawer stage={stage} onStage={pickStage} analyticsMode={analyticsMode} onAnalyticsMode={pickAnalyticsMode} />
+        <DevDrawer stage={stage} onStage={pickStage} />
       </div>
     </ChatProvider>
   );

@@ -146,6 +146,8 @@
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   transition: transform var(--t-fast) var(--ease-out);
+  /* Always sized by its cell, so what's inside can ask how much room there is (see "Short widgets" below). */
+  container: widget / size;
 }
 .appear .widget { animation: widgetIn var(--t-slow) var(--ease-spring) both; animation-delay: calc(var(--i, 0) * 28ms); }
 .widget:active:not(.jiggle):not(.inPreview) { transform: scale(.985); }
@@ -202,7 +204,16 @@
 .widget.small .body > .col { justify-content: space-between; }
 .colCenter { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
 .colBtn { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 0; border: none; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+/* A line of text keeps its height. (A line that hides its overflow would otherwise be squeezed to nothing
+   when space runs out: "Spent in October" vanishing under the total.) Only charts and lists give way. */
+.col > *, .colCenter > *, .colBtn > * { flex-shrink: 0; }
+.col > .chartGrow, .col > .fit { flex-shrink: 1; }
 .stack { display: flex; flex-direction: column; min-width: 0; }
+/* A list shows the rows that fit whole: one that doesn't wraps into a second column, out of sight, instead of being cut in half. */
+/* clip, not hidden: a hidden box can still be scrolled, and tabbing to a row out of sight would slide the list sideways. */
+.fit { flex: 1 1 0; min-height: 0; flex-wrap: wrap; align-content: flex-start; overflow: clip; }
+.fit > * { width: 100%; }
+.widget.small .body > .col > .fit { justify-content: flex-end; }
 .sideBySide { flex: 1; min-height: 0; display: flex; gap: 16px; }
 .sideBySide > * { flex: 1; min-width: 0; }
 .halves { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -311,6 +322,32 @@
 
 .blocksTight > div { margin: 10px 0 0; }
 .weekStrip.weekStrip { margin: 0 0 4px; }
+
+/* ---- short widgets ----
+   A small or medium widget is one cell tall: about 180px on the biggest phones, nearer 160px on most.
+   Under 178px everything tightens a step (type, charts, the space between rows), so each layout still
+   fits whole instead of its lines running into each other. */
+@container widget (max-height: 178px) {
+  .head { min-height: 18px; }
+  .body { margin: -3px 0 -4px; }
+  .col, .colBtn { gap: 4px; }
+  .colCenter { gap: 5px; }
+  .big { font-size: 28px; }
+  .countdown { font-size: 24px; }
+  .clampBig { font: var(--t-subhead); font-weight: var(--w-emph); }
+  .spark { height: 28px; }
+  .donutSmall { width: 78px; height: 78px; }
+  .donutCenter b { font-size: 19px; }
+  .balNum { font-size: 23px; }
+  .balance { gap: 5px; }
+  .stack > .balance + .balance { margin-top: 6px; padding-top: 6px; }
+  .line { min-height: 38px; padding: 2px 0; }
+  .check { padding: 7px 0; }
+  .poll { gap: 5px; }
+  .meter { padding: 3px 0; }
+  .tiles > div { padding: 6px 10px; }
+  .legend { gap: 5px; }
+}
 
 /* ---- the add and edit sheets ---- */
 

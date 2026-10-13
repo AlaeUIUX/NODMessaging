@@ -2486,6 +2486,8 @@
   padding: 6px 0;
 }
 .bsheetHead .bsheetAction { justify-self: end; color: var(--accent); font-weight: 600; }
+/* A step in a flow goes Back, iOS style: a chevron and the word, in the accent. */
+.bsheetHead .bsheetBack { display: inline-flex; align-items: center; gap: 2px; margin-left: -6px; color: var(--accent); }
 .bsheetHead .bsheetAction:disabled { color: var(--ink-3); opacity: .5; cursor: default; }
 .bsheetBody { overflow-y: auto; padding: 4px 16px 8px; scrollbar-width: none; display: flex; flex-direction: column; gap: 10px; }
 .bsheetBody::-webkit-scrollbar { display: none; }
@@ -4806,25 +4808,6 @@ a.bsheetAction { text-decoration: none !important; }
 .mindCrumbSep { color: var(--ink-3); opacity: .7; }
 .mindCrumbs [aria-current] span { font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); }
 
-/* the any-emoji tile */
-.mindEmojiCustom {
-  position: relative;
-  aspect-ratio: 1;
-  border-radius: var(--r-sm);
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--line-2);
-  border: none;
-  color: var(--ink-3);
-  font-size: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  overflow: hidden;
-}
-.mindEmojiCustom:focus-within { box-shadow: inset 0 0 0 2px var(--accent); color: var(--accent); }
-.mindEmojiCustom.mindPickOn { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ink); }
-.mindEmojiCustom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: none; font-size: 16px; cursor: pointer; }
 
 /* swipe an item left to reveal actions (like chat rows) */
 .mindSwipe { position: relative; border-radius: var(--r-md); }
@@ -4858,62 +4841,38 @@ a.bsheetAction { text-decoration: none !important; }
 .mindInboxItem > .mindSwipe { flex: 1; min-width: 0; }
 
 /* ==========================================================================
-   Mind — stacks: a stack of cards, so a stack never reads as one item
+   Mind — stacks: a plain page row (List) or card (Grid, Shelf), the same
+   surface as everything else. What says "stack" is its chevron and its count.
    ========================================================================== */
 
-/* List (and beside a board): a row with the next card peeking above it */
-.mindPageRow.mindStackRow { position: relative; margin-top: 5px; }
-.mindPageRow.mindStackRow::before {
-  content: "";
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 100%;
-  height: 5px;
-  border-radius: 6px 6px 0 0;
-  background: color-mix(in srgb, var(--tone) 24%, var(--card-bg));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 14%, transparent);
-  clip-path: inset(-2px -2px 0 -2px);
-}
+.mindPageRow.mindStackRow { position: relative; }
 
-/* Grid and Shelf: a card with two more behind it */
-.mindStackGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px 10px; padding-top: 4px; margin-bottom: 8px; }
+.mindStackGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; padding-top: 4px; margin-bottom: 8px; }
 .mindStackCard {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-  margin-top: 9px;
   padding: 12px;
   border: none;
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--tone) 9%, var(--card-bg));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 15%, transparent), var(--e1);
+  background: var(--card-bg);
+  box-shadow: var(--mb-shadow);
   color: var(--ink);
   font: inherit;
   text-align: left;
   cursor: pointer;
   transition: transform var(--t-fast) var(--ease-out);
 }
-.mindStackCard::before, .mindStackCard::after {
-  content: "";
-  position: absolute;
-  bottom: 100%;
-  border-radius: 8px 8px 0 0;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 13%, transparent);
-  clip-path: inset(-2px -2px 0 -2px);
-}
-.mindStackCard::before { left: 9px; right: 9px; height: 5px; background: color-mix(in srgb, var(--tone) 18%, var(--card-bg)); }
-.mindStackCard::after { left: 18px; right: 18px; height: 4px; bottom: calc(100% + 5px); background: color-mix(in srgb, var(--tone) 28%, var(--card-bg)); }
 .mindStackCard:active { transform: scale(.97); }
 .mindStackTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
-.mindStackBadge { padding: 2px 8px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--tone) 18%, transparent); color: var(--ink-2); font-style: normal; font: var(--t-caption1); font-weight: var(--w-emph); white-space: nowrap; }
+.mindStackBadge { padding: 2px 8px; border-radius: var(--r-pill); background: var(--fill); color: var(--ink-2); font-style: normal; font: var(--t-caption1); font-weight: var(--w-emph); white-space: nowrap; }
 .mindStackCard .folderPeek:empty { display: none; }
 /* On a shelf: a taller card, like a spine you can pull out */
 .mindStackCard.mindStackShelf { min-height: 172px; justify-content: space-between; }
 .mindShelf > .mindStackCard { flex: 0 0 150px; }
-.mindShelf:has(> .mindStackCard) { padding-top: 12px; }
+.mindShelf:has(> .mindStackCard) { padding-top: 4px; }
 .mindFolders.mindShelf, .mindFolders.mindStackGrid { margin-bottom: 10px; }
 
 /* the structure tiles in the + sheet: dashed, since they hold things rather than being one */
@@ -5012,6 +4971,63 @@ img.spaceAvatar { object-fit: cover; }
 .mindSaveOn { background: var(--ink); color: var(--bg); box-shadow: var(--e2); }
 
 /* ==========================================================================
+   Mind: search, filter and "…" at the top right of a collection or a stack
+   ========================================================================== */
+/* Both sides as wide as the three tools, so the name stays centred. */
+.headerSide.mindHeadSide { width: 112px; }
+.mindTools { display: flex; align-items: center; height: 44px; padding: 0 4px; border-radius: var(--r-pill); }
+.mindTools button {
+  position: relative;
+  width: 34px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background var(--t-fast), transform var(--t-fast) var(--ease-out);
+}
+.mindTools button:active { transform: scale(.88); }
+.mindTools button.mindToolOn { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.mindToolDot { position: absolute; top: 6px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface); }
+
+/* The menus hanging from those buttons: no dimming, a tap anywhere else closes them. */
+.mindMenuScrim { position: absolute; inset: 0; }
+.menu.mindMenu { width: 248px; overflow-y: auto; overscroll-behavior: contain; transform-origin: top right; }
+.mindMenuHead { margin: 0; padding: 8px 12px 2px; font: var(--t-caption1); font-weight: var(--w-emph); letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+.mindMenuNote { margin: 0; padding: 4px 12px 8px; font: var(--t-footnote); color: var(--ink-3); text-wrap: pretty; }
+.menuItem.mindMenuOpt { height: 40px; }
+.menuItem.mindMenuOpt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menuItem.mindMenuOpt svg { color: var(--accent); flex-shrink: 0; }
+.menuItem.mindMenuClear { color: var(--accent); font-weight: var(--w-emph); }
+
+/* What's filtering the page, under the toolbar. */
+.mindFilterBar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--ink-3); }
+.mindFilterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px 0 10px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font: var(--t-footnote);
+  font-weight: var(--w-emph);
+  cursor: pointer;
+}
+.mindFilterChip:active { transform: scale(.95); }
+.mindFilterClear { margin-left: auto; padding: 4px 2px; border: none; background: none; color: var(--ink-3); font: var(--t-footnote); font-weight: var(--w-emph); cursor: pointer; }
+
+/* Search inside a collection or a stack. */
+.mindScopeSearch { display: flex; align-items: center; gap: 10px; animation: pickerIn var(--t-mid) var(--ease-out) both; }
+.mindScopeSearch > .searchBar { flex: 1; min-width: 0; padding: 0 12px 0 14px; background: color-mix(in srgb, var(--ink) 5%, transparent); box-shadow: none; }
+.mindSearchDone { flex-shrink: 0; padding: 6px 2px; border: none; background: none; color: var(--accent); font: var(--t-body); cursor: pointer; }
+
+/* ==========================================================================
    A name and its icon in one field (Mind's collections and stacks)
    ========================================================================== */
 .nameIcon { display: flex; flex-direction: column; gap: 8px; }
@@ -5055,7 +5071,14 @@ img.spaceAvatar { object-fit: cover; }
   box-shadow: 0 0 0 2px var(--bg);
   transition: transform var(--t-fast);
 }
-.nameIconPicking .nameIconBtn i { transform: rotate(180deg); }
+.nameIconPicking .nameIconBtn { box-shadow: 0 0 0 2px var(--accent), var(--e1); }
+.nameIconPicking .nameIconBtn i { background: var(--accent); }
+/* The field the icon's tap focuses: invisible, over the whole icon, 16px so a phone doesn't zoom to it. */
+.nameIconEmoji { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: none; opacity: 0; font-size: 16px; caret-color: transparent; cursor: pointer; }
+/* A phone has its emoji keyboard; the suggestions are for a mouse. */
+@media (pointer: coarse) { .nameIconQuick { display: none; } }
+.nameIconQuick { grid-template-columns: repeat(9, 1fr); gap: 4px; }
+.nameIconQuick button { font-size: 18px; }
 .nameIconInput {
   flex: 1;
   min-width: 0;

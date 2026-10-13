@@ -8,21 +8,24 @@ import { findUrl, hostOf, isbnOf, isIsbnQuery, normalizeUrl, parseVideo, splitUr
 import { findBooks, sameTitle, unfurl, type BookHit, type LinkMeta } from "@/lib/chat/lookup";
 import { toAttachment } from "@/lib/chat/media";
 import {
-  amendBlock, blankPage, childrenOf, collectionItems, commitDraft, detach, draftOf, dropDraft, learnChat, locate, makeCollection, newId, nowMs,
+  amendBlock, blankPage, childrenOf, collectionItems, commitDraft, commitShareDraft, detach, draftOf, dropDraft, projectCollection, learnChat, locate, makeCollection, newId, nowMs,
   pageItems, patchBlock, patchCollection, patchPage, place, removeBlock, rootItems, tagsOf, todayKey, useMind,
   type Block, type BlockKind, type Collection, type Mind, type MindView, type Page, type TaskStatus,
 } from "@/lib/chat/mind";
 import { paletteName, randomPalette, swatchesOf, type Swatch } from "@/lib/chat/palette";
+import { accessOf, audienceLabel, lookUp, NO_SHARING, type ShareRef } from "@/lib/chat/share";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Chat } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { BlockView, KIND_LABEL } from "./MindBlocks";
 import { DateField } from "./DatePicker";
 import { BookSearch, FilePicker, PasteButton, PasteField, PhotoPicker, VideoPreview } from "./MindFields";
+import { ActionMenu, FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, ScopeSearch, ScopeTools, type MindFilter } from "./MindFilter";
 import PaletteEditor from "./PaletteEditor";
+import { SendSheet, ShareSheet } from "./Share";
 import {
   IconArrowRight, IconArrowUp, IconBack, IconBoard, IconCheck, IconChevron, IconChevronDown, IconClose, IconEdit, IconGrid,
-  IconFolder, IconGlobe, IconInbox, IconLink, IconListView, IconMessage, IconMore, IconOpen, IconPalette, IconPlus, IconShelf, IconSmile, IconTrash, IconVideo,
+  IconFolder, IconGlobe, IconInbox, IconLink, IconListView, IconMessage, IconOpen, IconPalette, IconPlus, IconShare, IconShelf, IconSmile, IconTrash, IconUserGroup, IconVideo,
 } from "./Icons";
 import { HoldMenu, useHold, type HoldAction, type HoldBind, type HoldSrc } from "./MindHold";
 import Logo from "./Logo";
@@ -85,7 +88,7 @@ const KINDS: { kind: BlockKind; label: string; emoji: string; group: "Capture" |
   { kind: "amount", label: "Amount", emoji: "💶", group: "Track" },
   { kind: "date", label: "Date", emoji: "📅", group: "Track" },
 ];
-const KIND_EMOJI = Object.fromEntries(KINDS.map((k) => [k.kind, k.emoji])) as Record<BlockKind, string>;
+export const KIND_EMOJI = Object.fromEntries(KINDS.map((k) => [k.kind, k.emoji])) as Record<BlockKind, string>;
 /** The picture an item brings to a folder's peek: a photo, a book's cover, a video's still. */
 const peekImage = (b: Block) => (b.kind === "image" || b.kind === "book" || b.kind === "video" ? b.image : undefined);
 
@@ -108,7 +111,8 @@ interface Ctx {
   openPage: (id: string) => void;
   openSheet: (n: React.ReactNode) => void;
   closeSheet: () => void;
-  openChat: (chatId: string) => void;
+  /** Opens a chat. Unset in an editor (a group's or a shared Mind), which can't leave for one without losing its copy. */
+  openChat?: (chatId: string) => void;
 }
 
 export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat: Chat) => void; onSettings: () => void }) {
@@ -227,35 +231,47 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
    =========================================================================== */
 
 /**
- * A group's Mind, opened full screen to edit, the way a board opens: the same
- * Mind as your own (stacks, items, views, the one +, hold and drag), working
- * on a copy made when Edit was tapped (startDraft). Save puts the copy back
- * for everyone; leaving with changes asks first.
+ * A group's Mind, or a collection someone shared with you to edit, opened
+ * full screen the way a board opens: the same Mind as your own (stacks,
+ * items, views, the one +, hold and drag), working on a copy made when Edit
+ * was tapped (startDraft, startShareDraft). Save puts the copy back for
+ * everyone; leaving with changes asks first.
  */
-export function MindEditor({ source, title, onClose, onSaved, onOpenChat }: {
-  /** The Mind being edited (a group's id in the store); its copy is already made. */
+export function MindEditor({ source, title, note = "Editing for everyone", shared, onClose, onSaved }: {
+  /** What's being edited: a group's Mind id, or a shared collection's shareKey. Its copy is already made. */
   source: string;
   title: string;
+  /** Under the title while nothing has changed. */
+  note?: string;
+  /** Editing a collection shared with you: whose it is, and which. */
+  shared?: { owner: string; collectionId: string };
   onClose: () => void;
   onSaved: () => void;
-  onOpenChat: (chatId: string) => void;
 }) {
   const { me } = useChat();
   const store = draftOf(source);
   const { mind, update } = useMind(store);
-  const { mind: saved } = useMind(source);
+  const { mind: savedMind } = useMind(shared ? shared.owner : source);
+  // A shared collection is compared with just that collection of its owner's Mind.
+  const saved = shared ? projectCollection(savedMind, shared.collectionId) : savedMind;
   const [page, setPage] = useState<{ id: string; leaving: boolean } | null>(null);
   const [sheet, setSheet] = useState<React.ReactNode>(null);
   const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean; actions?: ToastAction[] } | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [asking, setAsking] = useState(false);
   const col = mind?.collections[0] ?? null;
-  const dirty = !!mind && !!saved && JSON.stringify(mind) !== JSON.stringify(saved);
+  // When an item was last touched isn't a change (ticking a to-do and unticking it leaves nothing to save),
+  // and neither is the copy's own note of what it started with.
+  const content = (m: Mind) => JSON.stringify(m, (k, v) => (k === "updatedAt" || k === "draftBase" ? undefined : v));
+  const dirty = !!mind && !!saved && content(mind) !== content(saved);
 
   // The copy is forgotten once the screen has slid away, when nothing reads it any more.
   const finish = (save: boolean, after?: () => void) => {
     if (leaving) return;
-    if (save) commitDraft(source);
+    if (save) {
+      if (shared) commitShareDraft(shared.owner, shared.collectionId, me);
+      else commitDraft(source);
+    }
     setLeaving(true);
     setTimeout(() => {
       onClose();
@@ -274,6 +290,7 @@ export function MindEditor({ source, title, onClose, onSaved, onOpenChat }: {
     setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), stay);
     setTimeout(() => setToast((t) => (t?.id === id ? null : t)), stay + 220);
   };
+  // No openChat: going to a chat from here would close the editor, and with it any unsaved changes.
   const ctx: Ctx = {
     mind, col, update, me, store, flash,
     // One collection: there's nowhere else to go.
@@ -281,19 +298,28 @@ export function MindEditor({ source, title, onClose, onSaved, onOpenChat }: {
     openPage: (id) => setPage({ id, leaving: false }),
     openSheet: setSheet,
     closeSheet: () => setSheet(null),
-    openChat: (chatId) => {
-      if (dirty) flash("Save or cancel first, then open the chat");
-      else finish(false, () => onOpenChat(chatId));
-    },
   };
   const leavePage = () => {
     setPage((x) => (x ? { ...x, leaving: true } : x));
     setTimeout(() => setPage((x) => (x?.leaving ? null : x)), 220);
   };
+  // A shared collection is saved only while you may still edit it: the owner may have changed that meanwhile.
+  const save = () => {
+    if (shared) {
+      const ref = { owner: shared.owner, collectionId: shared.collectionId };
+      const now = lookUp(ref);
+      const may = now ? accessOf(ref, now, me) : null;
+      if (may !== "edit" && may !== "owner") {
+        flash(now ? `${userById(shared.owner).name} changed your access: this can't be saved now` : "This collection is gone, so there's nothing to save to");
+        return;
+      }
+    }
+    finish(true);
+  };
 
   return (
     <div className={styles.mindEditor}>
-      <FolderScreen ctx={ctx} col={col} leaving={leaving} onBack={cancel} edit={{ title, dirty, onCancel: cancel, onSave: () => finish(true) }} />
+      <FolderScreen ctx={ctx} col={col} leaving={leaving} onBack={cancel} edit={{ title, note, dirty, onCancel: cancel, onSave: save }} />
       {page && col.pages.some((p) => p.id === page.id) && (
         <PageScreen ctx={ctx} col={col} pageId={page.id} leaving={page.leaving} onBack={leavePage} onOpen={(id) => setPage({ id, leaving: false })} />
       )}
@@ -408,6 +434,7 @@ function FolderRow({ ctx, col, i, hold, before, lifted, q }: { ctx: Ctx; col: Co
         <small>{q ? "Collection · " : ""}{col.pages.length} stack{col.pages.length === 1 ? "" : "s"} · {items.length} item{items.length === 1 ? "" : "s"}</small>
       </span>
       <span className={styles.mindPageSide}>
+        {isShared(col.sharing) && <span className={styles.folderPub} title="Shared"><IconUserGroup size={12} /></span>}
         {col.published && <span className={styles.folderPub} title="On Explore"><IconGlobe size={12} /></span>}
         {col.vault.length > 0 && <em className={styles.folderBadge}>{col.vault.length} to sort</em>}
         <IconChevron size={14} />
@@ -430,6 +457,7 @@ function FolderCard({ ctx, col, i, hold, before, lifted }: { ctx: Ctx; col: Coll
       <span className={styles.folderTop}>
         <span className={styles.folderIcon}><Emoji char={col.emoji} /></span>
         <span className={styles.folderBadges}>
+          {isShared(col.sharing) && <span className={styles.folderPub} title="Shared"><IconUserGroup size={12} /></span>}
           {col.published && <span className={styles.folderPub} title="On Explore"><IconGlobe size={12} /></span>}
           {col.vault.length > 0 && <em className={styles.folderBadge}>{col.vault.length} to sort</em>}
         </span>
@@ -476,19 +504,22 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
   leaving: boolean;
   onBack: () => void;
   /** Editing a group's Mind: the header names it and offers Cancel and Save instead of Back and settings. */
-  edit?: { title: string; dirty: boolean; onCancel: () => void; onSave: () => void };
+  edit?: { title: string; note: string; dirty: boolean; onCancel: () => void; onSave: () => void };
 }) {
-  const [tag, setTag] = useState<string | null>(null);
+  const [filter, setFilter] = useState<MindFilter>(NO_FILTER);
+  /** Searching inside: null when the field is closed. */
+  const [search, setSearch] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const all = collectionItems(ctx.mind, col);
-  const tags = tagsOf(all);
-  const has = (b: Block) => !tag || b.tags.includes(tag);
-  // A stack stays in view while filtering if anything in it (or under it) has the tag.
+  const filtering = isFiltering(filter);
+  const has = (b: Block) => passes(filter, b);
+  // A stack stays in view while filtering if anything in it (or under it) passes.
   const holds = (p: Page): boolean => pageItems(ctx.mind, p).some(has) || childrenOf(col, p.id).some(holds);
-  const stacks = col.pages.filter((p) => !p.parentId && (!tag || holds(p)));
+  const stacks = col.pages.filter((p) => !p.parentId && (!filtering || holds(p)));
   const loose = rootItems(ctx.mind, col).filter(has);
   const toSort = col.vault.map((id) => ctx.mind.blocks[id]).filter((b) => b && has(b));
+  const q = search?.trim().toLowerCase() ?? "";
   const view = col.view && COLLECTION_VIEWS.includes(col.view) ? col.view : "list";
   const setView = (v: MindView) => ctx.update((m) => patchCollection(m, col.id, (c) => ({ ...c, view: v })));
   const add = () => ctx.openSheet(<MindAddSheet ctx={ctx} col={col} />);
@@ -552,6 +583,55 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
   ));
   const endDrop = target?.t === "rootBefore" && target.before === null;
 
+  // What's in the collection, as the view and the filter say; a search shows its results instead.
+  const contents = (
+    <>
+      <div className={styles.mindToolbar}>
+        <ViewSwitch views={COLLECTION_VIEWS} value={view} onPick={setView} />
+        {!edit && canShare(ctx) && (
+          <button className={styles.mindPill} onClick={() => openShare(ctx, { owner: ctx.me, collectionId: col.id })}>
+            {isShared(col.sharing) ? <IconUserGroup size={14} /> : <IconShare size={14} />} {isShared(col.sharing) ? "Shared" : "Share"}
+          </button>
+        )}
+      </div>
+
+      <FilterBar filter={filter} onChange={setFilter} />
+
+      {toSort.length > 0 && <ToSort ctx={ctx} items={toSort} hold={hold} />}
+
+      <div className={`${styles.mindSectionBar} ${endDrop ? styles.mindDropInto : ""}`} data-drop-root>
+        <p className={styles.sheetLabel}>In {col.name}</p>
+        <button className={styles.mindIconBtn} onClick={add} aria-label={`Add to ${col.name}`} title="Add"><IconPlus size={16} /></button>
+      </div>
+      <div data-drop-root>
+        {!stacks.length && !loose.length ? (
+          // A match waiting in To sort, just above, means something here does match.
+          filtering ? (toSort.length ? null : <p className={styles.emptyInbox}>Nothing in {col.name} matches the filter.</p>) : (
+            <button className={styles.mindEmptySection} onClick={add}>
+              <IconPlus size={14} /> Add a stack or an item
+            </button>
+          )
+        ) : view === "shelf" ? (
+          // One shelf: stacks first, then the loose items, all on the same level.
+          <div className={styles.mindShelf}>
+            {cards}
+            {loose.map(tile)}
+          </div>
+        ) : view === "grid" ? (
+          <>
+            {cards.length > 0 && <div className={styles.mindStackGrid}>{cards}</div>}
+            {loose.length > 0 && <div className={styles.mindGridView}>{loose.map(tile)}</div>}
+          </>
+        ) : (
+          <div className={styles.mindRows}>
+            {cards}
+            {loose.map(row)}
+          </div>
+        )}
+      </div>
+    </>
+  );
+
   return (
     <div
       ref={rootRef}
@@ -568,7 +648,7 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
           <div className={styles.titleCapsule}>
             <span className={styles.mindPageBadge}><Emoji char={col.emoji} /></span>
             <div className={`${styles.tcName} ${styles.glass}`}><span>{edit.title}</span></div>
-            <span className={styles.tcPresence}>{edit.dirty ? "Unsaved changes" : "Editing for everyone"}</span>
+            <span className={styles.tcPresence}>{edit.dirty ? "Unsaved changes" : edit.note}</span>
           </div>
           <div className={`${styles.headerSide} ${styles.headerEnd}`}>
             <button className={`${styles.mindSave} ${edit.dirty ? styles.mindSaveOn : styles.glass}`} onClick={edit.onSave}>Save</button>
@@ -576,61 +656,30 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
         </header>
       ) : (
         <header className={styles.chatHeader}>
-          <button className={`${styles.circleBtn} ${styles.glass}`} onClick={onBack} aria-label="Back to Mind"><IconBack /></button>
+          <div className={`${styles.headerSide} ${styles.mindHeadSide}`}>
+            <button className={`${styles.circleBtn} ${styles.glass}`} onClick={onBack} aria-label="Back to Mind"><IconBack /></button>
+          </div>
           <div className={styles.titleCapsule}>
             <span className={styles.mindPageBadge}><Emoji char={col.emoji} /></span>
             <div className={`${styles.tcName} ${styles.glass}`}><span>{col.name}</span></div>
             <span className={styles.tcPresence}>{col.pages.length} {col.pages.length === 1 ? "stack" : "stacks"} · {all.length} items</span>
           </div>
-          <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => ctx.openSheet(<FolderSheet ctx={ctx} colId={col.id} onDeleted={onBack} />)} aria-label="Collection settings"><IconMore /></button>
+          <div className={`${styles.headerSide} ${styles.headerEnd} ${styles.mindHeadSide}`}>
+            <ScopeTools
+              searching={search !== null}
+              filtering={filtering}
+              moreLabel="Collection options"
+              onSearch={() => setSearch((s) => (s === null ? "" : null))}
+              onFilter={(el) => ctx.openSheet(<FilterMenu anchor={el} items={all} filter={filter} onChange={setFilter} onClose={ctx.closeSheet} />)}
+              onMore={(el) => ctx.openSheet(<ActionMenu anchor={el} title={emojify(`${col.emoji} ${col.name}`)} actions={collectionActions(ctx, col, onBack)} onClose={ctx.closeSheet} />)}
+            />
+          </div>
         </header>
       )}
 
       <div className={styles.mindPageScroll} ref={scrollRef}>
-        <div className={styles.mindToolbar}>
-          <ViewSwitch views={COLLECTION_VIEWS} value={view} onPick={setView} />
-        </div>
-
-        {tags.length > 0 && (
-          <div className={styles.chips}>
-            <button className={`${styles.chip} ${!tag ? styles.chipOn : ""}`} onClick={() => setTag(null)}>All</button>
-            {tags.map((t) => (
-              <button key={t} className={`${styles.chip} ${tag === t ? styles.chipOn : ""}`} onClick={() => setTag(tag === t ? null : t)}>#{t}</button>
-            ))}
-          </div>
-        )}
-
-        {toSort.length > 0 && <ToSort ctx={ctx} items={toSort} hold={hold} />}
-
-        <div className={`${styles.mindSectionBar} ${endDrop ? styles.mindDropInto : ""}`} data-drop-root>
-          <p className={styles.sheetLabel}>In {col.name}</p>
-          <button className={styles.mindIconBtn} onClick={add} aria-label={`Add to ${col.name}`} title="Add"><IconPlus size={16} /></button>
-        </div>
-        <div data-drop-root>
-          {!stacks.length && !loose.length ? (
-            tag ? <p className={styles.emptyInbox}>Nothing here is tagged #{tag}.</p> : (
-              <button className={styles.mindEmptySection} onClick={add}>
-                <IconPlus size={14} /> Add a stack or an item
-              </button>
-            )
-          ) : view === "shelf" ? (
-            // One shelf: stacks first, then the loose items, all on the same level.
-            <div className={styles.mindShelf}>
-              {cards}
-              {loose.map(tile)}
-            </div>
-          ) : view === "grid" ? (
-            <>
-              {cards.length > 0 && <div className={styles.mindStackGrid}>{cards}</div>}
-              {loose.length > 0 && <div className={styles.mindGridView}>{loose.map(tile)}</div>}
-            </>
-          ) : (
-            <div className={styles.mindRows}>
-              {cards}
-              {loose.map(row)}
-            </div>
-          )}
-        </div>
+        {search !== null && <ScopeSearch value={search} placeholder={`Search ${col.name}`} onChange={setSearch} onCancel={() => setSearch(null)} />}
+        {q ? <SearchResults ctx={ctx} q={q} within={{ col }} keep={filtering ? has : undefined} /> : contents}
       </div>
       {hold.ghost}
     </div>
@@ -638,9 +687,9 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
 }
 
 /**
- * A stack, drawn as a stack of cards so it never reads as a single item. Its
- * shape follows the view: a row in List (and beside a Board), a card in Grid,
- * a tall card on the Shelf. Drop something on it to put it inside.
+ * A stack, drawn as a plain page: a row in List (and beside a Board), a card
+ * in Grid, a tall card on the Shelf, each with its count and (as a row) a
+ * chevron. Drop something on it to put it inside.
  */
 function StackCard({ ctx, col, page, i, view, onOpen, hold, mark, lifted }: { ctx: Ctx; col: Collection; page: Page; i: number; view: MindView; onOpen: () => void; hold?: HoldBind; mark?: "into" | "before" | null; lifted?: boolean }) {
   const kids = childrenOf(col, page.id);
@@ -746,13 +795,27 @@ function Crumbs({ trail }: { trail: { key: string; emoji?: string; label: string
 /**
  * Search across Mind, sorted by what each result is (collections, stacks,
  * items), every one saying where it lives, so a stack is never mistaken for
- * a collection or an item for a stack.
+ * a collection or an item for a stack. `within` keeps it to one collection,
+ * or to a stack and the stacks inside it.
  */
-function SearchResults({ ctx, q }: { ctx: Ctx; q: string }) {
-  const folders = ctx.mind.collections.filter((c) => c.name.toLowerCase().includes(q));
-  const stacks = ctx.mind.collections.flatMap((c) => c.pages.filter((p) => p.title.toLowerCase().includes(q)).map((p) => ({ c, p })));
-  const blocks = Object.values(ctx.mind.blocks).filter((b) =>
-    [b.title, b.body, b.source, b.back, b.note, ...b.tags].some((x) => x?.toLowerCase().includes(q)));
+function SearchResults({ ctx, q, within, keep }: {
+  ctx: Ctx;
+  q: string;
+  within?: { col: Collection; pages?: string[]; label?: string };
+  /** The page's filter, when one is on: items it hides stay out of the results too. */
+  keep?: (b: Block) => boolean;
+}) {
+  const inScope = (c: Collection, pageId?: string | null) =>
+    !within || (c.id === within.col.id && (!within.pages || (!!pageId && within.pages.includes(pageId))));
+  const folders = within ? [] : ctx.mind.collections.filter((c) => c.name.toLowerCase().includes(q));
+  const stacks = ctx.mind.collections.flatMap((c) => c.pages.filter((p) => inScope(c, p.id) && p.title.toLowerCase().includes(q)).map((p) => ({ c, p })));
+  const blocks = Object.values(ctx.mind.blocks).filter((b) => {
+    if (keep && !keep(b)) return false;
+    if (![b.title, b.body, b.source, b.back, b.note, ...(b.tags ?? [])].some((x) => x?.toLowerCase().includes(q))) return false;
+    if (!within) return true;
+    const at = locate(ctx.mind, b.id);
+    return !!at && inScope(at.collection, at.page?.id);
+  });
   const total = folders.length + stacks.length + blocks.length;
   const trailOf = (c: Collection, pages: Page[], tail?: string) => [
     { key: c.id, emoji: c.emoji, label: c.name },
@@ -762,7 +825,7 @@ function SearchResults({ ctx, q }: { ctx: Ctx; q: string }) {
   return (
     <div className={styles.mindStack}>
       {total === 0 ? (
-        <p className={styles.emptyInbox}>Nothing in your Mind matches “{q}”.</p>
+        <p className={styles.emptyInbox}>Nothing in {within ? within.label ?? within.col.name : "your Mind"} matches “{q}”.</p>
       ) : (
         <p className={styles.searchCount}>{total} {total === 1 ? "result" : "results"}</p>
       )}
@@ -842,7 +905,7 @@ function Tile({ onOpen, children }: { onOpen: () => void; children: React.ReactN
   );
 }
 
-function toggleItem(update: Ctx["update"], b: Block) {
+export function toggleItem(update: Ctx["update"], b: Block) {
   if (b.kind === "todo") {
     const done = !b.done;
     update((m) => patchBlock(m, b.id, { done, status: b.status ? (done ? "done" : "todo") : undefined }));
@@ -963,7 +1026,9 @@ function PublishField({ ctx, col, onChange }: { ctx: Ctx; col: Collection; onCha
     <>
       <p className={styles.sheetLabel}>Explore</p>
       {theirs ? (
-        <p className={styles.sheetNote}>Added from Explore. Only collections you made can be published.</p>
+        <p className={styles.sheetNote}>
+          {col.from?.id.startsWith("share:") ? `A copy of ${userById(col.from.by).name}’s collection.` : "Added from Explore."} Only collections you made can be published.
+        </p>
       ) : (
         <div className={styles.mindPublish}>
           <div className={styles.mindPublishRow}>
@@ -1014,6 +1079,18 @@ function FolderSheet({ ctx, colId, onDeleted }: { ctx: Ctx; colId: string; onDel
           <div className={styles.mindSwatches}>
             {Object.values(TONES).map((c) => <button key={c} style={{ background: c }} className={col.tone === c ? styles.mindPickOn : undefined} onClick={() => set({ tone: c })} aria-label={`Colour ${c}`} />)}
           </div>
+          {canShare(ctx) && (
+            <>
+              <p className={styles.sheetLabel}>Sharing</p>
+              <div className={styles.listGroup}>
+                <button className={styles.actionRow} onClick={() => close(() => openShare(ctx, { owner: ctx.me, collectionId: col.id }))}>
+                  <span className={styles.mindEmoji}><IconUserGroup size={18} /></span>
+                  <span className={styles.contactText}><b>Share {col.name}</b><small>{audienceLabel({ ...NO_SHARING, ...col.sharing }, (id) => userById(id).name)}</small></span>
+                  <IconChevron size={14} />
+                </button>
+              </div>
+            </>
+          )}
           <PublishField ctx={ctx} col={col} onChange={(published) => set({ published })} />
           <button
             className={styles.mindDanger}
@@ -1036,13 +1113,16 @@ function FolderSheet({ ctx, colId, onDeleted }: { ctx: Ctx; colId: string; onDel
    =========================================================================== */
 
 /**
- * A name and its icon as one field: the icon sits at the start of the name,
- * and only tapping it ("Choose icon") opens the icons to pick from, right
- * under the field. Nothing below a name reads like a file type any more.
+ * A name and its icon as one field: the icon sits at the start of the name.
+ * Tapping the icon brings the keyboard straight up (the tap focuses a hidden
+ * field, so a phone opens its keyboard on the spot): type any emoji and it
+ * becomes the icon, then the name takes the keyboard back. With a mouse there's
+ * no emoji keyboard, so a row of suggestions shows under the field too.
  */
 function NameIconField({ name, emoji, options, label, placeholder, autoFocus, onName, onEmoji, onEnter }: {
   name: string;
   emoji: string;
+  /** Suggestions for a mouse; a phone types its own. */
   options: string[];
   label: string;
   placeholder?: string;
@@ -1052,20 +1132,35 @@ function NameIconField({ name, emoji, options, label, placeholder, autoFocus, on
   onEnter?: () => void;
 }) {
   const [picking, setPicking] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const pick = (e: string) => {
+    onEmoji(e);
+    // Moving focus from field to field keeps a phone's keyboard up, now for the name.
+    nameRef.current?.focus({ preventScroll: true });
+  };
   return (
     <div className={styles.nameIcon}>
       <div className={`${styles.nameIconRow} ${picking ? styles.nameIconPicking : ""}`}>
-        <button
-          className={styles.nameIconBtn}
-          onClick={() => setPicking((v) => !v)}
-          aria-expanded={picking}
-          aria-label={`Choose icon, now ${emoji}`}
-          title="Choose icon"
-        >
+        <label className={styles.nameIconBtn} title="Change icon">
           <Emoji char={emoji} />
-          <i aria-hidden="true"><IconChevronDown size={10} /></i>
-        </button>
+          <i aria-hidden="true"><IconSmile size={11} /></i>
+          <input
+            className={styles.nameIconEmoji}
+            value=""
+            onFocus={() => setPicking(true)}
+            onBlur={() => setPicking(false)}
+            onChange={(e) => {
+              const picked = firstEmoji(e.target.value);
+              if (picked) pick(picked);
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); nameRef.current?.focus({ preventScroll: true }); } }}
+            aria-label={`Icon, now ${emoji}. Type an emoji to change it`}
+            autoComplete="off"
+            enterKeyHint="done"
+          />
+        </label>
         <input
+          ref={nameRef}
           className={styles.nameIconInput}
           data-autofocus={autoFocus || undefined}
           value={name}
@@ -1077,37 +1172,13 @@ function NameIconField({ name, emoji, options, label, placeholder, autoFocus, on
       </div>
       {picking && (
         <div className={styles.nameIconPicker}>
-          <p>Choose an icon</p>
-          <EmojiPicker value={emoji} options={options} onPick={(e) => { onEmoji(e); setPicking(false); }} />
+          <p>Type an emoji to make it the icon</p>
+          {/* Pressing a suggestion mustn't blur the hidden field first, or the row would close before the click lands. */}
+          <div className={`${styles.mindEmojiGrid} ${styles.nameIconQuick}`} onMouseDown={(e) => e.preventDefault()}>
+            {options.map((e) => <button key={e} className={emoji === e ? styles.mindPickOn : undefined} onClick={() => pick(e)} aria-label={`Icon ${e}`}><Emoji char={e} /></button>)}
+          </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * A grid of suggested icons, plus one tile that takes any emoji: tapping it
- * focuses a hidden field, so a phone brings up its keyboard (and its emoji
- * keyboard). On a computer it just waits for an emoji to be typed.
- */
-function EmojiPicker({ value, options, onPick }: { value: string; options: string[]; onPick: (e: string) => void }) {
-  const custom = !options.includes(value) ? value : null;
-  return (
-    <div className={styles.mindEmojiGrid}>
-      {options.map((e) => <button key={e} className={value === e ? styles.mindPickOn : undefined} onClick={() => onPick(e)} aria-label={`Icon ${e}`}><Emoji char={e} /></button>)}
-      <label className={`${styles.mindEmojiCustom} ${custom ? styles.mindPickOn : ""}`} title="Any emoji">
-        {custom ? <Emoji char={custom} /> : <IconSmile size={20} />}
-        <input
-          value=""
-          onChange={(e) => {
-            const picked = firstEmoji(e.target.value);
-            if (picked) onPick(picked);
-          }}
-          aria-label="Type any emoji"
-          autoComplete="off"
-          enterKeyHint="done"
-        />
-      </label>
     </div>
   );
 }
@@ -1117,12 +1188,22 @@ type SwipeAction = { id: string; label: string; icon: React.ReactNode; tone: "in
 /** What a swipe on an item offers: open its source, move it, or remove it. */
 function itemActions(ctx: Ctx, b: Block): SwipeAction[] {
   const list: SwipeAction[] = [];
-  if (b.ref) list.push({ id: "open", label: "Chat", icon: <IconOpen size={18} />, tone: "ink", run: () => ctx.openChat(b.ref!.chatId) });
+  const openChat = ctx.openChat;
+  if (b.ref && openChat) list.push({ id: "open", label: "Chat", icon: <IconOpen size={18} />, tone: "ink", run: () => openChat(b.ref!.chatId) });
   else if (b.url) list.push({ id: "open", label: "Open", icon: <IconOpen size={18} />, tone: "ink", run: () => window.open(b.url, "_blank", "noopener") });
   list.push({ id: "move", label: "Move", icon: <IconFolder size={18} />, tone: "accent", run: () => ctx.openSheet(<MoveSheet me={ctx.store} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} />) });
   list.push({ id: "remove", label: "Remove", icon: <IconTrash size={18} />, tone: "danger", run: () => removeItem(ctx.update, ctx.flash, b.id) });
   return list;
 }
+
+/** The share sheet for something in your own Mind; "Send in a chat" follows it. */
+function openShare(ctx: Ctx, ref: ShareRef) {
+  ctx.openSheet(<ShareSheet share={ref} onClose={ctx.closeSheet} onSend={() => ctx.openSheet(<SendSheet share={ref} onClose={ctx.closeSheet} onSent={ctx.flash} />)} />);
+}
+/** Only your own Mind shares: not a group's, not a copy being edited. */
+const canShare = (ctx: Ctx) => ctx.store === ctx.me;
+/** Shared with anyone at all: people, emails or the link. */
+const isShared = (s: Collection["sharing"]) => !!s && (s.link !== "off" || Object.keys(s.people).length > 0 || Object.keys(s.emails ?? {}).length > 0);
 
 /** Remove an item, with an Undo that puts it back exactly where it was. */
 function removeItem(update: Ctx["update"], flash: Ctx["flash"], id: string) {
@@ -1391,29 +1472,50 @@ function deleteCollection(ctx: Ctx, colId: string) {
   ctx.flash(`${name} deleted`, undo ? [{ label: "Undo", run: () => ctx.update(undo) }] : undefined);
 }
 
+const renameAction = (ctx: Ctx, what: string, value: string, save: (v: string) => void) => () => ctx.openSheet(<RenameSheet ctx={ctx} what={what} value={value} onSave={save} />);
+
+/** What a collection offers, held on Mind's home or from "…" inside it. `onDeleted` leaves it, when it's open. */
+function collectionActions(ctx: Ctx, c: Collection, onDeleted?: () => void): HoldAction[] {
+  return [
+    { id: "rename", label: "Rename", icon: <IconEdit />, run: renameAction(ctx, "collection", c.name, (name) => ctx.update((m) => patchCollection(m, c.id, (x) => ({ ...x, name })))) },
+    { id: "style", label: "Icon & colour", icon: <IconPalette />, run: () => ctx.openSheet(<FolderSheet ctx={ctx} colId={c.id} onDeleted={onDeleted ?? (() => {})} />) },
+    ...(canShare(ctx) ? [{ id: "share", label: "Share…", icon: <IconShare />, run: () => openShare(ctx, { owner: ctx.me, collectionId: c.id }) }] : []),
+    ...(c.from && c.from.by !== ctx.me ? [] : [{
+      id: "publish",
+      label: c.published ? "Remove from Explore" : "Publish to Explore",
+      icon: <IconGlobe />,
+      run: () => {
+        ctx.update((m) => patchCollection(m, c.id, (x) => ({ ...x, published: c.published ? undefined : { at: Date.now(), description: "" } })));
+        ctx.flash(c.published ? `${c.emoji} ${c.name} is private again` : `${c.emoji} ${c.name} is on Explore`);
+      },
+    }]),
+    "sep",
+    { id: "delete", label: "Delete collection", icon: <IconTrash />, danger: true, run: () => { deleteCollection(ctx, c.id); onDeleted?.(); } },
+  ];
+}
+
+/** What a stack offers, held or from "…" inside it. */
+function stackActions(ctx: Ctx, col: Collection, p: Page, onDeleted?: () => void): HoldAction[] {
+  return [
+    { id: "rename", label: "Rename", icon: <IconEdit />, run: renameAction(ctx, "stack", p.title, (title) => ctx.update((m) => patchPage(m, p.id, (x) => ({ ...x, title })))) },
+    { id: "style", label: "Icon, colour & views", icon: <IconPalette />, run: () => ctx.openSheet(<PageSheet ctx={ctx} col={col} pageId={p.id} onDeleted={onDeleted ?? (() => {})} />) },
+    { id: "move", label: "Move to…", icon: <IconFolder />, run: () => ctx.openSheet(<StackMoveSheet ctx={ctx} pageId={p.id} />) },
+    "sep",
+    { id: "delete", label: "Delete stack", icon: <IconTrash />, danger: true, run: () => { deleteStack(ctx, col.id, p.id); onDeleted?.(); } },
+  ];
+}
+
 /** What holding something offers. Opens as a lifted copy with a menu under it, like a message. */
 function openHoldMenu(ctx: Ctx, col: Collection | null, src: HoldSrc, el: HTMLElement, opts: { openStack?: (id: string) => void; page?: Page } = {}) {
   const show = (title: React.ReactNode, actions: HoldAction[]) => ctx.openSheet(<HoldMenu anchor={el} title={title} actions={actions} onClose={ctx.closeSheet} />);
-  const rename = (what: string, value: string, save: (v: string) => void) => () => ctx.openSheet(<RenameSheet ctx={ctx} what={what} value={value} onSave={save} />);
+  const rename = (what: string, value: string, save: (v: string) => void) => renameAction(ctx, what, value, save);
 
   if (src.kind === "collection") {
     const c = ctx.mind.collections.find((x) => x.id === src.id);
     if (!c) return;
     show(emojify(`${c.emoji} ${c.name}`), [
       { id: "open", label: "Open", icon: <IconArrowRight />, run: () => ctx.openFolder(c.id) },
-      { id: "rename", label: "Rename", icon: <IconEdit />, run: rename("collection", c.name, (name) => ctx.update((m) => patchCollection(m, c.id, (x) => ({ ...x, name })))) },
-      { id: "style", label: "Icon & colour", icon: <IconPalette />, run: () => ctx.openSheet(<FolderSheet ctx={ctx} colId={c.id} onDeleted={() => {}} />) },
-      ...(c.from && c.from.by !== ctx.me ? [] : [{
-        id: "publish",
-        label: c.published ? "Remove from Explore" : "Publish to Explore",
-        icon: <IconGlobe />,
-        run: () => {
-          ctx.update((m) => patchCollection(m, c.id, (x) => ({ ...x, published: c.published ? undefined : { at: Date.now(), description: "" } })));
-          ctx.flash(c.published ? `${c.emoji} ${c.name} is private again` : `${c.emoji} ${c.name} is on Explore`);
-        },
-      }]),
-      "sep",
-      { id: "delete", label: "Delete collection", icon: <IconTrash />, danger: true, run: () => deleteCollection(ctx, c.id) },
+      ...collectionActions(ctx, c),
     ]);
     return;
   }
@@ -1424,11 +1526,7 @@ function openHoldMenu(ctx: Ctx, col: Collection | null, src: HoldSrc, el: HTMLEl
     if (!p) return;
     show(emojify(`${p.emoji} ${p.title}`), [
       { id: "open", label: "Open", icon: <IconArrowRight />, run: () => (opts.openStack ?? ctx.openPage)(p.id) },
-      { id: "rename", label: "Rename", icon: <IconEdit />, run: rename("stack", p.title, (title) => ctx.update((m) => patchPage(m, p.id, (x) => ({ ...x, title })))) },
-      { id: "style", label: "Icon, colour & views", icon: <IconPalette />, run: () => ctx.openSheet(<PageSheet ctx={ctx} col={col} pageId={p.id} onDeleted={() => {}} />) },
-      { id: "move", label: "Move to…", icon: <IconFolder />, run: () => ctx.openSheet(<StackMoveSheet ctx={ctx} pageId={p.id} />) },
-      "sep",
-      { id: "delete", label: "Delete stack", icon: <IconTrash />, danger: true, run: () => deleteStack(ctx, col.id, p.id) },
+      ...stackActions(ctx, col, p),
     ]);
     return;
   }
@@ -1476,7 +1574,10 @@ function openHoldMenu(ctx: Ctx, col: Collection | null, src: HoldSrc, el: HTMLEl
       id: "move", label: where?.toSort ? "Sort into…" : "Move to…", icon: where?.toSort ? <IconInbox /> : <IconFolder />,
       run: () => ctx.openSheet(<MoveSheet me={ctx.store} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} title={where?.toSort ? "Sort into" : "Move to"} />),
     },
-    ...(b.ref ? [{ id: "chat", label: "Show in chat", icon: <IconMessage />, run: () => ctx.openChat(b.ref!.chatId) }]
+    ...(canShare(ctx) && where && b.kind !== "chat"
+      ? [{ id: "share", label: "Share…", icon: <IconShare />, run: () => openShare(ctx, { owner: ctx.me, collectionId: where.collection.id, blockId: b.id }) }]
+      : []),
+    ...(b.ref ? (ctx.openChat ? [{ id: "chat", label: "Show in chat", icon: <IconMessage />, run: () => ctx.openChat?.(b.ref!.chatId) }] : [])
       : b.url ? [{ id: "link", label: "Open link", icon: <IconOpen />, run: () => window.open(b.url, "_blank", "noopener") }] : []),
     "sep",
     { id: "delete", label: "Delete", icon: <IconTrash />, danger: true, run: () => removeItem(ctx.update, ctx.flash, b.id) },
@@ -1560,6 +1661,20 @@ const PLACEHOLDER: Partial<Record<BlockKind, string>> = {
 /** Stacks whose quick-add field offers Paste while it's empty. */
 const PASTE_KINDS: BlockKind[] = ["link", "video", "book"];
 
+/**
+ * "#words" typed in the quick-add field are its tags: "Der Hund #animals #a1"
+ * adds "Der Hund" tagged animals and a1. Only a # that starts a word and is
+ * followed by a letter counts, so a link's #anchor or "#1" stays as typed.
+ */
+function takeTags(input: string) {
+  const tags: string[] = [];
+  const text = input
+    .replace(/(^|\s)#(\p{L}[\p{L}\p{N}_-]*)/gu, (_, before: string, tag: string) => { tags.push(tag.toLowerCase()); return before; })
+    .replace(/\s+/g, " ")
+    .trim();
+  return { text, tags: [...new Set(tags)] };
+}
+
 /** What a found book fills in on an item. */
 const bookFields = (hit: BookHit): Partial<Block> => ({
   title: hit.title, source: hit.author || undefined, image: hit.cover, url: hit.url, isbn: hit.isbn, year: hit.year, pages: hit.pages, body: hit.description,
@@ -1602,26 +1717,38 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
   const page = col.pages.find((p) => p.id === pageId)!;
   const parent = page.parentId ? col.pages.find((p) => p.id === page.parentId) : null;
   const kids = childrenOf(col, page.id);
-  const [tag, setTag] = useState<string | null>(null);
+  const [filter, setFilter] = useState<MindFilter>(NO_FILTER);
+  /** Searching this stack and the stacks in it: null when the field is closed. */
+  const [search, setSearch] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  // The same screen shows the next stack (in or up a level): a search, filter or half-typed item belonged to the last one.
+  const [shown, setShown] = useState(pageId);
+  if (shown !== pageId) {
+    setShown(pageId);
+    setFilter(NO_FILTER);
+    setSearch(null);
+    setDraft("");
+  }
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const composeRef = useRef<HTMLInputElement>(null);
 
   const all = pageItems(ctx.mind, page);
-  const pageTags = tagsOf(all);
-  const visible = (id: string) => { const b = ctx.mind.blocks[id]; return !!b && (!tag || b.tags.includes(tag)); };
+  const deep = subtree(col, page.id);
+  const filtering = isFiltering(filter);
+  const visible = (id: string) => { const b = ctx.mind.blocks[id]; return !!b && passes(filter, b); };
   const holds = (p: Page): boolean => p.sections.some((s) => s.blockIds.some(visible)) || childrenOf(col, p.id).some(holds);
-  const kidsShown = tag ? kids.filter(holds) : kids;
+  const kidsShown = filtering ? kids.filter(holds) : kids;
+  const q = search?.trim().toLowerCase() ?? "";
   const setView = (view: MindView) => ctx.update((m) => patchPage(m, page.id, (p) => ({ ...p, view })));
 
-  /* ---- quick add, like the composer ---- */
+  /* ---- quick add, like the composer; "#words" typed with it become its tags ---- */
   const quickAdd = () => {
-    const text = draft.trim();
+    const { text, tags } = takeTags(draft);
     if (!text) return;
     const kind: BlockKind = ["image", "file", "palette", "progress", "habit", "date", "chat"].includes(page.defaultKind) ? "note" : page.defaultKind;
     const id = newId();
-    const b: Block = { id, kind, title: text, tags: [], createdAt: nowMs() };
+    const b: Block = { id, kind, title: text, tags, createdAt: nowMs() };
     // A link (or a video, or a book) typed bare gets its real title once it's been looked up.
     let standIn = false;
     if (kind === "flashcard") {
@@ -1755,7 +1882,7 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
 
   const renderSection = (s: Page["sections"][number], view: MindView) => {
     const ids = s.blockIds.filter(visible);
-    if (tag && !ids.length) return null;
+    if (filtering && !ids.length) return null;
     const blocks = ids.map((id) => ctx.mind.blocks[id]);
     const headless = !s.title;
     const into = target?.t === "section" && target.sid === s.id && target.before === null;
@@ -1805,6 +1932,52 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
   const boardTasks = all.filter((b) => b.kind === "todo" && b.status && visible(b.id));
   const upLabel = parent ? parent.title : col.name;
 
+  // The stack as its view and the filter say; a search shows its results instead.
+  const contents = (
+    <>
+      <div className={styles.mindToolbar}>
+        {page.views.length > 1 ? <ViewSwitch views={page.views} value={page.view} onPick={setView} /> : <span />}
+      </div>
+
+      <FilterBar filter={filter} onChange={setFilter} />
+
+      {/* Stacks inside sit beside the items, drawn for the current view. Drop an item on one to move it in. */}
+      {kidsShown.length > 0 && (
+        <div className={`${page.view === "grid" ? styles.mindStackGrid : page.view === "shelf" ? styles.mindShelf : styles.mindRows} ${styles.mindFolders}`}>
+          {kidsShown.map((k, i) => (
+            <StackCard key={k.id} ctx={ctx} col={col} page={k} i={i} view={page.view} onOpen={() => onOpen(k.id)} hold={hold.bind({ kind: "stack", id: k.id })} mark={markFor(target, k.id)} lifted={hold.isDragging("stack", k.id)} />
+          ))}
+        </div>
+      )}
+
+      {page.view === "board" ? (
+        <>
+          <div className={styles.mindBoardView}>
+            {COLUMNS.map((c) => {
+              const list = boardTasks.filter((b) => b.status === c.id);
+              return (
+                <div key={c.id} className={`${styles.mindColumn} ${target?.t === "column" && target.col === c.id ? styles.mindDropInto : ""}`} data-col={c.id}>
+                  <p className={styles.mindColumnHead}><span className={styles[`mindCol_${c.id}`]} />{c.label}<em>{list.length}</em></p>
+                  {list.map((b) => wrap(b, locate(ctx.mind, b.id)?.section?.id ?? "", "tile", "y"))}
+                  {!list.length && <p className={styles.mindColumnEmpty}>Drop a task here</p>}
+                </div>
+              );
+            })}
+          </div>
+          {page.sections.map((s) => {
+            const rest = s.blockIds.filter((id) => !(ctx.mind.blocks[id]?.kind === "todo" && ctx.mind.blocks[id]?.status));
+            if (!rest.length && s.blockIds.length) return null;
+            return renderSection({ ...s, blockIds: rest }, "list");
+          })}
+        </>
+      ) : page.sections.map((s) => renderSection(s, page.view))}
+
+      {filtering && !kidsShown.length && !page.sections.some((s) => s.blockIds.some(visible)) && (
+        <p className={styles.emptyInbox}>Nothing in {page.title} matches the filter.</p>
+      )}
+    </>
+  );
+
   return (
     <div
       ref={rootRef}
@@ -1814,15 +1987,17 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
     >
       <div className={styles.edgeTop} />
       <header className={styles.chatHeader}>
-        {/* Back steps up one level, like leaving a folder. Dropping something on it moves it up a level. */}
-        <button
-          className={`${styles.circleBtn} ${styles.glass} ${target?.t === "up" ? styles.mindDropUp : ""}`}
-          data-drop-up
-          onClick={parent ? () => onOpen(parent.id) : onBack}
-          aria-label={`Back to ${upLabel}`}
-        >
-          <IconBack />
-        </button>
+        <div className={`${styles.headerSide} ${styles.mindHeadSide}`}>
+          {/* Back steps up one level, like leaving a folder. Dropping something on it moves it up a level. */}
+          <button
+            className={`${styles.circleBtn} ${styles.glass} ${target?.t === "up" ? styles.mindDropUp : ""}`}
+            data-drop-up
+            onClick={parent ? () => onOpen(parent.id) : onBack}
+            aria-label={`Back to ${upLabel}`}
+          >
+            <IconBack />
+          </button>
+        </div>
         <div className={styles.titleCapsule}>
           <span className={styles.mindPageBadge}><Emoji char={page.emoji} /></span>
           <div className={`${styles.tcName} ${styles.glass}`}><span>{page.title}</span></div>
@@ -1830,53 +2005,21 @@ function PageScreen({ ctx, col, pageId, leaving, onBack, onOpen }: { ctx: Ctx; c
             {hold.dragging && hold.dragging.src.kind !== "section" ? `Drop on ← to move it to ${upLabel}` : `${col.name}${parent ? ` › ${parent.title}` : ""} · ${all.length} items`}
           </span>
         </div>
-        <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => ctx.openSheet(<PageSheet ctx={ctx} col={col} pageId={page.id} onDeleted={onBack} />)} aria-label="Stack settings"><IconMore /></button>
+        <div className={`${styles.headerSide} ${styles.headerEnd} ${styles.mindHeadSide}`}>
+          <ScopeTools
+            searching={search !== null}
+            filtering={filtering}
+            moreLabel="Stack options"
+            onSearch={() => setSearch((s) => (s === null ? "" : null))}
+            onFilter={(el) => ctx.openSheet(<FilterMenu anchor={el} items={col.pages.filter((p) => deep.includes(p.id)).flatMap((p) => pageItems(ctx.mind, p))} filter={filter} onChange={setFilter} onClose={ctx.closeSheet} />)}
+            onMore={(el) => ctx.openSheet(<ActionMenu anchor={el} title={emojify(`${page.emoji} ${page.title}`)} actions={stackActions(ctx, col, page, parent ? () => onOpen(parent.id) : onBack)} onClose={ctx.closeSheet} />)}
+          />
+        </div>
       </header>
 
       <div className={styles.mindPageScroll} ref={scrollRef}>
-        <div className={styles.mindToolbar}>
-          {page.views.length > 1 ? <ViewSwitch views={page.views} value={page.view} onPick={setView} /> : <span />}
-        </div>
-
-        {pageTags.length > 0 && (
-          <div className={styles.chips}>
-            <button className={`${styles.chip} ${!tag ? styles.chipOn : ""}`} onClick={() => setTag(null)}>All</button>
-            {pageTags.map((t) => (
-              <button key={t} className={`${styles.chip} ${tag === t ? styles.chipOn : ""}`} onClick={() => setTag(tag === t ? null : t)}>#{t}</button>
-            ))}
-          </div>
-        )}
-
-        {/* Stacks inside sit beside the items, drawn for the current view. Drop an item on one to move it in. */}
-        {kidsShown.length > 0 && (
-          <div className={`${page.view === "grid" ? styles.mindStackGrid : page.view === "shelf" ? styles.mindShelf : styles.mindRows} ${styles.mindFolders}`}>
-            {kidsShown.map((k, i) => (
-              <StackCard key={k.id} ctx={ctx} col={col} page={k} i={i} view={page.view} onOpen={() => onOpen(k.id)} hold={hold.bind({ kind: "stack", id: k.id })} mark={markFor(target, k.id)} lifted={hold.isDragging("stack", k.id)} />
-            ))}
-          </div>
-        )}
-
-        {page.view === "board" ? (
-          <>
-            <div className={styles.mindBoardView}>
-              {COLUMNS.map((c) => {
-                const list = boardTasks.filter((b) => b.status === c.id);
-                return (
-                  <div key={c.id} className={`${styles.mindColumn} ${target?.t === "column" && target.col === c.id ? styles.mindDropInto : ""}`} data-col={c.id}>
-                    <p className={styles.mindColumnHead}><span className={styles[`mindCol_${c.id}`]} />{c.label}<em>{list.length}</em></p>
-                    {list.map((b) => wrap(b, locate(ctx.mind, b.id)?.section?.id ?? "", "tile", "y"))}
-                    {!list.length && <p className={styles.mindColumnEmpty}>Drop a task here</p>}
-                  </div>
-                );
-              })}
-            </div>
-            {page.sections.map((s) => {
-              const rest = s.blockIds.filter((id) => !(ctx.mind.blocks[id]?.kind === "todo" && ctx.mind.blocks[id]?.status));
-              if (!rest.length && s.blockIds.length) return null;
-              return renderSection({ ...s, blockIds: rest }, "list");
-            })}
-          </>
-        ) : page.sections.map((s) => renderSection(s, page.view))}
+        {search !== null && <ScopeSearch value={search} placeholder={`Search ${page.title}`} onChange={setSearch} onCancel={() => setSearch(null)} />}
+        {q ? <SearchResults ctx={ctx} q={q} within={{ col, pages: deep, label: page.title }} keep={filtering ? (b) => passes(filter, b) : undefined} /> : contents}
       </div>
 
       <div className={styles.mindCompose}>
@@ -1959,8 +2102,10 @@ const isPhoto = (file: File | null) => (file?.type.startsWith("image/") ? file :
  * Links and videos read their own title (and a video its channel and still);
  * books come from Apple Books and Open Library, covers and all.
  */
-function AddItemSheet({ ctx, to, kind: initial }: { ctx: Ctx; to: { collectionId: string; pageId?: string; sectionId?: string; root?: boolean }; kind: BlockKind }) {
-  const [kind, setKind] = useState<BlockKind>(initial === "chat" ? "note" : initial);
+function AddItemSheet({ ctx, to, kind: picked }: { ctx: Ctx; to: { collectionId: string; pageId?: string; sectionId?: string; root?: boolean }; kind: BlockKind }) {
+  // One kind per sheet: changing your mind is Back, to everything + makes.
+  const kind: BlockKind = picked === "chat" ? "note" : picked;
+  const [tags, setTags] = useState<string[]>([]);
   const [a, setA] = useState("");
   const [b, setB] = useState("");
   const [c, setC] = useState("");
@@ -2023,7 +2168,7 @@ function AddItemSheet({ ctx, to, kind: initial }: { ctx: Ctx; to: { collectionId
   const create = async () => {
     const id = newId();
     const t = a.trim();
-    const base: Block = { id, kind, title: t, tags: [], createdAt: nowMs() };
+    const base: Block = { id, kind, title: t, tags, createdAt: nowMs() };
     let block: Block = base;
     let standIn = false;
     if (kind === "note") block = { ...base, body: b.trim() };
@@ -2077,12 +2222,12 @@ function AddItemSheet({ ctx, to, kind: initial }: { ctx: Ctx; to: { collectionId
   const enter = (e: React.KeyboardEvent) => { if (e.key === "Enter" && ready) void create(); };
 
   return (
-    <Sheet title={`${info.label} · ${where}`} onClose={ctx.closeSheet} action={{ label: "Add", disabled: !ready, onClick: () => { void create(); } }}>
-      <div className={styles.chipGrid}>
-        {KINDS.map((k) => (
-          <button key={k.kind} className={`${styles.choice} ${kind === k.kind ? styles.choiceOn : ""}`} onClick={() => setKind(k.kind)}>{k.label}</button>
-        ))}
-      </div>
+    <Sheet
+      title={`${info.label} · ${where}`}
+      onClose={ctx.closeSheet}
+      onBack={col ? () => ctx.openSheet(<MindAddSheet ctx={ctx} col={col} page={page} sectionId={to.sectionId} />) : undefined}
+      action={{ label: "Add", disabled: !ready, onClick: () => { void create(); } }}
+    >
 
       {(kind === "link" || kind === "video") && (
         <>
@@ -2182,6 +2327,9 @@ function AddItemSheet({ ctx, to, kind: initial }: { ctx: Ctx; to: { collectionId
         </>
       )}
 
+      <p className={styles.sheetLabel}>Tags</p>
+      <TagField value={tags} suggestions={tagsOf(Object.values(ctx.mind.blocks))} onChange={setTags} />
+
       {asking && createPortal(<PermissionAlert kind="photos" onResolve={asking.answer} />, asking.host)}
     </Sheet>
   );
@@ -2250,97 +2398,41 @@ function NewPageSheet({ ctx, col, parentId }: { ctx: Ctx; col: Collection; paren
 
 function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
   const { mind, update } = useMind(ctx.store);
-  const [adding, setAdding] = useState(false);
-  const [newTag, setNewTag] = useState("");
-  // Escape discards the tag: the blur that follows mustn't add it anyway.
-  const discard = useRef(false);
   const b = mind?.blocks[id];
   if (!mind || !b) return null;
   const at = locate(mind, id);
-  const tags = at ? tagsOf(collectionItems(mind, at.collection)) : [];
   const set = (patch: Partial<Block>) => update((m) => patchBlock(m, id, patch));
-  const addTag = () => {
-    if (discard.current) return;
-    const t = newTag.trim().replace(/^#/, "");
-    if (t) set({ tags: [...new Set([...b.tags, t])] });
-    setNewTag("");
-    setAdding(false);
-  };
 
   // Opening the source is a quiet header action, not a big button.
+  const openChat = ctx.openChat;
   const action = b.ref
-    ? { label: "Open chat", onClick: () => ctx.openChat(b.ref!.chatId) }
+    ? (openChat ? { label: "Open chat", onClick: () => openChat(b.ref!.chatId) } : undefined)
     : b.url ? { label: "Open", href: b.url, onClick: () => {} } : undefined;
 
   return (
     <Sheet title={KIND_LABEL[b.kind]} onClose={ctx.closeSheet} action={action}>
       {(close) => (
         <>
-          {b.kind === "palette" ? (
-            // A palette opens in the palette maker: lock, generate, add, undo, all saved as you go.
-            <>
-              <input className={`${styles.plainInput} ${styles.mindTitleInput}`} value={b.title} onChange={(e) => set({ title: e.target.value })} placeholder={paletteName(b.colors ?? [])} aria-label="Palette name" />
-              <PaletteSaver key={b.id} colors={b.colors ?? []} onColors={(colors) => set({ colors })} />
-            </>
-          ) : (
-            // Tapping a video means watching it: it plays straight away.
-            <div className={styles.mindDetail}><BlockView block={b} shape="detail" onToggle={() => toggleItem(update, b)} autoPlay /></div>
-          )}
-          {b.kind === "date" && <DateField label="Date" value={b.at ?? nowMs()} onChange={(at) => set({ at })} />}
-          {b.kind === "amount" && <DateField label="Due" value={b.at ?? nowMs()} onChange={(at) => set({ at })} />}
-          {b.kind === "book" && <Segmented value={b.shelf ?? "want"} options={SHELVES} onChange={(v) => set({ shelf: v })} />}
-          {b.kind === "todo" && b.status && <Segmented value={b.status} options={COLUMNS} onChange={(v) => set({ status: v, done: v === "done" })} />}
-          {b.kind === "flashcard" && <Segmented value={b.due ? "due" : "known"} options={[{ id: "due", label: "Still learning" }, { id: "known", label: "I know it" }]} onChange={(v) => set({ due: v === "due" })} />}
-          {b.kind === "amount" && <Segmented value={b.paid ? "paid" : "unpaid"} options={[{ id: "unpaid", label: "Unpaid" }, { id: "paid", label: "Paid" }]} onChange={(v) => set({ paid: v === "paid" })} />}
-          {b.kind === "progress" && (
-            <div className={styles.mindStepper}>
-              <button onClick={() => set({ value: Math.max(0, (b.value ?? 0) - 1) })} aria-label="Back one">−</button>
-              <span>{b.value} of {b.total}</span>
-              <button onClick={() => set({ value: Math.min(b.total ?? 1, (b.value ?? 0) + 1) })} aria-label="Forward one">+</button>
-            </div>
-          )}
+          <BlockEditor b={b} set={set} onToggle={() => toggleItem(update, b)} />
 
           <p className={styles.sheetLabel}>Your note</p>
           <textarea className={`${styles.plainInput} ${styles.mindNote}`} placeholder="Why did you keep this?" value={b.note ?? ""} onChange={(e) => set({ note: e.target.value })} rows={2} />
 
           <p className={styles.sheetLabel}>Tags</p>
-          <div className={styles.chipGrid}>
-            {[...new Set([...b.tags, ...tags])].slice(0, 12).map((t) => (
-              <button key={t} className={`${styles.choice} ${b.tags.includes(t) ? styles.choiceOn : ""}`} onClick={() => set({ tags: b.tags.includes(t) ? b.tags.filter((x) => x !== t) : [...b.tags, t] })}>#{t}</button>
-            ))}
-            {adding ? (
-              <input
-                className={styles.mindTagInput}
-                ref={(el) => el?.focus({ preventScroll: true })}
-                placeholder="tag"
-                value={newTag}
-                size={Math.max(4, newTag.length + 1)}
-                onChange={(e) => setNewTag(e.target.value.replace(/\s+/g, "-").toLowerCase())}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") addTag();
-                  if (e.key === "Escape") {
-                    // Cancel the tag only, not the sheet: the sheet listens for Escape on window.
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.nativeEvent.stopImmediatePropagation();
-                    discard.current = true;
-                    setNewTag("");
-                    setAdding(false);
-                  }
-                }}
-                onBlur={addTag}
-                aria-label="New tag"
-              />
-            ) : (
-              <button className={`${styles.choice} ${styles.mindAddTag}`} onClick={() => { discard.current = false; setAdding(true); }}><IconPlus size={14} /> Tag</button>
-            )}
-          </div>
+          <TagField value={b.tags} suggestions={tagsOf(Object.values(mind.blocks))} onChange={(tags) => set({ tags })} />
 
           <div className={styles.mindSectionBar}>
             <p className={styles.sheetLabel}>Lives in</p>
-            <button className={styles.mindPill} onClick={() => close(() => ctx.openSheet(<MoveSheet me={ctx.store} id={id} onClose={ctx.closeSheet} onMoved={ctx.flash} />))}>
-              <IconFolder size={14} /> Move
-            </button>
+            <span className={styles.mindBarEnd}>
+              {canShare(ctx) && at && b.kind !== "chat" && (
+                <button className={styles.mindPill} onClick={() => close(() => openShare(ctx, { owner: ctx.me, collectionId: at.collection.id, blockId: id }))}>
+                  <IconShare size={14} /> Share
+                </button>
+              )}
+              <button className={styles.mindPill} onClick={() => close(() => ctx.openSheet(<MoveSheet me={ctx.store} id={id} onClose={ctx.closeSheet} onMoved={ctx.flash} />))}>
+                <IconFolder size={14} /> Move
+              </button>
+            </span>
           </div>
           {at ? (
             <nav className={styles.mindCrumbs} aria-label="Location">
@@ -2378,6 +2470,95 @@ function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
         </>
       )}
     </Sheet>
+  );
+}
+
+/**
+ * An item's tags as chips: its own (on), then tags used anywhere in Mind to
+ * add with a tap, then "+ Tag" to type a new one (Enter adds it, Escape drops
+ * it). Tags aren't places: the same word ties things together across every
+ * collection, for search and the filter.
+ */
+function TagField({ value, suggestions, onChange }: { value: string[]; suggestions: string[]; onChange: (tags: string[]) => void }) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  // Escape discards the tag: the blur that follows mustn't add it anyway.
+  const discard = useRef(false);
+  const add = () => {
+    if (discard.current) return;
+    const t = draft.trim().replace(/^#/, "");
+    if (t) onChange([...new Set([...value, t])]);
+    setDraft("");
+    setAdding(false);
+  };
+  const shown = [...new Set([...value, ...suggestions])].slice(0, Math.max(12, value.length));
+  return (
+    <div className={styles.chipGrid}>
+      {shown.map((t) => (
+        <button key={t} className={`${styles.choice} ${value.includes(t) ? styles.choiceOn : ""}`} aria-pressed={value.includes(t)} onClick={() => onChange(value.includes(t) ? value.filter((x) => x !== t) : [...value, t])}>#{t}</button>
+      ))}
+      {adding ? (
+        <input
+          className={styles.mindTagInput}
+          ref={(el) => el?.focus({ preventScroll: true })}
+          placeholder="tag"
+          value={draft}
+          size={Math.max(4, draft.length + 1)}
+          onChange={(e) => setDraft(e.target.value.replace(/\s+/g, "-").toLowerCase())}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") add();
+            if (e.key === "Escape") {
+              // Cancel the tag only, not the sheet: the sheet listens for Escape on window.
+              e.preventDefault();
+              e.stopPropagation();
+              e.nativeEvent.stopImmediatePropagation();
+              discard.current = true;
+              setDraft("");
+              setAdding(false);
+            }
+          }}
+          onBlur={add}
+          aria-label="New tag"
+        />
+      ) : (
+        <button className={`${styles.choice} ${styles.mindAddTag}`} onClick={() => { discard.current = false; setAdding(true); }}><IconPlus size={14} /> Tag</button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * An item in detail, with what can be changed right there: the palette
+ * maker, a date, a shelf, a status, the stepper. The item sheet shows it, and
+ * so does a shared item opened by someone allowed to edit it.
+ */
+export function BlockEditor({ b, set, onToggle }: { b: Block; set: (patch: Partial<Block>) => void; onToggle: () => void }) {
+  return (
+    <>
+      {b.kind === "palette" ? (
+        // A palette opens in the palette maker: lock, generate, add, undo, all saved as you go.
+        <>
+          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} value={b.title} onChange={(e) => set({ title: e.target.value })} placeholder={paletteName(b.colors ?? [])} aria-label="Palette name" />
+          <PaletteSaver key={b.id} colors={b.colors ?? []} onColors={(colors) => set({ colors })} />
+        </>
+      ) : (
+        // Tapping a video means watching it: it plays straight away.
+        <div className={styles.mindDetail}><BlockView block={b} shape="detail" onToggle={onToggle} autoPlay /></div>
+      )}
+      {b.kind === "date" && <DateField label="Date" value={b.at ?? nowMs()} onChange={(at) => set({ at })} />}
+      {b.kind === "amount" && <DateField label="Due" value={b.at ?? nowMs()} onChange={(at) => set({ at })} />}
+      {b.kind === "book" && <Segmented value={b.shelf ?? "want"} options={SHELVES} onChange={(v) => set({ shelf: v })} />}
+      {b.kind === "todo" && b.status && <Segmented value={b.status} options={COLUMNS} onChange={(v) => set({ status: v, done: v === "done" })} />}
+      {b.kind === "flashcard" && <Segmented value={b.due ? "due" : "known"} options={[{ id: "due", label: "Still learning" }, { id: "known", label: "I know it" }]} onChange={(v) => set({ due: v === "due" })} />}
+      {b.kind === "amount" && <Segmented value={b.paid ? "paid" : "unpaid"} options={[{ id: "unpaid", label: "Unpaid" }, { id: "paid", label: "Paid" }]} onChange={(v) => set({ paid: v === "paid" })} />}
+      {b.kind === "progress" && (
+        <div className={styles.mindStepper}>
+          <button onClick={() => set({ value: Math.max(0, (b.value ?? 0) - 1) })} aria-label="Back one">−</button>
+          <span>{b.value} of {b.total}</span>
+          <button onClick={() => set({ value: Math.min(b.total ?? 1, (b.value ?? 0) + 1) })} aria-label="Forward one">+</button>
+        </div>
+      )}
+    </>
   );
 }
 

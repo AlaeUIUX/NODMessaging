@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Chat, Message, User } from "@/lib/chat/types";
-import { IconBell, IconCamera, IconImage, IconLocation, IconUserGroup } from "./Icons";
+import { IconBack, IconBell, IconCamera, IconImage, IconLocation, IconUserGroup } from "./Icons";
 import styles from "./chat.module.css";
 
 /* ---------------------------------------------------------------------------
@@ -171,12 +171,14 @@ export function PermissionAlert({ kind, onResolve }: { kind: PermissionKind; onR
 --------------------------------------------------------------------------- */
 
 export function Sheet({
-  title, onClose, onClosing, action, children, footer,
+  title, onClose, onClosing, onBack, action, children, footer,
 }: {
   title: string;
   onClose: () => void;
   /** Runs the moment the sheet starts closing (Cancel, scrim, Escape), before the exit animation. */
   onClosing?: () => void;
+  /** A step inside a flow: the top-left reads Back (not Cancel), closes this sheet and runs this to reopen the one before. */
+  onBack?: () => void;
   /** The top-right action closes the sheet, then runs; `keepOpen` runs it in place (a step that moves on). */
   action?: { label: string; disabled?: boolean; onClick: () => void; href?: string; keepOpen?: boolean };
   /** A function child receives `close(after)`, which animates out, then runs `after`. */
@@ -222,7 +224,9 @@ export function Sheet({
       >
         <div className={styles.grabber} />
         <header className={styles.bsheetHead}>
-          <button onClick={() => close()}>Cancel</button>
+          {onBack
+            ? <button className={styles.bsheetBack} onClick={() => close(onBack)}><IconBack size={18} />Back</button>
+            : <button onClick={() => close()}>Cancel</button>}
           <h3>{title}</h3>
           {action?.href && !action.disabled ? (
             <a className={styles.bsheetAction} href={action.href} target="_blank" rel="noopener noreferrer" onClick={() => close(action.onClick)}>
