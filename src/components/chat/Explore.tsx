@@ -8,7 +8,7 @@ import {
   saveItem, STRANGERS, suggestCollection, TOPIC_LABEL, type Activity, type PublicCollection, type PublicItem, type Ranked, type Topic,
 } from "@/lib/chat/explore";
 import { addMember, groupInfo, landingChannel } from "@/lib/chat/groups";
-import { makeCollection, useMind } from "@/lib/chat/mind";
+import { isUnassigned, makeCollection, useMind } from "@/lib/chat/mind";
 import { useChat, userById } from "@/lib/chat/store";
 import type { AvatarTone, Chat } from "@/lib/chat/types";
 import Avatar from "./Avatar";
@@ -483,7 +483,7 @@ function SaveSheet({ item, from, onClose, onPick, onNew }: { item: PublicItem; f
   const { me } = useChat();
   const { mind } = useMind(me);
   const suggested = suggestCollection(mind, from.topics as Topic[]);
-  const list = [...(mind?.collections ?? [])].sort((a, b) => (a.id === suggested?.id ? -1 : b.id === suggested?.id ? 1 : 0));
+  const list = (mind?.collections ?? []).filter((c) => !isUnassigned(c)).sort((a, b) => (a.id === suggested?.id ? -1 : b.id === suggested?.id ? 1 : 0));
   return (
     <Sheet title="Save to Mind" onClose={onClose}>
       {(close) => (

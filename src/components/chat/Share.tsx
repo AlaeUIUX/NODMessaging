@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { chatIdentity, initials } from "@/lib/chat/avatar";
 import { Emoji } from "@/lib/chat/emoji";
-import { patchBlock, rootItems, sharedItems, startShareDraft, useMind, type Block, type ShareRole, type Sharing } from "@/lib/chat/mind";
+import { collectionItems, isUnassigned, patchBlock, startShareDraft, useMind, type Block, type ShareRole, type Sharing } from "@/lib/chat/mind";
 import { allPeople, usePeopleVersion } from "@/lib/chat/people";
 import {
   accessOf, answerRequest, audienceLabel, cloneCollection, copyAllowed, copyIn, copyItem, grant, refOf, requestAccess, setRole as setPersonRole,
@@ -40,7 +40,7 @@ const nameOf = (id: string) => userById(id).name;
 /** What a share is: its icon, its name, its kind, what's in it. */
 function describe(s: Shared) {
   if (s.block) return { emoji: KIND_EMOJI[s.block.kind] ?? "📌", title: s.block.title || KIND_LABEL[s.block.kind], kind: KIND_LABEL[s.block.kind], meta: `In ${s.collection.emoji} ${s.collection.name}` };
-  const items = sharedItems(s.mind, s.collection).length;
+  const items = collectionItems(s.mind, s.collection).length;
     return {
     emoji: s.collection.emoji, title: s.collection.name, kind: "Collection",
     meta: `${items} ${items === 1 ? "item" : "items"}`,
@@ -322,7 +322,7 @@ const pictured = (b: Block) => !!b.image && (b.kind === "image" || b.kind === "b
 
 /** Four things from a collection: pictures first (covers, photos, stills), then one of each other kind. */
 function Peek({ s }: { s: Shared }) {
-  const all = sharedItems(s.mind, s.collection).filter((b) => b.kind !== "chat").sort((a, b) => b.createdAt - a.createdAt);
+  const all = collectionItems(s.mind, s.collection).filter((b) => b.kind !== "chat").sort((a, b) => b.createdAt - a.createdAt);
   const kinds = new Set<string>();
   const others = all.filter((b) => !pictured(b) && !kinds.has(b.kind) && kinds.add(b.kind));
   const items = [...all.filter(pictured), ...others].slice(0, 4);
@@ -507,7 +507,7 @@ export function SharedPage({ share, onClose, onToast }: { share: ShareRef; onClo
     const sharing = sharingOf(s);
     const copied = copyIn(mine, share);
     const asked = sharing.requests.find((r) => r.userId === me && r.role === "edit");
-    const shown = rootItems(s.mind, col).filter((b) => passes(filter, b));
+    const shown = collectionItems(s.mind, col).filter((b) => passes(filter, b));
     const openItem = (b: Block) => setSheet(<SharedItemSheet share={{ owner: share.owner, collectionId: col.id, blockId: b.id }} onClose={closeSheet} onToast={onToast} />);
     const edit = () => {
       const key = startShareDraft(share.owner, col.id, me);
@@ -531,7 +531,7 @@ export function SharedPage({ share, onClose, onToast }: { share: ShareRef; onClo
         </div>
       </div>
     );
-    const total = sharedItems(s.mind, col).length;
+    const total = collectionItems(s.mind, col).length;
     return (
       <>
         <div className={x.pageCover} style={{ backgroundImage: `linear-gradient(160deg, color-mix(in srgb, ${tone} 62%, #fff), ${tone})` }} />
@@ -573,7 +573,7 @@ export function SharedPage({ share, onClose, onToast }: { share: ShareRef; onClo
         {s && access ? (
           <button
             className={`${styles.circleBtn} ${styles.glass} ${isFiltering(filter) ? sh.filterOn : ""}`}
-            onClick={(e) => setSheet(<FilterMenu anchor={e.currentTarget} items={rootItems(s.mind, s.collection)} filter={filter} onChange={setFilter} onClose={closeSheet} />)}
+            onClick={(e) => setSheet(<FilterMenu anchor={e.currentTarget} items={collectionItems(s.mind, s.collection)} filter={filter} onChange={setFilter} onClose={closeSheet} />)}
             aria-label={isFiltering(filter) ? "Filter, on" : "Filter"}
             aria-haspopup="menu"
           >
@@ -604,7 +604,7 @@ export function SharedItemSheet({ share, onClose, onToast, saving: startSaving =
   const owner = userById(share.owner).name;
   const title = b ? `${KIND_LABEL[b.kind]} · ${share.owner === me ? "Yours" : `${owner}’s`}` : "Shared";
   const action = b?.url && access ? { label: "Open", href: b.url, onClick: () => {} } : undefined;
-  const yours = (mine?.collections ?? []).filter((c) => c.from?.id !== "shared-with-you");
+  const yours = (mine?.collections ?? []).filter((c) => c.from?.id !== "shared-with-you" && !isUnassigned(c));
 
   return (
     <Sheet title={title} onClose={onClose} action={action}>

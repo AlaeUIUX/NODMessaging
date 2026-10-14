@@ -1,5 +1,5 @@
 import {
-  makeCollection, mindOf, newId, place, sharedItems, updateMind,
+  isUnassigned, makeCollection, mindOf, newId, place, updateMind,
   type Block, type Collection, type Mind, type ShareRole, type Sharing,
 } from "./mind";
 import type { Card } from "./types";
@@ -31,9 +31,9 @@ export function resolveShare(mind: Mind | null, ref: ShareRef) {
   if (!mind || !collection) return null;
   if (!ref.blockId) return { mind, collection, block: null };
   const block = mind.blocks[ref.blockId];
-  // An item moved to another collection of the owner's is still the same item. One in a "To sort"
-  // pile isn't shared at all: that pile is the owner's inbox.
-  const home = block ? mind.collections.find((c) => sharedItems(mind, c).some((b) => b.id === block.id)) : null;
+  // An item moved to another collection of the owner's is still the same item. One waiting in
+  // Unassigned isn't shared at all: that's the owner's inbox.
+  const home = block ? mind.collections.find((c) => !isUnassigned(c) && c.items.includes(block.id)) : null;
   return block && home ? { mind, collection: home, block } : null;
 }
 export type Shared = NonNullable<ReturnType<typeof resolveShare>>;
@@ -193,7 +193,7 @@ export function copyItem(ref: ShareRef, to: string, collectionId: string) {
   // A save from a chat stays behind, as it does when a whole collection is copied.
   if (!s?.block || s.block.kind === "chat") return null;
   const copy = copyOf(s.block);
-  updateMind(to, (m) => place({ ...m, blocks: { ...m.blocks, [copy.id]: copy } }, copy.id, { collectionId, root: true }));
+  updateMind(to, (m) => place({ ...m, blocks: { ...m.blocks, [copy.id]: copy } }, copy.id, { collectionId }));
   return copy.id;
 }
 

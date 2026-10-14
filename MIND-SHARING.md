@@ -104,11 +104,8 @@ On Save, the things only the owner controls stay as the owner left them: who it'
 
 **Make a copy** copies the collection into your Mind:
 - every item, with its tags, and the collection's layout
-- every item
 
-The copy is yours to change, and nothing flows back to the original. Two things stay behind:
-- the owner's **To sort** pile
-- saves from chats (they point at messages you may not be in)
+The copy is yours to change, and nothing flows back to the original. Saves from chats stay behind: they point at messages you may not be in.
 
 ### Opening a link
 
@@ -122,7 +119,7 @@ Once the owner allows the request, the screen turns into the page right away.
 
 ## Privacy rules
 
-- A collection's **To sort** pile (its inbox of saves from chats) is never shared, viewed, edited or copied.
+- **Unassigned** (where things saved without a collection wait to be sorted) can't be shared or published, and nothing in it is shared until it's sorted into a collection.
 - A **save from a chat** only shows its message to people in that chat. Everyone else sees "Saved from a chat you're not in".
 - Only the **owner** changes who has access. Editors change the content, not the sharing.
 - Copies carry no sharing settings: a copy starts private.

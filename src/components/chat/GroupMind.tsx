@@ -5,7 +5,7 @@ import { chatIdentity, TONES } from "@/lib/chat/avatar";
 import { Emoji } from "@/lib/chat/emoji";
 import { can, groupInfo } from "@/lib/chat/groups";
 import {
-  groupMindId, makeCollection, newId, place, rootItems, startDraft, updateMind, useMind,
+  groupMindId, isUnassigned, makeCollection, newId, place, collectionItems, startDraft, updateMind, useMind,
   type Block, type Collection, type Mind,
 } from "@/lib/chat/mind";
 import { useChat, userById } from "@/lib/chat/store";
@@ -60,7 +60,7 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
   const [filter, setFilter] = useState<MindFilter>(NO_FILTER);
   const hold = useHoldMenu();
   const col = sharedOf(mind);
-  const all = mind && col ? rootItems(mind, col) : [];
+  const all = mind && col ? collectionItems(mind, col) : [];
   const total = all.length;
   const shown = all.filter((b) => passes(filter, b));
   const title = `${group.name}’s Mind`;
@@ -91,7 +91,7 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
     update((m0) => {
       const { mind: m, col: c } = ensureShared(m0, group);
       const bid = newId();
-      return place({ ...m, blocks: { ...m.blocks, [bid]: { ...block, id: bid, tags: [], createdAt: Date.now(), updatedAt: undefined } } }, bid, { collectionId: c.id, root: true });
+      return place({ ...m, blocks: { ...m.blocks, [bid]: { ...block, id: bid, tags: [], createdAt: Date.now(), updatedAt: undefined } } }, bid, { collectionId: c.id });
     });
   };
 
@@ -206,7 +206,7 @@ function ItemSheet({ groupId, id, picking: startPicking, onClose, onToast }: { g
   const saveMine = (colId: string) => {
     const target = mine.mind?.collections.find((c) => c.id === colId);
     const copy = newId();
-    mine.update((m) => place({ ...m, blocks: { ...m.blocks, [copy]: { ...b, id: copy, tags: [], createdAt: Date.now(), updatedAt: undefined } } }, copy, { collectionId: colId, root: true }));
+    mine.update((m) => place({ ...m, blocks: { ...m.blocks, [copy]: { ...b, id: copy, tags: [], createdAt: Date.now(), updatedAt: undefined } } }, copy, { collectionId: colId }));
     onToast(`Saved to ${target ? `${target.emoji} ${target.name}` : "your Mind"}`);
   };
   return (
@@ -218,13 +218,13 @@ function ItemSheet({ groupId, id, picking: startPicking, onClose, onToast }: { g
             <>
               <p className={styles.sheetLabel}>Save a copy to</p>
               <div className={styles.listGroup}>
-                {(mine.mind?.collections ?? []).map((c) => (
+                {(mine.mind?.collections ?? []).filter((c) => !isUnassigned(c)).map((c) => (
                   <button key={c.id} className={styles.actionRow} onClick={() => close(() => saveMine(c.id))}>
                     <span className={styles.mindEmoji} style={{ background: `color-mix(in srgb, ${c.tone} 16%, transparent)` }}><Emoji char={c.emoji} /></span>
                     <span className={styles.contactText}><b>{c.name}</b><small>Your Mind</small></span>
                   </button>
                 ))}
-                {!mine.mind?.collections.length && <p className={styles.sheetNote}>Make a collection in Mind first.</p>}
+                {!mine.mind?.collections.some((c) => !isUnassigned(c)) && <p className={styles.sheetNote}>Make a collection in Mind first.</p>}
               </div>
             </>
           ) : (

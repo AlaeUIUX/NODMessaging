@@ -1,5 +1,5 @@
 import {
-  collectionItems, makeCollection, newId, peopleMinds, place, rootItems, tagOf, tagsOf,
+  collectionItems, isUnassigned, makeCollection, newId, peopleMinds, place, tagOf, tagsOf,
   type Block, type BlockKind, type Collection, type Mind, type MindView,
 } from "./mind";
 import { groupInfo } from "./groups";
@@ -287,7 +287,7 @@ function topicsOf(m: Mind, c: Collection): Topic[] {
     }
   };
   feel(c.name, 2);
-  for (const t of tagsOf(rootItems(m, c))) feel(t.replace(/-/g, " "), 1);
+  for (const t of tagsOf(collectionItems(m, c))) feel(t.replace(/-/g, " "), 1);
   return [...score.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t]) => t);
 }
 
@@ -301,16 +301,16 @@ function asPublic(pcId: string, b: Block): PublicItem {
 
 /**
  * Everyone's published collections, live: what Explore shows is what's in the
- * collection right now ("To sort" stays out: that's its owner's inbox).
+ * collection right now.
  */
 export function publishedCollections(): PublicCollection[] {
   const minds = peopleMinds();
   const out: PublicCollection[] = [];
   for (const [owner, m] of minds) {
     for (const c of m.collections) {
-      if (!c.published) continue;
+      if (!c.published || isUnassigned(c)) continue;
       const id = publishedId(owner, c.id);
-      const all = rootItems(m, c).map((b) => asPublic(id, b));
+      const all = collectionItems(m, c).map((b) => asPublic(id, b));
       const picture = all.find((b) => b.kind === "image" && (b.image || b.attachment?.url || b.attachment?.dataUrl));
       out.push({
         id, name: c.name, emoji: c.emoji, tone: c.tone,
@@ -371,6 +371,7 @@ export function interestsOf(mind: Mind | null, chats: Chat[], me: string) {
 function collectionFor(mind: Mind | null, topics: Topic[]) {
   let best: { c: Collection; score: number } | null = null;
   for (const c of mind?.collections ?? []) {
+    if (isUnassigned(c)) continue;
     const words = new Set(wordsIn(`${c.name} ${mind ? tagsOf(collectionItems(mind, c)).join(" ").replace(/-/g, " ") : ""}`));
     const score = topics.reduce((s, t) => s + (TOPIC_WORDS[t].some((x) => words.has(x)) ? 1 : 0), 0);
     if (score && (!best || score > best.score)) best = { c, score };
@@ -459,7 +460,7 @@ export function friendActivity(chats: Chat[], me: string) {
 
 /** The Mind collection a public thing should go into: the best fit, else the one open last. */
 export function suggestCollection(mind: Mind | null, topics: Topic[]) {
-  return collectionFor(mind, topics) ?? mind?.collections.find((c) => c.id === mind.current) ?? mind?.collections[0] ?? null;
+  return collectionFor(mind, topics) ?? mind?.collections.find((c) => c.id === mind.current && !isUnassigned(c)) ?? mind?.collections.find((c) => !isUnassigned(c)) ?? null;
 }
 
 /* ---------------------------------------------------------------------------
@@ -470,7 +471,7 @@ export function suggestCollection(mind: Mind | null, topics: Topic[]) {
 export function saveItem(m: Mind, item: PublicItem, collectionId: string): { mind: Mind; id: string } {
   const id = newId();
   const block: Block = { ...asBlock(item, Date.now()), id, ...(item.kind === "todo" ? { done: false } : {}) };
-  return { mind: place({ ...m, blocks: { ...m.blocks, [id]: block } }, id, { collectionId, root: true }), id };
+  return { mind: place({ ...m, blocks: { ...m.blocks, [id]: block } }, id, { collectionId }), id };
 }
 
 /** A whole public collection, copied in: its items (and their tags) yours to change, laid out as it was. */

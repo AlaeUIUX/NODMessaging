@@ -10,9 +10,12 @@ import type { Attachment } from "./types";
  *
  * A collection is a folder: a name, an icon, and whatever you put in it, side
  * by side. There's nothing inside it but items: what groups them is their
- * tags, and the collection's filter brings any group of them back. Saves from
- * chats land in its "To sort" pile until they're given a place. Items saved
- * from a chat keep a reference to the message and stay live.
+ * tags, and the collection's filter brings any group of them back.
+ *
+ * Something saved without a place (from a chat, or added on Mind's home) goes
+ * to Unassigned, a collection Mind makes the first time it's needed. Sort
+ * there gives each thing in it a collection; once it's empty, it goes away.
+ * Items saved from a chat keep a reference to the message and stay live.
  */
 
 export type MindView = "shelf" | "list" | "grid";
@@ -89,9 +92,7 @@ export interface Collection {
   tone: string;
   /** Everything in it, in order. */
   items: string[];
-  /** Saves from chats waiting to be sorted ("To sort"). */
-  vault: string[];
-  /** Chats whose saves usually land here; learned when you correct a save. */
+  /** Chats whose saves land here; learned when you sort or move a save from one. */
   chatIds: string[];
   /** How it's laid out: a list, a grid, or a shelf. */
   view?: MindView;
@@ -104,7 +105,7 @@ export interface Collection {
 }
 
 export interface Mind {
-  version: 5;
+  version: 6;
   collections: Collection[];
   /** The collection opened last; saves fall back to it. */
   current: string | null;
@@ -154,7 +155,24 @@ export const newId = (p = "b") => `${p}-${Date.now().toString(36)}${Math.random(
 
 /** A new collection is an empty folder. */
 export function makeCollection(name: string, emoji: string, tone: string): Collection {
-  return { id: newId("c"), name: name.trim() || "Untitled", emoji, tone, items: [], vault: [], chatIds: [] };
+  return { id: newId("c"), name: name.trim() || "Untitled", emoji, tone, items: [], chatIds: [] };
+}
+
+/** Where things saved without a place wait to be sorted. One per Mind, at the top, made when it's needed. */
+export const UNASSIGNED = "c-unassigned";
+export const isUnassigned = (c: Collection | null | undefined) => c?.id === UNASSIGNED;
+const unassignedCollection = (): Collection => ({ id: UNASSIGNED, name: "Unassigned", emoji: "🗃️", tone: "#78716C", items: [], chatIds: [] });
+
+/** Puts an item at the top of Unassigned (made first, if there isn't one yet). */
+export const intoUnassigned = (mind: Mind, blockId: string) =>
+  place(mind, blockId, { collectionId: UNASSIGNED, beforeId: mind.collections.find(isUnassigned)?.items.find((id) => id !== blockId) });
+
+/** Unassigned goes away once everything in it has a place. */
+function tidy(mind: Mind): Mind {
+  const u = mind.collections.find(isUnassigned);
+  if (!u || u.items.some((id) => mind.blocks[id])) return mind;
+  const collections = mind.collections.filter((c) => c !== u);
+  return { ...mind, collections, current: mind.current === UNASSIGNED ? collections[0]?.id ?? null : mind.current };
 }
 
 /** A tag as Mind writes it: lower case, words joined by dashes ("Separable verbs" → "separable-verbs"). */
@@ -165,9 +183,10 @@ export const tagOf = (words: string) => words.trim().toLowerCase().replace(/^#/,
 --------------------------------------------------------------------------- */
 
 type Item = Omit<Block, "id" | "createdAt" | "tags"> & { tags?: string[] };
-type SeedCollection = Omit<Collection, "id" | "items" | "vault"> & { id: string; items: Item[]; vault: Item[] };
+type SeedCollection = Omit<Collection, "id" | "items"> & { id: string; items: Item[] };
 
-function build(collections: SeedCollection[], current: string | null): Mind {
+/** `unassigned`: things saved without a place yet, waiting in Unassigned. */
+function build(collections: SeedCollection[], current: string | null, unassigned: Item[] = []): Mind {
   const blocks: Record<string, Block> = {};
   let n = 0;
   let t = Date.now();
@@ -177,11 +196,12 @@ function build(collections: SeedCollection[], current: string | null): Mind {
     blocks[id] = { ...it, tags: it.tags ?? [], id, createdAt: t };
     return id;
   };
+  const waiting = unassigned.length ? [{ ...unassignedCollection(), items: unassigned.map(add) }] : [];
   return {
-    version: 5,
+    version: 6,
     current,
     blocks,
-    collections: collections.map((c) => ({ ...c, items: c.items.map(add), vault: c.vault.map(add) })),
+    collections: [...waiting, ...collections.map((c) => ({ ...c, items: c.items.map(add) }))],
   };
 }
 
@@ -203,7 +223,6 @@ function alaeMind(): Mind {
   return build([
     {
       id: "c-german", name: "German", emoji: "🇩🇪", tone: "#C99432", chatIds: [], view: "grid",
-      vault: [{ kind: "link", title: "Tandem: find a language exchange partner", source: "tandem.net", url: "https://tandem.net" }],
       items: [
         { kind: "date", title: "Goethe B1 exam", at: Date.now() + 46 * DAY },
         { kind: "habit", title: "Review cards for 10 minutes", days: [dayKey(shiftDays(Date.now(), -1)), dayKey(shiftDays(Date.now(), -2)), dayKey(shiftDays(Date.now(), -3)), dayKey(shiftDays(Date.now(), -5))] },
@@ -250,7 +269,6 @@ function alaeMind(): Mind {
     },
     {
       id: "c-work", name: "Work", emoji: "💼", tone: "#3E67A6", chatIds: ["general", "dm"],
-      vault: [],
       items: tagged("spaces-launch", [
         { kind: "chat", title: "Launch checklist", ref: { chatId: "general", messageId: "g-10" } },
         { kind: "chat", title: "Kickoff brief · Spaces v2", ref: { chatId: "general", messageId: "g-7" } },
@@ -260,7 +278,6 @@ function alaeMind(): Mind {
     },
     {
       id: "c-trip", name: "Trip ideas", emoji: "✈️", tone: "#5B8A6B", chatIds: [],
-      vault: [],
       items: [
         { kind: "note", title: "Packing, every time", body: "Adapter, rail card, a book for the train." },
         ...tagged("vienna-weekend", [
@@ -270,7 +287,10 @@ function alaeMind(): Mind {
         ]),
       ],
     },
-  ], "c-german");
+  ], "c-german", [
+    { kind: "link", title: "Tandem: find a language exchange partner", source: "tandem.net", url: "https://tandem.net" },
+    { kind: "note", title: "Ask Reema about the flat in Vienna" },
+  ]);
 }
 
 function charlesMind(): Mind {
@@ -278,7 +298,6 @@ function charlesMind(): Mind {
   return build([
     {
       id: "c-acme", name: "Acme Co", emoji: "🌐", tone: "#3E67A6", chatIds: [],
-      vault: [],
       items: [
         ...tagged("website-redesign", [
           task("Homepage hero in Figma", "done"), task("Pricing page copy", "doing"), task("CMS migration", "doing"),
@@ -294,7 +313,6 @@ function charlesMind(): Mind {
     },
     {
       id: "c-lumen", name: "Lumen", emoji: "📱", tone: "#86507A", chatIds: [],
-      vault: [],
       items: tagged("ios-app-1.4", [
         task("Sign in with Apple", "done"), task("TestFlight build 1.4", "done"), task("Onboarding flow v2", "doing"),
         task("Push notification copy", "todo"), task("App Store screenshots", "todo"),
@@ -303,10 +321,6 @@ function charlesMind(): Mind {
     },
     {
       id: "c-nod", name: "NOD", emoji: "🚀", tone: "#C99432", chatIds: ["general", "dm"],
-      vault: [
-        { kind: "chat", title: "Can you review the latest implementation?", ref: { chatId: "dm", messageId: "dm-5" } },
-        { kind: "chat", title: "QR code idea", ref: { chatId: "general", messageId: "g-3" } },
-      ],
       items: tagged("spaces-launch", [
         { kind: "chat", title: "Launch checklist", ref: { chatId: "general", messageId: "g-10" } },
         { kind: "chat", title: "Where for lunch on Friday?", ref: { chatId: "general", messageId: "g-9" } },
@@ -316,7 +330,6 @@ function charlesMind(): Mind {
     },
     {
       id: "c-money", name: "Money", emoji: "💶", tone: "#5B8A6B", chatIds: [],
-      vault: [],
       items: [
         ...tagged("invoices", [
           { kind: "amount", title: "INV-041", source: "Acme Co", amount: 3200, paid: true, at: Date.now() - 6 * DAY },
@@ -329,7 +342,10 @@ function charlesMind(): Mind {
         ]),
       ],
     },
-  ], "c-acme");
+  ], "c-acme", [
+    { kind: "chat", title: "Can you review the latest implementation?", ref: { chatId: "dm", messageId: "dm-5" } },
+    { kind: "chat", title: "QR code idea", ref: { chatId: "general", messageId: "g-3" } },
+  ]);
 }
 
 function reemaMind(): Mind {
@@ -337,7 +353,6 @@ function reemaMind(): Mind {
   return build([
     {
       id: "c-home", name: "Home ideas", emoji: "🏡", tone: "#5B8A6B", chatIds: ["reema"], view: "grid",
-      vault: [img("photo-1586023492125-27b2c045efd7", "Green velvet chair")],
       items: [
         { kind: "amount", title: "Furniture budget", source: "This year", amount: 2500, paid: false, at: Date.now() + 60 * DAY },
         ...tagged("living-room", [
@@ -366,7 +381,7 @@ function reemaMind(): Mind {
         ]),
       ],
     },
-  ], "c-home");
+  ], "c-home", [img("photo-1586023492125-27b2c045efd7", "Green velvet chair")]);
 }
 
 /**
@@ -380,7 +395,7 @@ export const groupMindId = (groupId: string) => `group:${groupId}`;
 function nodTeamMind(): Mind {
   return build([
     {
-      id: "c-shared", name: "NOD Team", emoji: "🗂️", tone: "#C99432", chatIds: [], vault: [],
+      id: "c-shared", name: "NOD Team", emoji: "🗂️", tone: "#C99432", chatIds: [],
       items: [
         ...tagged("brand-kit", [
           { kind: "palette", title: "NOD colours", colors: ["#1C1917", "#FAFAF9", "#00359E", "#C99432", "#5B8A6B"] },
@@ -410,7 +425,7 @@ export function seedMind(userId: string): Mind {
   if (userId === "me") return alaeMind();
   if (userId === "charles") return charlesMind();
   if (userId === "reema") return reemaMind();
-  return { version: 5, collections: [], current: null, blocks: {} };
+  return { version: 6, collections: [], current: null, blocks: {} };
 }
 
 /* ---------------------------------------------------------------------------
@@ -432,20 +447,34 @@ function load(fresh = false): Record<string, Mind> {
   if (cache && text === raw) return cache;
   raw = text;
   try { cache = JSON.parse(text); } catch { cache = {}; }
-  // Minds saved before collections went flat are folded on the way in (and saved that way on the next write).
+  // Minds saved before are brought up to date on the way in (and saved that way on the next write):
+  // stacks folded into their collection, and each collection's "To sort" pile moved to Unassigned.
   for (const [id, m] of Object.entries(cache!)) {
     const v = (m as { version?: number } | null)?.version;
     if (v === 3 || v === 4) cache![id] = flatten(m as unknown as LegacyMind);
+    else if (v === 5) cache![id] = unvault(m as unknown as V5Mind);
   }
   return cache!;
 }
 
-/* A Mind as it was stored while collections held stacks (pages, with sections, inside each other). */
+/* A Mind as it was stored while each collection had its own "To sort" pile (the vault). */
+type V5Collection = Collection & { vault?: string[] };
+type V5Mind = Omit<Mind, "version" | "collections"> & { version: 5; collections: V5Collection[] };
+/* Before that, while collections held stacks (pages, with sections, inside each other). */
 type LegacyPage = { id: string; title: string; parentId?: string; sections?: { blockIds?: string[] }[] };
 type LegacyMind = Omit<Mind, "version" | "collections"> & {
   version: 3 | 4;
-  collections: (Omit<Collection, "items" | "view"> & { items?: string[]; pages?: LegacyPage[]; view?: string })[];
+  collections: (Omit<V5Collection, "items" | "view"> & { items?: string[]; pages?: LegacyPage[]; view?: string })[];
 };
+
+/** Everything that was waiting in a collection's "To sort" pile moves to Unassigned, in the order it was. */
+export function unvault(old: V5Mind): Mind {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  let m: Mind = { ...old, version: 6, collections: old.collections.map(({ vault, ...c }) => c) };
+  const waiting = old.collections.flatMap((c) => c.vault ?? []).filter((id) => m.blocks[id]);
+  for (const id of [...waiting].reverse()) m = intoUnassigned(m, id);
+  return m;
+}
 
 /**
  * Folds a Mind from before into one level per collection. Each stack's items
@@ -454,7 +483,7 @@ type LegacyMind = Omit<Mind, "version" | "collections"> & {
  */
 export function flatten(old: LegacyMind): Mind {
   const blocks = { ...old.blocks };
-  const collections: Collection[] = old.collections.map(({ pages = [], items = [], view, ...c }) => {
+  const collections: V5Collection[] = old.collections.map(({ pages = [], items = [], view, ...c }) => {
     const ids = new Set(pages.map((p) => p.id));
     const moved: string[] = [];
     const seen = new Set<string>();
@@ -474,7 +503,7 @@ export function flatten(old: LegacyMind): Mind {
     walk(pages.filter((p) => !p.parentId || !ids.has(p.parentId)), []);
     return { ...c, items: [...items, ...moved], view: view === "grid" || view === "shelf" ? view : "list" };
   });
-  return { ...old, version: 5, collections, blocks };
+  return unvault({ ...old, version: 5, collections, blocks });
 }
 function write() {
   const text = JSON.stringify(cache);
@@ -494,7 +523,7 @@ function subscribe(listener: () => void) {
 export function mindOf(userId: string): Mind {
   const all = load();
   const m = all[userId] as Mind | { version: number } | undefined;
-  if (!m || m.version !== 5) {
+  if (!m || m.version !== 6) {
     all[userId] = seedMind(userId);
     write();
   }
@@ -545,9 +574,6 @@ export function dropDraft(id: string) {
 /** Each person editing a shared collection works on a copy of their own, so two editors never share one. */
 export const shareKey = (owner: string, collectionId: string, editor: string) => `share:${owner}:${collectionId}:${editor}`;
 
-/** What a collection shares: everything in it except its "To sort" pile, the owner's inbox of saves. */
-export const sharedItems = (m: Mind, c: Collection) => collectionItems(m, { ...c, vault: [] });
-
 /**
  * One collection of a Mind, as the people it's shared with get it: a Mind of
  * its own with only that collection's shared items. Null if it's gone.
@@ -555,9 +581,8 @@ export const sharedItems = (m: Mind, c: Collection) => collectionItems(m, { ...c
 export function projectCollection(m: Mind | null | undefined, collectionId: string): Mind | null {
   const found = m?.collections.find((c) => c.id === collectionId);
   if (!m || !found) return null;
-  const col = { ...found, vault: [] };
-  const blocks = Object.fromEntries(sharedItems(m, col).map((b) => [b.id, b]));
-  return { version: 5, collections: [col], current: col.id, blocks };
+  const blocks = Object.fromEntries(collectionItems(m, found).map((b) => [b.id, b]));
+  return { version: 6, collections: [found], current: found.id, blocks };
 }
 
 /** A fresh copy of someone's collection for `editor` to edit; returns the key the editor works under. */
@@ -573,7 +598,7 @@ export function startShareDraft(owner: string, collectionId: string, editor: str
  * their order win (the last save does), but what the owner did meanwhile isn't
  * thrown away: items they added stay (at the top of the collection), an item
  * they moved to another collection stays there, and each item's own sharing
- * is theirs. The owner's "To sort" pile is left as it is.
+ * is theirs.
  */
 export function commitShareDraft(owner: string, collectionId: string, editor: string) {
   const draft = load(true)[draftOf(shareKey(owner, collectionId, editor))] as Mind | undefined;
@@ -586,7 +611,7 @@ export function commitShareDraft(owner: string, collectionId: string, editor: st
     const before = m.collections.find((c) => c.id === collectionId);
     if (!before) return m;
     const blocks = { ...m.blocks };
-    const current = sharedItems(m, before);
+    const current = collectionItems(m, before);
     // Removed by the editor: there when the copy was made, gone from it now.
     current.forEach((b) => { if (base.has(b.id) && !savedIds.has(b.id)) delete blocks[b.id]; });
     // Added by the owner since: never in the copy.
@@ -599,8 +624,6 @@ export function commitShareDraft(owner: string, collectionId: string, editor: st
     const col: Collection = {
       ...edited,
       items: [...keep(edited.items), ...ownerAdded],
-      // Anything the editor put in To sort joins the owner's pile.
-      vault: [...keep(edited.vault), ...before.vault],
       sharing: before.sharing, published: before.published, from: before.from, chatIds: before.chatIds,
     };
     return { ...m, blocks, collections: m.collections.map((c) => (c.id === collectionId ? col : c)) };
@@ -609,7 +632,7 @@ export function commitShareDraft(owner: string, collectionId: string, editor: st
 
 /** Every person's Mind on this device, by whose it is (not group Minds, not copies being edited). */
 export function peopleMinds(): [string, Mind][] {
-  return Object.entries(load()).filter(([id, m]) => !id.startsWith("draft:") && !id.startsWith("group:") && (m as Mind)?.version === 5) as [string, Mind][];
+  return Object.entries(load()).filter(([id, m]) => !id.startsWith("draft:") && !id.startsWith("group:") && (m as Mind)?.version === 6) as [string, Mind][];
 }
 
 /**
@@ -636,9 +659,9 @@ export function useMind(userId: string) {
 
 export const collectionOf = (mind: Mind, id: string | null) => mind.collections.find((c) => c.id === id) ?? mind.collections[0] ?? null;
 
-/** Everything in a collection, its "To sort" pile included. */
+/** Everything in a collection, in order. */
 export function collectionItems(mind: Mind, c: Collection) {
-  return [...c.items, ...c.vault].map((id) => mind.blocks[id]).filter(Boolean);
+  return c.items.map((id) => mind.blocks[id]).filter(Boolean);
 }
 export function tagsOf(items: Block[]) {
   const count = new Map<string, number>();
@@ -646,17 +669,11 @@ export function tagsOf(items: Block[]) {
   return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
 }
 
-/** Where an item lives: a collection, and whether it's still waiting in its "To sort" pile. */
+/** Where an item lives: its collection (Unassigned, if it's waiting to be sorted). */
 export function locate(mind: Mind, blockId: string) {
-  for (const c of mind.collections) {
-    if (c.vault.includes(blockId)) return { collection: c, toSort: true };
-    if (c.items.includes(blockId)) return { collection: c, toSort: false };
-  }
-  return null;
+  const c = mind.collections.find((x) => x.items.includes(blockId));
+  return c ? { collection: c, unsorted: isUnassigned(c) } : null;
 }
-
-/** A collection's items, without its "To sort" pile. */
-export const rootItems = (mind: Mind, c: Collection) => c.items.map((id) => mind.blocks[id]).filter(Boolean);
 
 export function patchCollection(mind: Mind, id: string, fn: (c: Collection) => Collection): Mind {
   return { ...mind, collections: mind.collections.map((c) => (c.id === id ? fn(c) : c)) };
@@ -673,86 +690,50 @@ export const modifiedAt = (b: Block) => b.updatedAt ?? b.createdAt;
 export function detach(mind: Mind, blockId: string): Mind {
   return {
     ...mind,
-    collections: mind.collections.map((c) => ({
-      ...c,
-      vault: c.vault.filter((id) => id !== blockId),
-      items: c.items.filter((id) => id !== blockId),
-    })),
+    collections: mind.collections.map((c) => ({ ...c, items: c.items.filter((id) => id !== blockId) })),
   };
 }
 
-/**
- * Put an item in a collection (`root`: with the rest, before another item or
- * at the end), or on its "To sort" pile.
- */
-export function place(mind: Mind, blockId: string, to: { collectionId: string; beforeId?: string | null; root?: boolean }): Mind {
-  const out = detach(mind, blockId);
-  return patchCollection(out, to.collectionId, (c) => {
-    if (!to.root) return { ...c, vault: [blockId, ...c.vault] };
+/** Put an item in a collection, before another item or at the end. Leaving Unassigned empty clears it away. */
+export function place(mind: Mind, blockId: string, to: { collectionId: string; beforeId?: string | null }): Mind {
+  let out = detach(mind, blockId);
+  if (to.collectionId === UNASSIGNED && !out.collections.some(isUnassigned)) out = { ...out, collections: [unassignedCollection(), ...out.collections] };
+  return tidy(patchCollection(out, to.collectionId, (c) => {
     const list = [...c.items];
     const at = to.beforeId ? list.indexOf(to.beforeId) : -1;
     list.splice(at >= 0 ? at : list.length, 0, blockId);
     return { ...c, items: list };
-  });
+  }));
 }
 
 export function removeBlock(mind: Mind, id: string): Mind {
   const out = detach(mind, id);
   const blocks = { ...out.blocks };
   delete blocks[id];
-  return { ...out, blocks };
+  return tidy({ ...out, blocks });
 }
 
 /* ---------------------------------------------------------------------------
-   Save to Mind — work out where a message belongs
+   Save to Mind — a message kept from a chat
 --------------------------------------------------------------------------- */
 
-const words = (s: string) => s.toLowerCase().match(/[a-zà-ÿß]{4,}/g)?.map((w) => w.replace(/s$/, "")) ?? [];
-
-export interface Route { collectionId: string; reason: string }
-
-export function routeSave(mind: Mind, input: { text: string; chatId: string; chatName: string; kind: "text" | "card" | "photos" | "file"; cardType?: string }): Route | null {
-  if (!mind.collections.length) return null;
-  let best: { c: Collection; score: number; reason: string } | null = null;
-  const tokens = new Set(words(input.text));
-  for (const c of mind.collections) {
-    let score = 0;
-    let reason = "";
-    const bump = (n: number, why: string) => { score += n; if (!reason || n >= 3) reason = why; };
-    if (c.chatIds.includes(input.chatId)) bump(3, `you keep ${input.chatName} here`);
-    const items = collectionItems(mind, c);
-    const vocab = new Set([c.name, ...tagsOf(items).map((t) => t.replace(/-/g, " ")), ...items.slice(0, 80).map((b) => b.title)].flatMap(words));
-    const hits = [...tokens].filter((w) => vocab.has(w));
-    if (hits.length) bump(Math.min(4, hits.length * 1.5), `it mentions “${hits[0]}”`);
-    if (input.kind === "photos" && items.filter((b) => b.kind === "image").length > 2) bump(2, "it's a photo, like the rest");
-    if ((input.cardType === "payment" || input.cardType === "bill") && items.some((b) => b.kind === "amount")) bump(3, "it's about money");
-    if ((input.cardType === "plan" || input.cardType === "event") && items.some((b) => b.kind === "date")) bump(2, "it's a plan");
-    if (input.cardType === "project" && items.some((b) => b.kind === "todo")) bump(1.5, "it's a task list");
-    if ((input.cardType === "checklist" || input.cardType === "poll") && items.some((b) => b.kind === "todo")) bump(1.5, "it's a task");
-    if (c.id === mind.current) bump(0.5, "it's the collection you had open");
-    if (!best || score > best.score) best = { c, score, reason };
-  }
-  return best ? { collectionId: best.c.id, reason: best.reason || "it's your main collection" } : null;
-}
-
-/** Chat → Mind: a live reference lands on a collection's "To sort" pile. */
-export function saveToMind(userId: string, save: { chatId: string; messageId: string; title: string; text: string; chatName: string; kind: "text" | "card" | "photos" | "file"; cardType?: string }) {
+/**
+ * Chat → Mind: a live reference to the message. It goes where that chat's
+ * saves went before (once you've sorted one, Mind remembers), else to
+ * Unassigned, to sort when you're ready.
+ */
+export function saveToMind(userId: string, save: { chatId: string; messageId: string; title: string }) {
   load(true);
   const mind = mindOf(userId);
   const existing = Object.values(mind.blocks).find((b) => b.ref?.chatId === save.chatId && b.ref?.messageId === save.messageId);
-  if (existing) {
-    const at = locate(mind, existing.id);
-    return { status: "exists" as const, blockId: existing.id, collection: at?.collection ?? null, reason: "" };
-  }
-  const route = routeSave(mind, save);
-  if (!route) return { status: "no-collection" as const, blockId: null, collection: null, reason: "" };
+  if (existing) return { status: "exists" as const, blockId: existing.id, collection: locate(mind, existing.id)?.collection ?? null };
+  const home = mind.collections.find((c) => !isUnassigned(c) && c.chatIds.includes(save.chatId));
   const id = newId();
-  updateMind(userId, (m) => place(
-    { ...m, blocks: { ...m.blocks, [id]: { id, kind: "chat", title: save.title, ref: { chatId: save.chatId, messageId: save.messageId }, tags: [], createdAt: Date.now() } } },
-    id,
-    { collectionId: route.collectionId },
-  ));
-  return { status: "saved" as const, blockId: id, collection: collectionOf(mindOf(userId), route.collectionId), reason: route.reason };
+  updateMind(userId, (m) => {
+    const next = { ...m, blocks: { ...m.blocks, [id]: { id, kind: "chat" as const, title: save.title, ref: { chatId: save.chatId, messageId: save.messageId }, tags: [], createdAt: Date.now() } } };
+    return home && next.collections.some((c) => c.id === home.id) ? place(next, id, { collectionId: home.id, beforeId: next.collections.find((c) => c.id === home.id)!.items[0] }) : intoUnassigned(next, id);
+  });
+  return { status: "saved" as const, blockId: id, collection: locate(mindOf(userId), id)?.collection ?? null };
 }
 
 /** When a save is moved elsewhere, remember which collection that chat belongs to. */

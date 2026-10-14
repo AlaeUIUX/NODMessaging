@@ -4122,8 +4122,6 @@ div.actionRow:hover { background: transparent; }
 .mindStarter h2 { margin: 8px 0 0; font: var(--t-title2); font-weight: var(--w-emph); letter-spacing: -.02em; }
 .mindStarter p { margin: 0; max-width: 290px; font: var(--t-subhead); color: var(--ink-3); }
 
-.mindInboxItem { display: flex; align-items: center; gap: 8px; }
-.mindInboxItem .mindTileBtn { flex: 1; }
 .mindSort { height: 32px; padding: 0 14px; border: none; border-radius: var(--r-pill); background: var(--ink); color: var(--bg); font: var(--t-footnote); font-weight: var(--w-emph); flex-shrink: 0; cursor: pointer; }
 .mindWhere { display: block; margin: 4px 4px 0; font: var(--t-caption1); color: var(--ink-3); }
 
@@ -4445,8 +4443,6 @@ button.mindPickOn { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ink) !impor
 .mindPickImages img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 .mindPrimary svg { vertical-align: -2px; margin-right: 2px; }
-.mindInboxItem { align-items: flex-start; }
-.mindInboxItem .mindSort { margin-top: 12px; }
 /* ==========================================================================
    Mind v2 — collections, widget homes, the + sheets, quick add
    ========================================================================== */
@@ -4468,10 +4464,25 @@ button.mindPickOn { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ink) !impor
 
 /* page tree */
 
-/* collection: saves waiting for a place, above everything else */
-.mindToSort { display: grid; gap: 8px; }
-.mindToSort .sheetLabel { display: inline-flex; align-items: center; gap: 6px; }
-.mindToSortCount { min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--accent); color: var(--bg); font: var(--t-caption1); font-weight: var(--w-emph); font-style: normal; letter-spacing: 0; display: inline-grid; place-items: center; }
+/* Unassigned: what was saved without a collection, and the Sort that gives each a place */
+.mindSecondary { height: 34px; padding: 0 14px; border: none; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); font: var(--t-footnote); font-weight: var(--w-emph); cursor: pointer; }
+.mindSecondary:active { transform: scale(.95); }
+.mindSortHint { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 14px; border-radius: var(--r-md); background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.mindSortHint p { flex: 1; min-width: 0; margin: 0; font: var(--t-footnote); color: var(--ink-2); text-wrap: pretty; }
+.mindSortHint b { color: var(--ink); font-weight: var(--w-emph); }
+.mindSortList { display: grid; gap: 10px; margin: 4px 0 0; padding: 0; list-style: none; }
+.mindSortItem { display: grid; gap: 10px; padding: 10px; border-radius: var(--r-md); background: color-mix(in srgb, var(--ink) 4%, transparent); transition: background var(--t-mid); }
+.mindSortItem.mindSortDone { background: color-mix(in srgb, var(--ok) 9%, transparent); }
+.mindSortWhat { min-width: 0; pointer-events: none; }
+/* Places in one row that scrolls sideways, so a long list of collections never pushes the item off screen. */
+.mindSortPlaces { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -10px; padding: 0 10px; scroll-padding: 0 10px; }
+.mindSortPlaces::-webkit-scrollbar { display: none; }
+.mindSortPlaces > * { flex-shrink: 0; }
+.mindSortPlaces .choice { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; }
+.mindSortAll { display: grid; gap: 6px; }
+.mindSortAll > span { font: var(--t-footnote); color: var(--ink-3); }
+.mindSortAll .mindSortPlaces { margin: 0; padding: 0; }
+.mindNewPlace { flex: 1; min-width: 0; height: 40px; }
 
 /* page: sub-pages listed like folders, above the page's items */
 .mindFolders { margin-bottom: 4px; }
@@ -4817,7 +4828,6 @@ a.bsheetAction { text-decoration: none !important; }
 .mindSwipe_danger { background: var(--danger); }
 .mindSwipeBody { position: relative; z-index: 1; touch-action: pan-y; }
 .mindSwipeBody.mindSwipeSettling { transition: transform var(--t-slow) var(--ease-spring); }
-.mindInboxItem > .mindSwipe { flex: 1; min-width: 0; }
 
 /* ==========================================================================
    Mind — hold for a menu, hold and move to drag
@@ -4834,7 +4844,7 @@ a.bsheetAction { text-decoration: none !important; }
 
 /* what's being dragged stays behind, faded */
 .mindStackCard.mindDragSource, .mindPageRow.mindDragSource, .folderCard.mindDragSource,
-.mindSection.mindDragSource, .mindInboxItem.mindDragSource { opacity: .3; transform: scale(.97); }
+.mindSection.mindDragSource { opacity: .3; transform: scale(.97); }
 
 /* "it goes here": a bar on the leading edge (cards already use ::before for their layers) */
 .mindStackBeforeX { box-shadow: -5px 0 0 -2px var(--accent), var(--e1) !important; }

@@ -27,7 +27,7 @@ import { ProjectBoard, ProjectBuilder, TaskFromMessage } from "./Project";
 import { openItems, openState } from "@/lib/chat/open";
 import { newProject, newTask, parseTaskCommand, projectsOf } from "@/lib/chat/project";
 import { emojify } from "@/lib/chat/emoji";
-import { saveToMind } from "@/lib/chat/mind";
+import { saveToMind, UNASSIGNED } from "@/lib/chat/mind";
 import { MoveSheet } from "./Mind";
 import { MediaGrid, MediaViewer, ReceiptSheet } from "./MediaViewer";
 import ReactionSheet from "./ReactionSheet";
@@ -642,29 +642,15 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
             const cardTitle = c && (c.type === "wheel" ? c.question : c.type === "sketch" ? c.prompt : c.type === "location" ? c.place
               : openState(m, me)?.title ?? (c.type === "payment" ? c.note : undefined));
             const title = cardTitle || stripFormatting(m.body).split(/\n/)[0].slice(0, 80) || m.attachments[0]?.name || "Saved message";
-            const photos = m.attachments.some((x) => x.kind === "image");
-            const result = saveToMind(me, {
-              chatId: chat.id, messageId: m.id, title, chatName: chat.name,
-              text: [
-                m.body, c && "question" in c ? c.question : "", c && "title" in c ? c.title : "",
-                ...(c?.type === "checklist" ? c.items.map((i) => i.label) : []),
-                ...(c?.type === "plan" ? c.days.flatMap((d) => d.stops.map((st) => st.title)) : []),
-                ...(c?.type === "bill" ? [c.merchant, ...c.items.map((i) => i.name)] : []),
-                ...(c?.type === "project" ? [c.name, ...Object.values(c.tasks).filter((t) => !t.deleted).map((t) => t.title)] : []),
-              ].filter(Boolean).join(" "),
-              kind: c ? "card" : photos ? "photos" : m.attachments.length ? "file" : "text",
-              cardType: c?.type,
-            });
-            if (result.status === "no-collection") {
-              flash("Make a collection in Mind first");
-              return;
-            }
+            const result = saveToMind(me, { chatId: chat.id, messageId: m.id, title });
             const where = result.collection ? `${result.collection.emoji} ${result.collection.name}` : "Mind";
-            const editLocation = () => setOverlaySheet(
-              <MoveSheet me={me} id={result.blockId!} title="Save to" onClose={closeSheet} onMoved={(t) => flash(t)} />,
+            const choose = () => setOverlaySheet(
+              <MoveSheet me={me} id={result.blockId} title="Save to" onClose={closeSheet} onMoved={(t) => flash(t)} />,
             );
+            // Unassigned is where a save waits for a place: choosing one now is the obvious next step.
+            const waiting = result.collection?.id === UNASSIGNED;
             flash(result.status === "saved" ? `Saved to ${where}` : `Already in ${where}`, [
-              { label: "Edit location", run: editLocation },
+              { label: waiting ? "Choose collection" : "Edit location", run: choose },
               { label: "Done", run: () => {} },
             ]);
           }}

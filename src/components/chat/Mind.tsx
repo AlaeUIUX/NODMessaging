@@ -8,8 +8,8 @@ import { findUrl, hostOf, normalizeUrl, parseVideo, splitUrl, videoProvider, vid
 import { findBooks, sameTitle, unfurl, type BookHit, type LinkMeta } from "@/lib/chat/lookup";
 import { toAttachment } from "@/lib/chat/media";
 import {
-  amendBlock, collectionItems, commitDraft, commitShareDraft, draftOf, dropDraft, projectCollection, learnChat, locate, makeCollection, newId, nowMs,
-  patchBlock, patchCollection, place, removeBlock, rootItems, tagsOf, todayKey, useMind,
+  amendBlock, collectionItems, commitDraft, commitShareDraft, draftOf, dropDraft, intoUnassigned, isUnassigned, learnChat, locate, makeCollection, newId, nowMs,
+  patchBlock, patchCollection, place, projectCollection, removeBlock, tagsOf, todayKey, UNASSIGNED, useMind,
   type Block, type BlockKind, type Collection, type Mind, type MindView, type TaskStatus,
 } from "@/lib/chat/mind";
 import { paletteName, randomPalette, swatchesOf, type Swatch } from "@/lib/chat/palette";
@@ -132,6 +132,7 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
 
   if (!mind) return <div className={styles.inboxBody} />;
   const col = folder ? mind.collections.find((c) => c.id === folder.id) ?? null : null;
+  if (folder && !col) setFolder(null);
 
   const ctx: Ctx = {
     mind, col, update, me, store: me,
@@ -181,7 +182,7 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
               <span>{mind.collections.length ? `${mind.collections.length} collection${mind.collections.length === 1 ? "" : "s"} · ${itemCount} items` : "Empty for now"}</span>
             </div>
           </div>
-          <button className={styles.plusBtn} aria-label="New collection" onClick={() => setSheet(<NewFolderSheet ctx={ctx} />)}>
+          <button className={styles.plusBtn} aria-label="Add something" onClick={() => setSheet(<MindAddSheet ctx={ctx} collectionId={UNASSIGNED} />)}>
             <IconPlus size={16} />
           </button>
         </div>
@@ -412,12 +413,11 @@ function FolderRow({ ctx, col, i, hold, before, lifted, q }: { ctx: Ctx; col: Co
       <span className={styles.folderRowIcon}><Emoji char={col.emoji} /></span>
       <span className={styles.mindPageText}>
         <b>{q ? <Mark text={col.name} q={q} /> : col.name}</b>
-        <small>{q ? "Collection · " : ""}{items.length} item{items.length === 1 ? "" : "s"}</small>
+        <small>{q ? "Collection · " : ""}{countLabel(col, items.length)}</small>
       </span>
       <span className={styles.mindPageSide}>
         {isShared(col.sharing) && <span className={styles.folderPub} title="Shared"><IconUserGroup size={12} /></span>}
         {col.published && <span className={styles.folderPub} title="On Explore"><IconGlobe size={12} /></span>}
-        {col.vault.length > 0 && <em className={styles.folderBadge}>{col.vault.length} to sort</em>}
         <IconChevron size={14} />
       </span>
     </button>
@@ -440,12 +440,11 @@ function FolderCard({ ctx, col, i, hold, before, lifted }: { ctx: Ctx; col: Coll
         <span className={styles.folderBadges}>
           {isShared(col.sharing) && <span className={styles.folderPub} title="Shared"><IconUserGroup size={12} /></span>}
           {col.published && <span className={styles.folderPub} title="On Explore"><IconGlobe size={12} /></span>}
-          {col.vault.length > 0 && <em className={styles.folderBadge}>{col.vault.length} to sort</em>}
         </span>
       </span>
       <span className={styles.folderText}>
         <b>{col.name}</b>
-        <small>{items.length} item{items.length === 1 ? "" : "s"}</small>
+        <small>{countLabel(col, items.length)}</small>
       </span>
       <span className={styles.folderPeek} aria-hidden="true">
         {peek.map((b) => (peekImage(b)
@@ -457,15 +456,21 @@ function FolderCard({ ctx, col, i, hold, before, lifted }: { ctx: Ctx; col: Coll
   );
 }
 
+/** "12 items", or for Unassigned, how many are waiting for a place. */
+const countLabel = (col: Collection, n: number) => (isUnassigned(col) ? `${n} to sort` : `${n} item${n === 1 ? "" : "s"}`);
+
 function EmptyMind({ ctx }: { ctx: Ctx }) {
   return (
     <div className={styles.mindStack}>
       <div className={styles.mindStarter}>
         <Logo size={36} />
         <h2>Your Mind is empty</h2>
-        <p>Make a collection for anything: a project, a trip, a room. Then fill it with notes, links, to-dos and saves from your chats, and tag them to find them again.</p>
+        <p>Make a collection for anything: a project, a trip, a room. Or just add something: it waits in Unassigned until you sort it into one.</p>
         <button className={styles.mindPrimary} onClick={() => ctx.openSheet(<NewFolderSheet ctx={ctx} />)}>
           <IconPlus size={14} /> New collection
+        </button>
+        <button className={styles.mindSecondary} onClick={() => ctx.openSheet(<MindAddSheet ctx={ctx} collectionId={UNASSIGNED} />)}>
+          Add something
         </button>
       </div>
     </div>
@@ -473,8 +478,7 @@ function EmptyMind({ ctx }: { ctx: Ctx }) {
 }
 
 /**
- * Inside a collection: anything waiting to be sorted first, then everything
- * in it on one level, laid out by the view picked at the top. Tags group it:
+ * Inside a collection: everything in it on one level, laid out by the view picked at the top. Tags group it:
  * the filter at the top right brings any group of them back. The + (or the
  * quick-add field at the bottom) adds to it; anything can be held for its
  * menu, or held and moved between things to reorder.
@@ -497,12 +501,13 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
   const all = collectionItems(ctx.mind, col);
   const filtering = isFiltering(filter);
   const has = (b: Block) => passes(filter, b);
-  const items = rootItems(ctx.mind, col).filter(has);
-  const toSort = col.vault.map((id) => ctx.mind.blocks[id]).filter((b) => b && has(b));
+  const items = all.filter(has);
+  const unsorted = isUnassigned(col);
   const q = search?.trim().toLowerCase() ?? "";
   const view = col.view && COLLECTION_VIEWS.includes(col.view) ? col.view : "list";
   const setView = (v: MindView) => ctx.update((m) => patchCollection(m, col.id, (c) => ({ ...c, view: v })));
-  const add = () => ctx.openSheet(<MindAddSheet ctx={ctx} col={col} />);
+  const add = () => ctx.openSheet(<MindAddSheet ctx={ctx} collectionId={col.id} />);
+  const sort = () => ctx.openSheet(<SortSheet ctx={ctx} onDone={onBack} />);
   const open = (b: Block) => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />);
 
   /* ---- quick add, like the composer: a line becomes a note, a link a link (or a video), "word = meaning" a flashcard; "#words" are its tags ---- */
@@ -530,7 +535,7 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
       b.title = rest || (video ? videoProvider(video) : host) || text;
       standIn = !rest;
     }
-    ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: b } }, id, { collectionId: col.id, root: true }));
+    ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: b } }, id, { collectionId: col.id }));
     if (b.url) enrich(ctx.store, id, b, standIn);
     setDraft("");
   };
@@ -554,9 +559,7 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
     },
     drop: (src, t) => {
       if (t.t !== "rootBefore") return;
-      const sorting = col.vault.includes(src.id);
-      ctx.update((m) => place(m, src.id, { collectionId: col.id, root: true, beforeId: t.before }));
-      if (sorting) ctx.flash(`Sorted into ${col.emoji} ${col.name}`);
+      ctx.update((m) => place(m, src.id, { collectionId: col.id, beforeId: t.before }));
     },
   });
   const target = hold.target;
@@ -592,16 +595,21 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
     <>
       <div className={styles.mindToolbar}>
         <ViewSwitch views={COLLECTION_VIEWS} value={view} onPick={setView} />
-        {!edit && canShare(ctx) && (
+        {!unsorted && !edit && canShare(ctx) && (
           <button className={styles.mindPill} onClick={() => openShare(ctx, { owner: ctx.me, collectionId: col.id })}>
             {isShared(col.sharing) ? <IconUserGroup size={14} /> : <IconShare size={14} />} {isShared(col.sharing) ? "Shared" : "Share"}
           </button>
         )}
       </div>
 
-      <FilterBar filter={filter} onChange={setFilter} />
+      {unsorted && all.length > 0 && (
+        <div className={styles.mindSortHint}>
+          <p><b>Waiting for a collection.</b> What you save without picking one lands here. Sort gives each a place.</p>
+          <button className={styles.mindSort} onClick={sort}>Sort {all.length}</button>
+        </div>
+      )}
 
-      {toSort.length > 0 && <ToSort ctx={ctx} items={toSort} hold={hold} />}
+      <FilterBar filter={filter} onChange={setFilter} />
 
       <div className={`${styles.mindSectionBar} ${endDrop ? styles.mindDropInto : ""}`} data-drop-root>
         <p className={styles.sheetLabel}>In {col.name}</p>
@@ -609,8 +617,7 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
       </div>
       <div data-drop-root>
         {!items.length ? (
-          // A match waiting in To sort, just above, means something here does match.
-          filtering ? (toSort.length ? null : <p className={styles.emptyInbox}>Nothing in {col.name} matches the filter.</p>) : (
+          filtering ? <p className={styles.emptyInbox}>Nothing in {col.name} matches the filter.</p> : (
             <button className={styles.mindEmptySection} onClick={add}>
               <IconPlus size={14} /> Add something
             </button>
@@ -656,7 +663,7 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
           <div className={styles.titleCapsule}>
             <span className={styles.mindPageBadge}><Emoji char={col.emoji} /></span>
             <div className={`${styles.tcName} ${styles.glass}`}><span>{col.name}</span></div>
-            <span className={styles.tcPresence}>{all.length} {all.length === 1 ? "item" : "items"}</span>
+            <span className={styles.tcPresence}>{countLabel(col, all.length)}</span>
           </div>
           <div className={`${styles.headerSide} ${styles.headerEnd} ${styles.mindHeadSide}`}>
             <ScopeTools
@@ -707,31 +714,6 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
   );
 }
 
-/** Saves from chats, waiting for a place. Sits at the top of the collection, not behind a tab. Drag one down among the rest to sort it. */
-function ToSort({ ctx, items, hold }: { ctx: Ctx; items: Block[]; hold: { bind: (s: HoldSrc) => HoldBind; isDragging: (k: HoldSrc["kind"], id: string) => boolean } }) {
-  return (
-    <section className={styles.mindToSort} aria-labelledby="to-sort-title">
-      <div className={styles.mindSectionBar}>
-        <p className={styles.sheetLabel} id="to-sort-title">To sort <em className={styles.mindToSortCount}>{items.length}</em></p>
-      </div>
-      <div className={styles.mindRows}>
-        {items.map((b) => (
-          <div key={b.id} className={`${styles.mindInboxItem} ${hold.isDragging("item", b.id) ? styles.mindDragSource : ""}`}>
-            <div className={styles.mindBlockWrap} {...hold.bind({ kind: "item", id: b.id })}>
-              <SwipeItem actions={itemActions(ctx, b)}>
-                <Tile onOpen={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
-                  <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
-                </Tile>
-              </SwipeItem>
-            </div>
-            <button className={styles.mindSort} onClick={() => ctx.openSheet(<MoveSheet me={ctx.store} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} title="Sort into" />)}>Sort</button>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 /** The part of a name that matches, marked. */
 function Mark({ text, q }: { text: string; q: string }) {
   const at = text.toLowerCase().indexOf(q);
@@ -739,7 +721,7 @@ function Mark({ text, q }: { text: string; q: string }) {
   return <>{emojify(text.slice(0, at))}<mark className={styles.searchMark}>{text.slice(at, at + q.length)}</mark>{emojify(text.slice(at + q.length))}</>;
 }
 
-/** Where something lives: "📁 Collection", or "📁 Collection › To sort". */
+/** Where something lives: "In 📁 Collection". */
 function Crumbs({ trail }: { trail: { key: string; emoji?: string; label: string }[] }) {
   return (
     <span className={styles.crumbs}>
@@ -796,10 +778,7 @@ function SearchResults({ ctx, q, within, keep }: {
           <div className={styles.mindRows}>
             {blocks.map((b) => {
               const at = locate(ctx.mind, b.id);
-              const trail = at ? [
-                { key: at.collection.id, emoji: at.collection.emoji, label: at.collection.name },
-                ...(at.toSort ? [{ key: "to-sort", label: "To sort" }] : []),
-              ] : [];
+              const trail = at ? [{ key: at.collection.id, emoji: at.collection.emoji, label: at.collection.name }] : [];
               return (
                 <div key={b.id} className={styles.searchItem}>
                   <span className={styles.searchItemTop}>
@@ -853,14 +832,20 @@ export function toggleItem(update: Ctx["update"], b: Block) {
    Collection sheets
    =========================================================================== */
 
-/** The one + in a collection: every kind of item in one grid, so there's never a second menu to find. */
-function MindAddSheet({ ctx, col }: { ctx: Ctx; col: Collection }) {
+/** The one + in a collection (or on Mind's home, for Unassigned): every kind of item in one grid, so there's never a second menu to find. */
+function MindAddSheet({ ctx, collectionId }: { ctx: Ctx; collectionId: string }) {
   return (
-    <Sheet title={`Add to ${col.name}`} onClose={ctx.closeSheet}>
-      {(close) => <KindGrid onPick={(k) => close(() => ctx.openSheet(<AddItemSheet ctx={ctx} collectionId={col.id} kind={k} />))} />}
+    <Sheet title={collectionId === UNASSIGNED ? "Add something" : `Add to ${nameOf(ctx.mind, collectionId)}`} onClose={ctx.closeSheet}>
+      {(close) => (
+        <>
+          {collectionId === UNASSIGNED && <p className={styles.sheetNote}>It waits in Unassigned until you sort it into a collection.</p>}
+          <KindGrid onPick={(k) => close(() => ctx.openSheet(<AddItemSheet ctx={ctx} collectionId={collectionId} kind={k} />))} />
+        </>
+      )}
     </Sheet>
   );
 }
+const nameOf = (mind: Mind, collectionId: string) => mind.collections.find((x) => x.id === collectionId)?.name ?? (collectionId === UNASSIGNED ? "Unassigned" : "");
 
 const FOLDER_EMOJIS = ["📁", "💼", "🚀", "🏡", "✈️", "📚", "🎓", "💡", "🎨", "🌿", "🍳", "🏃", "🎸", "🛒", "💶", "🌐", "📱", "🇩🇪"];
 
@@ -1097,10 +1082,9 @@ function removeItem(update: Ctx["update"], flash: Ctx["flash"], id: string) {
       const next = { ...n, blocks: { ...n.blocks, [id]: b } };
       const c = at && n.collections.find((x) => x.id === at.collection.id);
       if (!at) return next;
-      if (!c) return n;
-      const key = at.toSort ? "vault" : "items";
-      const i = at.collection[key].indexOf(id);
-      return patchCollection(next, c.id, (x) => ({ ...x, [key]: [...x[key].slice(0, i), id, ...x[key].slice(i)] }));
+      if (!c) return at.unsorted ? intoUnassigned(next, id) : n;
+      const i = at.collection.items.indexOf(id);
+      return patchCollection(next, c.id, (x) => ({ ...x, items: [...x.items.slice(0, i), id, ...x.items.slice(i)] }));
     };
     return removeBlock(m, id);
   });
@@ -1261,6 +1245,11 @@ const renameAction = (ctx: Ctx, what: string, value: string, save: (v: string) =
 
 /** What a collection offers, held on Mind's home or from "…" inside it. `onDeleted` leaves it, when it's open. */
 function collectionActions(ctx: Ctx, c: Collection, onDeleted?: () => void): HoldAction[] {
+  if (isUnassigned(c)) return [
+    { id: "sort", label: "Sort…", icon: <IconFolder />, run: () => ctx.openSheet(<SortSheet ctx={ctx} onDone={onDeleted} />) },
+    "sep",
+    { id: "delete", label: "Delete everything in it", icon: <IconTrash />, danger: true, run: () => { deleteCollection(ctx, c.id); onDeleted?.(); } },
+  ];
   return [
     { id: "rename", label: "Rename", icon: <IconEdit />, run: renameAction(ctx, "collection", c.name, (name) => ctx.update((m) => patchCollection(m, c.id, (x) => ({ ...x, name })))) },
     { id: "style", label: "Icon & colour", icon: <IconPalette />, run: () => ctx.openSheet(<FolderSheet ctx={ctx} colId={c.id} onDeleted={onDeleted ?? (() => {})} />) },
@@ -1300,10 +1289,10 @@ function openHoldMenu(ctx: Ctx, src: HoldSrc, el: HTMLElement) {
     { id: "open", label: "Open", icon: <IconArrowRight />, run: () => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />) },
     ...(b.kind !== "chat" ? [{ id: "rename", label: "Rename", icon: <IconEdit />, run: rename(KIND_LABEL[b.kind]?.toLowerCase() ?? "item", b.title, (title) => ctx.update((m) => patchBlock(m, b.id, { title }))) }] : []),
     {
-      id: "move", label: where?.toSort ? "Sort into…" : "Move to…", icon: where?.toSort ? <IconInbox /> : <IconFolder />,
-      run: () => ctx.openSheet(<MoveSheet me={ctx.store} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} title={where?.toSort ? "Sort into" : "Move to"} />),
+      id: "move", label: where?.unsorted ? "Sort into…" : "Move to…", icon: <IconFolder />,
+      run: () => ctx.openSheet(<MoveSheet me={ctx.store} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} />),
     },
-    ...(canShare(ctx) && where && b.kind !== "chat"
+    ...(canShare(ctx) && where && !where.unsorted && b.kind !== "chat"
       ? [{ id: "share", label: "Share…", icon: <IconShare />, run: () => openShare(ctx, { owner: ctx.me, collectionId: where.collection.id, blockId: b.id }) }]
       : []),
     ...(b.ref ? (ctx.openChat ? [{ id: "chat", label: "Show in chat", icon: <IconMessage />, run: () => ctx.openChat?.(b.ref!.chatId) }] : [])
@@ -1451,8 +1440,7 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
   const [image, setImage] = useState<string>(SAMPLE_IMAGES[0]);
   const [upload, setUpload] = useState<File | null>(null);
   const [asking, setAsking] = useState<{ host: HTMLElement; answer: (ok: boolean) => void } | null>(null);
-  const col = ctx.mind.collections.find((x) => x.id === collectionId);
-  const where = col?.name ?? "";
+  const where = nameOf(ctx.mind, collectionId);
   const info = KINDS.find((k) => k.kind === kind)!;
 
   // A pasted link is read for its title; a video's for its channel and still too.
@@ -1538,7 +1526,7 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
       const att = await toAttachment(upload);
       block = { ...base, title: t || upload.name, size: upload.size, attachment: att ?? undefined };
     }
-    ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: block } }, id, { collectionId, root: true }));
+    ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: block } }, id, { collectionId }));
     // Added before the link answered: its title and still follow when they come.
     if (block.url && (kind === "link" || kind === "video") && (standIn || !meta)) enrich(ctx.store, id, block, standIn);
     ctx.closeSheet();
@@ -1550,7 +1538,7 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
     <Sheet
       title={`${info.label} · ${where}`}
       onClose={ctx.closeSheet}
-      onBack={col ? () => ctx.openSheet(<MindAddSheet ctx={ctx} col={col} />) : undefined}
+      onBack={() => ctx.openSheet(<MindAddSheet ctx={ctx} collectionId={collectionId} />)}
       action={{ label: "Add", disabled: !ready, onClick: () => { void create(); } }}
     >
 
@@ -1692,13 +1680,13 @@ function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
           <div className={styles.mindSectionBar}>
             <p className={styles.sheetLabel}>Lives in</p>
             <span className={styles.mindBarEnd}>
-              {canShare(ctx) && at && b.kind !== "chat" && (
+              {canShare(ctx) && at && !at.unsorted && b.kind !== "chat" && (
                 <button className={styles.mindPill} onClick={() => close(() => openShare(ctx, { owner: ctx.me, collectionId: at.collection.id, blockId: id }))}>
                   <IconShare size={14} /> Share
                 </button>
               )}
               <button className={styles.mindPill} onClick={() => close(() => ctx.openSheet(<MoveSheet me={ctx.store} id={id} onClose={ctx.closeSheet} onMoved={ctx.flash} />))}>
-                <IconFolder size={14} /> Move
+                <IconFolder size={14} /> {at?.unsorted ? "Sort" : "Move"}
               </button>
             </span>
           </div>
@@ -1708,12 +1696,6 @@ function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
                 <li>
                   <button onClick={() => close(() => ctx.openFolder(at.collection.id))}><Emoji char={at.collection.emoji} /> {at.collection.name}</button>
                 </li>
-                {at.toSort && (
-                  <>
-                    <li className={styles.mindCrumbSep} aria-hidden="true"><IconChevron size={12} /></li>
-                    <li aria-current="location"><span>To sort</span></li>
-                  </>
-                )}
               </ol>
             </nav>
           ) : <p className={styles.mindHint}>Not in a collection.</p>}
@@ -1830,42 +1812,197 @@ function WhereRow({ emoji, title, count, on, onPick }: { emoji: string; title: s
   );
 }
 
+/** A collection made on the spot while picking a place: the name's first emoji is its icon, else a folder. */
+function quickCollection(name: string, count: number) {
+  const icon = firstEmoji(name);
+  const tones = Object.values(TONES);
+  return makeCollection(icon ? name.replace(icon, "").trim() || name : name, icon ?? "📁", tones[count % tones.length]);
+}
+
+/** "New collection" at the end of a list of places: tap it, name it, Enter makes it and puts the thing there. */
+function NewPlace({ chip, onCreate }: { chip?: boolean; onCreate: (name: string) => void }) {
+  const [name, setName] = useState<string | null>(null);
+  // Escape drops the name: the blur that follows mustn't make the collection anyway.
+  const discard = useRef(false);
+  const make = () => {
+    const n = (name ?? "").trim();
+    if (!discard.current && n) onCreate(n);
+    setName(null);
+  };
+  if (name === null) {
+    return chip ? (
+      <button className={`${styles.choice} ${styles.mindAddTag}`} onClick={() => { discard.current = false; setName(""); }}><IconPlus size={14} /> New</button>
+    ) : (
+      <button className={styles.actionRow} onClick={() => { discard.current = false; setName(""); }}>
+        <span className={styles.mindEmoji}><IconPlus size={16} /></span>
+        <span className={styles.contactText}><b>New collection</b><small>Make one and put it there</small></span>
+      </button>
+    );
+  }
+  const field = (
+    <input
+      className={chip ? styles.mindTagInput : `${styles.plainInput} ${styles.mindNewPlace}`}
+      ref={(el) => el?.focus({ preventScroll: true })}
+      placeholder={chip ? "Name it" : "Name it, e.g. Trip to Lisbon"}
+      value={name}
+      size={chip ? Math.max(8, name.length + 1) : undefined}
+      onChange={(e) => setName(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") make();
+        if (e.key === "Escape") {
+          // Cancel the name only, not the sheet: the sheet listens for Escape on window.
+          e.preventDefault();
+          e.stopPropagation();
+          e.nativeEvent.stopImmediatePropagation();
+          discard.current = true;
+          setName(null);
+        }
+      }}
+      onBlur={make}
+      enterKeyHint="done"
+      aria-label="New collection's name"
+    />
+  );
+  return chip ? field : <div className={styles.actionRow}><span className={styles.mindEmoji}><Emoji char={firstEmoji(name) ?? "📁"} /></span>{field}</div>;
+}
+
 /**
- * Where should this go? Sorts what's waiting, moves items between collections,
- * and backs the chat's "Edit location" after Save to Mind. Picking a different
- * collection for a chat item teaches Mind where that chat's saves belong.
+ * Sorting Unassigned: everything waiting, one under the other, each with your
+ * collections to pick from (or a new one, named right there). Pick a place for
+ * as many as you like; Done moves them all at once, and anything skipped keeps
+ * waiting. Saves from a chat teach Mind where that chat's saves go next time.
  */
-export function MoveSheet({ me, id, onClose, onMoved, title = "Move to" }: { me: string; id: string; onClose: () => void; onMoved?: (text: string) => void; title?: string }) {
+function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
+  const { mind, update } = useMind(ctx.store);
+  /** Item → the collection picked for it. */
+  const [picks, setPicks] = useState<Record<string, string>>({});
+  /** Collections named here: made on Done, only if something goes in them. */
+  const [made, setMade] = useState<Collection[]>([]);
+  if (!mind) return null;
+  const waiting = mind.collections.find(isUnassigned);
+  const items = waiting ? collectionItems(mind, waiting) : [];
+  const places = [...mind.collections.filter((c) => !isUnassigned(c)), ...made];
+  const count = items.filter((b) => picks[b.id]).length;
+  const pick = (blockId: string, colId: string) => setPicks((p) => {
+    const next = { ...p };
+    if (next[blockId] === colId) delete next[blockId];
+    else next[blockId] = colId;
+    return next;
+  });
+  const all = (colId: string) => setPicks(Object.fromEntries(items.map((b) => [b.id, colId])));
+
+  const apply = () => {
+    const used = new Set(Object.values(picks));
+    update((m) => {
+      let next: Mind = { ...m, collections: [...m.collections, ...made.filter((c) => used.has(c.id))] };
+      for (const b of items) {
+        const to = picks[b.id];
+        if (!to || !next.blocks[b.id]) continue;
+        next = place(next, b.id, { collectionId: to });
+        if (b.ref) next = learnChat(next, to, b.ref.chatId);
+      }
+      return next;
+    });
+  };
+  const done = () => {
+    const left = items.length - count;
+    ctx.flash(left ? `Sorted ${count} · ${left} still waiting` : `All sorted: ${count} ${count === 1 ? "item has" : "items have"} a place`);
+    // Everything sorted: Unassigned goes away, so its screen slides out first.
+    if (!left && onDone) { onDone(); setTimeout(apply, 240); } else apply();
+  };
+
+  return (
+    <Sheet title="Sort" onClose={ctx.closeSheet} action={{ label: "Done", disabled: !count, onClick: done }}>
+      {!items.length ? <p className={styles.emptyInbox}>Nothing is waiting to be sorted.</p> : (
+        <>
+          <p className={styles.sheetNote}>
+            {count === items.length ? `${count === 1 ? "It has" : `All ${count} have`} a place. Done moves ${count === 1 ? "it" : "them"} there.`
+              : count ? `${count} of ${items.length} have a place. Anything you skip stays in Unassigned.`
+              : "Pick a collection for each one, then Done moves them. Anything you skip stays in Unassigned."}
+          </p>
+          {places.length > 0 && items.length > 1 && (
+            <div className={styles.mindSortAll}>
+              <span>All to</span>
+              <div className={styles.mindSortPlaces}>
+                {places.map((c) => (
+                  <button key={c.id} className={`${styles.choice} ${items.every((b) => picks[b.id] === c.id) ? styles.choiceOn : ""}`} onClick={() => all(c.id)}>
+                    <Emoji char={c.emoji} /> {c.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <ol className={styles.mindSortList}>
+            {items.map((b) => {
+              const to = places.find((c) => c.id === picks[b.id]);
+              return (
+                <li key={b.id} className={`${styles.mindSortItem} ${to ? styles.mindSortDone : ""}`}>
+                  <div className={styles.mindSortWhat}>
+                    <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} />
+                  </div>
+                  <div className={styles.mindSortPlaces} role="group" aria-label={`Where ${b.title || KIND_LABEL[b.kind]} goes`}>
+                    {places.map((c) => (
+                      <button key={c.id} className={`${styles.choice} ${to?.id === c.id ? styles.choiceOn : ""}`} aria-pressed={to?.id === c.id} onClick={() => pick(b.id, c.id)}>
+                        <Emoji char={c.emoji} /> {c.name}
+                      </button>
+                    ))}
+                    <NewPlace chip onCreate={(name) => {
+                      const c = quickCollection(name, places.length);
+                      setMade((x) => [...x, c]);
+                      setPicks((p) => ({ ...p, [b.id]: c.id }));
+                    }} />
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+/**
+ * Where should this go? Sorts one thing out of Unassigned, moves items between
+ * collections, and backs the chat's "Choose collection" after Save to Mind.
+ * Picking a collection for a chat item teaches Mind where that chat's saves
+ * belong, so the next one goes straight there.
+ */
+export function MoveSheet({ me, id, onClose, onMoved, title }: { me: string; id: string; onClose: () => void; onMoved?: (text: string) => void; title?: string }) {
   const { mind, update } = useMind(me);
   if (!mind) return null;
   const current = locate(mind, id);
   const b = mind.blocks[id];
   if (!b) return null;
-  const move = (col: Collection) => {
+  const sorting = !current || current.unsorted;
+  const places = mind.collections.filter((c) => !isUnassigned(c));
+  const move = (col: Collection, isNew = false) => {
     update((m) => {
-      let next = place(m, id, { collectionId: col.id, root: true });
+      let next = isNew ? { ...m, collections: [...m.collections, col] } : m;
+      next = place(next, id, { collectionId: col.id });
       if (b.ref && current?.collection.id !== col.id) next = learnChat(next, col.id, b.ref.chatId);
       return next;
     });
-    onMoved?.(`Moved to ${col.emoji} ${col.name}`);
+    onMoved?.(`${sorting ? "Sorted into" : "Moved to"} ${col.emoji} ${col.name}`);
   };
 
   return (
-    <Sheet title={title} onClose={onClose}>
+    <Sheet title={title ?? (sorting ? "Sort into" : "Move to")} onClose={onClose}>
       {(close) => (
         <>
           <div className={styles.mindDetail}><BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} /></div>
           <div className={styles.listGroup}>
-            {mind.collections.map((c) => (
+            {places.map((c) => (
               <WhereRow
                 key={c.id}
                 emoji={c.emoji}
                 title={c.name}
                 count={c.items.length}
-                on={!!current && current.collection.id === c.id && !current.toSort}
+                on={current?.collection.id === c.id}
                 onPick={() => close(() => move(c))}
               />
             ))}
+            <NewPlace onCreate={(name) => close(() => move(quickCollection(name, places.length), true))} />
           </div>
         </>
       )}
