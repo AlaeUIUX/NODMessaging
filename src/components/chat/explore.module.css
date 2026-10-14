@@ -304,3 +304,11 @@
 .stackHead { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; padding: 0 4px; font: var(--t-subhead); color: var(--ink); }
 .stackHead em { font-style: normal; color: var(--ink-3); font: var(--t-footnote); }
 
+
+/* A public collection's page: one grid, with the same Filter as a collection in Mind. */
+.stackBar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 10px; }
+.stackBar .stackHead { margin: 0; }
+.filterBtn { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 12px; border: none; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); font: var(--t-footnote); font-weight: var(--w-emph); cursor: pointer; }
+.filterBtn:active { transform: scale(.95); }
+.filterOn { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.pageStack > .masonry { margin-top: 10px; }

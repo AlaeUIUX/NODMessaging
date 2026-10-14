@@ -5,12 +5,12 @@ import { useDialog } from "./ui";
 import styles from "./chat.module.css";
 
 /**
- * Hold anything in Mind (a collection, a stack, an item). Holding still lifts
+ * Hold anything in Mind (a collection, an item). Holding still lifts
  * it and opens its menu, the way a message does in a chat; moving while still
  * holding closes the menu and drags it instead. Right-click opens the menu too.
  */
 
-export type HoldSrc = { kind: "item" | "stack" | "collection" | "section"; id: string };
+export type HoldSrc = { kind: "item" | "collection"; id: string };
 /** What to spread on something that can be held. */
 export type HoldBind = {
   "data-hold": string;
@@ -75,7 +75,7 @@ export function useHold<T>(opts: Opts<T>) {
     "data-hold": `${src.kind}:${src.id}`,
     onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
       if (e.button !== 0 || press.current) return;
-      // Nested holdables (an item inside a stack's peek): the innermost wins.
+      // Nested holdables (an item inside something that can be held): the innermost wins.
       e.stopPropagation();
       const el = e.currentTarget;
       const r = el.getBoundingClientRect();

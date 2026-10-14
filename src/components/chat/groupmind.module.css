@@ -35,27 +35,22 @@
 }
 .add:active { transform: scale(.95); }
 
-.shelves { display: flex; gap: 6px; margin: 0 -14px; padding: 0 14px 2px; overflow-x: auto; scrollbar-width: none; }
-.shelves::-webkit-scrollbar { display: none; }
-.shelf {
+/* The filter: the same menu as a collection's, from a round button beside Edit. */
+.filter {
   flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  width: 34px;
   height: 34px;
-  padding: 0 12px;
+  display: grid;
+  place-items: center;
   border: none;
   border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--surface) 70%, transparent);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 14%, transparent);
   color: var(--ink-2);
-  font: var(--t-subhead);
-  font-weight: var(--w-control);
   cursor: pointer;
 }
-.shelf em { font-style: normal; font: var(--t-caption1); color: var(--ink-3); }
-.shelfOn { background: var(--ink); color: var(--bg); box-shadow: none; }
-.shelfOn em { color: color-mix(in srgb, var(--bg) 70%, transparent); }
+.filter:active { transform: scale(.92); }
+.filterOn { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); box-shadow: none; }
 
 .section { display: flex; flex-direction: column; gap: 8px; }
 .sectionHead { display: flex; align-items: baseline; gap: 6px; margin: 2px 2px 0; font: var(--t-subhead); color: var(--ink); }

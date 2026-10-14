@@ -6,16 +6,16 @@ import type { Attachment } from "./types";
 /**
  * Mind — each person's own organising space.
  *
- *   Mind → Collections → Pages and items, side by side → Sub-pages and items…
+ *   Mind → Collections → items, all on one level
  *
- * A collection is a folder: a name, an icon, and whatever you put in it —
- * pages (which work like folders too) and loose items, at the same level.
- * Saves from chats land in its "To sort" pile until they're given a place.
- * Everything inside is made with the + button. Items saved from a chat keep
- * a reference to the message and stay live.
+ * A collection is a folder: a name, an icon, and whatever you put in it, side
+ * by side. There's nothing inside it but items: what groups them is their
+ * tags, and the collection's filter brings any group of them back. Saves from
+ * chats land in its "To sort" pile until they're given a place. Items saved
+ * from a chat keep a reference to the message and stay live.
  */
 
-export type MindView = "shelf" | "list" | "grid" | "board";
+export type MindView = "shelf" | "list" | "grid";
 export type BlockKind =
   | "note" | "todo" | "link" | "video" | "book" | "quote" | "flashcard" | "image" | "file"
   | "palette" | "progress" | "habit" | "amount" | "date" | "chat";
@@ -82,36 +82,18 @@ export interface Block {
   sharing?: Sharing;
 }
 
-export interface Section { id: string; title: string; emoji: string; collapsed: boolean; blockIds: string[] }
-
-export interface Page {
-  id: string;
-  title: string;
-  emoji: string;
-  tone: string;
-  parentId?: string;
-  view: MindView;
-  views: MindView[];
-  sections: Section[];
-  /** What the quick-add field makes on this page. */
-  defaultKind: BlockKind;
-  pinned?: boolean;
-  collapsed?: boolean;
-}
-
 export interface Collection {
   id: string;
   name: string;
   emoji: string;
   tone: string;
-  pages: Page[];
-  /** Items that sit at the top of the collection, next to its pages. */
+  /** Everything in it, in order. */
   items: string[];
   /** Saves from chats waiting to be sorted ("To sort"). */
   vault: string[];
   /** Chats whose saves usually land here; learned when you correct a save. */
   chatIds: string[];
-  /** How the top level is laid out: stacks and items share it, like inside a stack. */
+  /** How it's laid out: a list, a grid, or a shelf. */
   view?: MindView;
   /** Added from Explore: the public collection it came from, and who made it. */
   from?: { id: string; by: string };
@@ -122,7 +104,7 @@ export interface Collection {
 }
 
 export interface Mind {
-  version: 4;
+  version: 5;
   collections: Collection[];
   /** The collection opened last; saves fall back to it. */
   current: string | null;
@@ -172,23 +154,18 @@ export const newId = (p = "b") => `${p}-${Date.now().toString(36)}${Math.random(
 
 /** A new collection is an empty folder. */
 export function makeCollection(name: string, emoji: string, tone: string): Collection {
-  return { id: newId("c"), name: name.trim() || "Untitled", emoji, tone, pages: [], items: [], vault: [], chatIds: [] };
+  return { id: newId("c"), name: name.trim() || "Untitled", emoji, tone, items: [], vault: [], chatIds: [] };
 }
 
-export function blankPage(title: string, emoji: string, tone: string, defaultKind: BlockKind, parentId?: string): Page {
-  return {
-    id: newId("p"), title, emoji, tone, parentId, view: "list", views: ["list", "grid", "shelf", "board"], defaultKind,
-    sections: [{ id: newId("s"), title: "", emoji: "", collapsed: false, blockIds: [] }],
-  };
-}
+/** A tag as Mind writes it: lower case, words joined by dashes ("Separable verbs" → "separable-verbs"). */
+export const tagOf = (words: string) => words.trim().toLowerCase().replace(/^#/, "").replace(/\s+/g, "-");
 
 /* ---------------------------------------------------------------------------
    Seeds — plain folders, filled the way a person would fill them
 --------------------------------------------------------------------------- */
 
 type Item = Omit<Block, "id" | "createdAt" | "tags"> & { tags?: string[] };
-type SeedPage = Omit<Page, "id" | "sections" | "parentId" | "views" | "tone"> & { tone?: string; views?: MindView[]; sections: { title: string; emoji: string; collapsed?: boolean; items: Item[] }[]; children?: SeedPage[] };
-type SeedCollection = Omit<Collection, "id" | "pages" | "items" | "vault"> & { id: string; pages: SeedPage[]; items?: Item[]; vault: Item[] };
+type SeedCollection = Omit<Collection, "id" | "items" | "vault"> & { id: string; items: Item[]; vault: Item[] };
 
 function build(collections: SeedCollection[], current: string | null): Mind {
   const blocks: Record<string, Block> = {};
@@ -200,23 +177,17 @@ function build(collections: SeedCollection[], current: string | null): Mind {
     blocks[id] = { ...it, tags: it.tags ?? [], id, createdAt: t };
     return id;
   };
-  const pages = (list: SeedPage[], tone: string, parentId?: string): Page[] => list.flatMap((sp) => {
-    const id = `p${(++n).toString(36)}`;
-    const page: Page = {
-      id, title: sp.title, emoji: sp.emoji, tone: sp.tone ?? tone, parentId, view: sp.view,
-      views: sp.views ?? ([sp.view, "list"].filter((v, i, a) => a.indexOf(v) === i) as MindView[]),
-      defaultKind: sp.defaultKind, pinned: sp.pinned, collapsed: sp.collapsed,
-      sections: sp.sections.map((s) => ({ id: `s${(++n).toString(36)}`, title: s.title, emoji: s.emoji, collapsed: !!s.collapsed, blockIds: s.items.map(add) })),
-    };
-    return [page, ...pages(sp.children ?? [], tone, id)];
-  });
   return {
-    version: 4,
+    version: 5,
     current,
     blocks,
-    collections: collections.map((c) => ({ ...c, pages: pages(c.pages, c.tone), items: (c.items ?? []).map(add), vault: c.vault.map(add) })),
+    collections: collections.map((c) => ({ ...c, items: c.items.map(add), vault: c.vault.map(add) })),
   };
 }
+
+/** Things that go together, each tagged with what they're about (and keeping any tags of their own). */
+const tagged = (tags: string | string[], items: Item[]): Item[] =>
+  items.map((it) => ({ ...it, tags: [...new Set([...[tags].flat(), ...(it.tags ?? [])])] }));
 
 const photo = (id: string, w = 700) => `https://images.unsplash.com/${id}?w=${w}&q=70&fm=jpg`;
 /** A cover from Apple Books' image server, at the size Mind asks for (see /api/books). */
@@ -227,107 +198,76 @@ const youtube = (id: string, title: string, channel: string, duration: string, t
   url: `https://www.youtube.com/watch?v=${id}`, image: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
 });
 const card = (front: string, back: string, due = false, tags: string[] = []): Item => ({ kind: "flashcard", title: front, back, due, tags });
-const one = (items: Item[]) => [{ title: "", emoji: "", items }];
 
 function alaeMind(): Mind {
   return build([
     {
-      id: "c-german", name: "German", emoji: "🇩🇪", tone: "#C99432", chatIds: [],
+      id: "c-german", name: "German", emoji: "🇩🇪", tone: "#C99432", chatIds: [], view: "grid",
       vault: [{ kind: "link", title: "Tandem: find a language exchange partner", source: "tandem.net", url: "https://tandem.net" }],
       items: [
         { kind: "date", title: "Goethe B1 exam", at: Date.now() + 46 * DAY },
-        { kind: "habit", title: "Review cards for 10 minutes", days: [dayKey(Date.now() - DAY), dayKey(Date.now() - 2 * DAY), dayKey(Date.now() - 3 * DAY), dayKey(Date.now() - 5 * DAY)] },
-      ],
-      pages: [
-        {
-          title: "Vocab", emoji: "🃏", view: "grid", views: ["grid", "list", "shelf"], defaultKind: "flashcard",
-          sections: [
-            { title: "Everyday", emoji: "☕️", items: [
-              card("der Feierabend", "the end of the working day"), card("gemütlich", "cosy, comfortable"),
-              card("die Verabredung", "an appointment, a date"), card("die Rechnung", "the bill"),
-              card("der Bahnhof", "the train station"), card("das Brötchen", "bread roll"),
-            ] },
-            { title: "Work", emoji: "💼", items: [
-              card("unterschreiben", "to sign", false, ["work"]), card("die Besprechung", "the meeting", false, ["work"]), card("der Termin", "the appointment", false, ["work"]),
-            ] },
-          ],
-        },
-        {
-          title: "Verbs", emoji: "🔁", view: "grid", views: ["grid", "list"], defaultKind: "flashcard",
-          sections: one([
-            card("sich freuen auf", "to look forward to"), card("etwas vorhaben", "to have plans"),
-            { kind: "note", title: "Verb goes last after “weil”", body: "Ich lerne Deutsch, weil ich in Wien arbeite." },
-          ]),
-          children: [
-            { title: "Separable verbs", emoji: "✂️", view: "grid", defaultKind: "flashcard", sections: one([
-              card("anrufen", "to call (ruft … an)"), card("aufstehen", "to get up (steht … auf)"), card("einkaufen", "to shop (kauft … ein)"),
-            ]) },
-            { title: "Irregular verbs", emoji: "⚡️", view: "grid", defaultKind: "flashcard", sections: one([
-              card("gehen · ging · gegangen", "to go"), card("sehen · sah · gesehen", "to see"),
-            ]) },
-          ],
-        },
-        {
-          title: "Grammar", emoji: "📚", view: "shelf", views: ["shelf", "list"], defaultKind: "link",
-          sections: [
-            { title: "Books", emoji: "📚", items: [
-              {
-                kind: "book", title: "Hammer's German Grammar and Usage", source: "Martin Durrell", shelf: "reading", year: 2002, pages: 616,
-                image: appleCover("Publication115/v4/1a/06/77/1a0677dd-d134-82f9-a72e-bc28c8448424/9780429620201.jpg"),
-                url: "https://books.apple.com/us/book/hammers-german-grammar-and-usage/id1569162093",
-              },
-              {
-                kind: "book", title: "Grammatik aktiv A1–B1", source: "Friederike Jin", shelf: "reading", year: 2013, pages: 256,
-                image: appleCover("Publication116/v4/9a/e0/f4/9ae0f466-952e-1289-a9ae-d34749422ba3/1039550007.jpg"),
-                url: "https://books.apple.com/us/book/grammatik-aktiv-deutsch-als-fremdsprache-2-aktualisierte/id6448269689",
-              },
-              {
-                kind: "book", title: "Schaum's Outline of German Grammar", source: "Elke Gschossmann-Hendershot", shelf: "want", year: 1975, pages: 244,
-                image: appleCover("Publication/v4/c7/b0/38/c7b038ef-6ce3-4369-f54c-7c9dbc249a92/9780071823357.jpg"),
-                url: "https://books.apple.com/us/book/schaums-outline-of-german-grammar/id795267059",
-              },
-            ] },
-            { title: "Links", emoji: "🔗", items: [
-              { kind: "link", title: "Dative or accusative? The only chart you need", source: "learngerman.dw.com", url: "https://learngerman.dw.com", tags: ["cases"] },
-              { kind: "link", title: "Where the verb goes in a subordinate clause", source: "yourdailygerman.com", url: "https://yourdailygerman.com" },
-            ] },
-          ],
-        },
-        {
-          title: "Listening", emoji: "🎧", view: "shelf", views: ["shelf", "list"], defaultKind: "video",
-          sections: one([
-            youtube("8VowGvnRU_s", "Understand the GERMAN CASES - Accusative, Dative, Nominative, Genitive", "Learn German with Anja", "16:42", ["cases"]),
-            youtube("g_h1DtGIAfQ", "Do Germans Like to Work? | Easy German 636", "Easy German", "13:58"),
-          ]),
-        },
+        { kind: "habit", title: "Review cards for 10 minutes", days: [dayKey(shiftDays(Date.now(), -1)), dayKey(shiftDays(Date.now(), -2)), dayKey(shiftDays(Date.now(), -3)), dayKey(shiftDays(Date.now(), -5))] },
+        ...tagged("vocab", [
+          card("der Feierabend", "the end of the working day"), card("gemütlich", "cosy, comfortable"),
+          card("die Verabredung", "an appointment, a date"), card("die Rechnung", "the bill"),
+          card("der Bahnhof", "the train station"), card("das Brötchen", "bread roll"),
+          card("unterschreiben", "to sign", false, ["work"]), card("die Besprechung", "the meeting", false, ["work"]), card("der Termin", "the appointment", false, ["work"]),
+        ]),
+        ...tagged("verbs", [
+          card("sich freuen auf", "to look forward to"), card("etwas vorhaben", "to have plans"),
+          { kind: "note", title: "Verb goes last after “weil”", body: "Ich lerne Deutsch, weil ich in Wien arbeite." },
+        ]),
+        ...tagged(["verbs", "separable-verbs"], [
+          card("anrufen", "to call (ruft … an)"), card("aufstehen", "to get up (steht … auf)"), card("einkaufen", "to shop (kauft … ein)"),
+        ]),
+        ...tagged(["verbs", "irregular-verbs"], [
+          card("gehen · ging · gegangen", "to go"), card("sehen · sah · gesehen", "to see"),
+        ]),
+        ...tagged("grammar", [
+          {
+            kind: "book", title: "Hammer's German Grammar and Usage", source: "Martin Durrell", shelf: "reading", year: 2002, pages: 616,
+            image: appleCover("Publication115/v4/1a/06/77/1a0677dd-d134-82f9-a72e-bc28c8448424/9780429620201.jpg"),
+            url: "https://books.apple.com/us/book/hammers-german-grammar-and-usage/id1569162093",
+          },
+          {
+            kind: "book", title: "Grammatik aktiv A1–B1", source: "Friederike Jin", shelf: "reading", year: 2013, pages: 256,
+            image: appleCover("Publication116/v4/9a/e0/f4/9ae0f466-952e-1289-a9ae-d34749422ba3/1039550007.jpg"),
+            url: "https://books.apple.com/us/book/grammatik-aktiv-deutsch-als-fremdsprache-2-aktualisierte/id6448269689",
+          },
+          {
+            kind: "book", title: "Schaum's Outline of German Grammar", source: "Elke Gschossmann-Hendershot", shelf: "want", year: 1975, pages: 244,
+            image: appleCover("Publication/v4/c7/b0/38/c7b038ef-6ce3-4369-f54c-7c9dbc249a92/9780071823357.jpg"),
+            url: "https://books.apple.com/us/book/schaums-outline-of-german-grammar/id795267059",
+          },
+          { kind: "link", title: "Dative or accusative? The only chart you need", source: "learngerman.dw.com", url: "https://learngerman.dw.com", tags: ["cases"] },
+          { kind: "link", title: "Where the verb goes in a subordinate clause", source: "yourdailygerman.com", url: "https://yourdailygerman.com" },
+        ]),
+        ...tagged("listening", [
+          youtube("8VowGvnRU_s", "Understand the GERMAN CASES - Accusative, Dative, Nominative, Genitive", "Learn German with Anja", "16:42", ["cases"]),
+          youtube("g_h1DtGIAfQ", "Do Germans Like to Work? | Easy German 636", "Easy German", "13:58"),
+        ]),
       ],
     },
     {
       id: "c-work", name: "Work", emoji: "💼", tone: "#3E67A6", chatIds: ["general", "dm"],
       vault: [],
-      pages: [
-        { title: "Spaces launch", emoji: "🚀", view: "list", defaultKind: "todo", sections: [
-          { title: "From the team chat", emoji: "💬", items: [
-            { kind: "chat", title: "Launch checklist", ref: { chatId: "general", messageId: "g-10" } },
-            { kind: "chat", title: "Kickoff brief · Spaces v2", ref: { chatId: "general", messageId: "g-7" } },
-          ] },
-          { title: "My tasks", emoji: "✅", items: [
-            { kind: "todo", title: "Mock the QR code on the handoff screen" },
-            { kind: "todo", title: "Review Charles's implementation", done: true },
-          ] },
-        ] },
-      ],
+      items: tagged("spaces-launch", [
+        { kind: "chat", title: "Launch checklist", ref: { chatId: "general", messageId: "g-10" } },
+        { kind: "chat", title: "Kickoff brief · Spaces v2", ref: { chatId: "general", messageId: "g-7" } },
+        { kind: "todo", title: "Mock the QR code on the handoff screen" },
+        { kind: "todo", title: "Review Charles's implementation", done: true },
+      ]),
     },
     {
       id: "c-trip", name: "Trip ideas", emoji: "✈️", tone: "#5B8A6B", chatIds: [],
       vault: [],
-      items: [{ kind: "note", title: "Packing, every time", body: "Adapter, rail card, a book for the train." }],
-      pages: [
-        { title: "Vienna weekend", emoji: "🎡", view: "list", defaultKind: "note", sections: one([
+      items: [
+        { kind: "note", title: "Packing, every time", body: "Adapter, rail card, a book for the train." },
+        ...tagged("vienna-weekend", [
           { kind: "date", title: "Train to Vienna", at: Date.now() + 18 * DAY },
           { kind: "link", title: "Café Sperl", source: "cafesperl.at", url: "https://cafesperl.at" },
           { kind: "note", title: "To try", body: "Sachertorte, the Naschmarkt on Saturday morning, a Heuriger in Grinzing." },
-        ]) },
+        ]),
       ],
     },
   ], "c-german");
@@ -339,33 +279,27 @@ function charlesMind(): Mind {
     {
       id: "c-acme", name: "Acme Co", emoji: "🌐", tone: "#3E67A6", chatIds: [],
       vault: [],
-      pages: [
-        { title: "Website redesign", emoji: "🗂️", view: "board", views: ["board", "list"], defaultKind: "todo", sections: [
-          { title: "Tasks", emoji: "🗂️", items: [
-            task("Homepage hero in Figma", "done"), task("Pricing page copy", "doing"), task("CMS migration", "doing"),
-            task("Accessibility audit", "todo", ["urgent"]), task("Handoff to Acme's developers", "todo"),
-          ] },
-          { title: "Dates", emoji: "📅", items: [{ kind: "date", title: "Acme launch", at: Date.now() + 5 * DAY }] },
-        ] },
-        { title: "References", emoji: "📎", view: "list", defaultKind: "link", sections: one([
+      items: [
+        ...tagged("website-redesign", [
+          task("Homepage hero in Figma", "done"), task("Pricing page copy", "doing"), task("CMS migration", "doing"),
+          task("Accessibility audit", "todo", ["urgent"]), task("Handoff to Acme's developers", "todo"),
+          { kind: "date", title: "Acme launch", at: Date.now() + 5 * DAY },
+        ]),
+        ...tagged("references", [
           { kind: "link", title: "Acme · Web v3", source: "figma.com", url: "https://figma.com" },
           { kind: "link", title: "Competitor teardown: linear.app", source: "linear.app", url: "https://linear.app" },
           { kind: "note", title: "Call · 12 Sep", body: "They want the hero calmer: less gradient, more product. Dana signs off copy." },
-        ]) },
+        ]),
       ],
     },
     {
       id: "c-lumen", name: "Lumen", emoji: "📱", tone: "#86507A", chatIds: [],
       vault: [],
-      pages: [
-        { title: "iOS app 1.4", emoji: "🗂️", view: "board", views: ["board", "list"], defaultKind: "todo", sections: [
-          { title: "Tasks", emoji: "🗂️", items: [
-            task("Sign in with Apple", "done"), task("TestFlight build 1.4", "done"), task("Onboarding flow v2", "doing"),
-            task("Push notification copy", "todo"), task("App Store screenshots", "todo"),
-          ] },
-          { title: "Dates", emoji: "📅", items: [{ kind: "date", title: "App review", at: Date.now() + 12 * DAY }] },
-        ] },
-      ],
+      items: tagged("ios-app-1.4", [
+        task("Sign in with Apple", "done"), task("TestFlight build 1.4", "done"), task("Onboarding flow v2", "doing"),
+        task("Push notification copy", "todo"), task("App Store screenshots", "todo"),
+        { kind: "date", title: "App review", at: Date.now() + 12 * DAY },
+      ]),
     },
     {
       id: "c-nod", name: "NOD", emoji: "🚀", tone: "#C99432", chatIds: ["general", "dm"],
@@ -373,30 +307,26 @@ function charlesMind(): Mind {
         { kind: "chat", title: "Can you review the latest implementation?", ref: { chatId: "dm", messageId: "dm-5" } },
         { kind: "chat", title: "QR code idea", ref: { chatId: "general", messageId: "g-3" } },
       ],
-      pages: [
-        { title: "Spaces launch", emoji: "🚀", view: "list", views: ["list", "grid"], defaultKind: "todo", sections: [
-          { title: "From the team chat", emoji: "💬", items: [
-            { kind: "chat", title: "Launch checklist", ref: { chatId: "general", messageId: "g-10" } },
-            { kind: "chat", title: "Where for lunch on Friday?", ref: { chatId: "general", messageId: "g-9" } },
-            { kind: "chat", title: "CLAUDE.md", ref: { chatId: "general", messageId: "g-8" } },
-          ] },
-          { title: "My tasks", emoji: "✅", items: [task("Review Alae's latest implementation", "doing", ["urgent"])] },
-        ] },
-      ],
+      items: tagged("spaces-launch", [
+        { kind: "chat", title: "Launch checklist", ref: { chatId: "general", messageId: "g-10" } },
+        { kind: "chat", title: "Where for lunch on Friday?", ref: { chatId: "general", messageId: "g-9" } },
+        { kind: "chat", title: "CLAUDE.md", ref: { chatId: "general", messageId: "g-8" } },
+        task("Review Alae's latest implementation", "doing", ["urgent"]),
+      ]),
     },
     {
       id: "c-money", name: "Money", emoji: "💶", tone: "#5B8A6B", chatIds: [],
       vault: [],
-      pages: [
-        { title: "Invoices", emoji: "🧾", view: "list", defaultKind: "amount", sections: one([
+      items: [
+        ...tagged("invoices", [
           { kind: "amount", title: "INV-041", source: "Acme Co", amount: 3200, paid: true, at: Date.now() - 6 * DAY },
           { kind: "amount", title: "INV-042", source: "Lumen", amount: 2400, paid: false, at: Date.now() + 3 * DAY },
           { kind: "amount", title: "INV-043", source: "NOD", amount: 1800, paid: false, at: Date.now() - 2 * DAY, tags: ["urgent"] },
-        ]) },
-        { title: "Admin", emoji: "📋", view: "list", defaultKind: "todo", sections: one([
+        ]),
+        ...tagged("admin", [
           task("File the quarterly VAT return", "todo", ["urgent"]),
           { kind: "note", title: "Rates 2026", body: "€95 an hour · €720 a day · 50% upfront on new clients." },
-        ]) },
+        ]),
       ],
     },
   ], "c-acme");
@@ -406,42 +336,42 @@ function reemaMind(): Mind {
   const img = (id: string, title: string): Item => ({ kind: "image", title, image: photo(id), source: "pinterest.com" });
   return build([
     {
-      id: "c-home", name: "Home ideas", emoji: "🏡", tone: "#5B8A6B", chatIds: ["reema"],
+      id: "c-home", name: "Home ideas", emoji: "🏡", tone: "#5B8A6B", chatIds: ["reema"], view: "grid",
       vault: [img("photo-1586023492125-27b2c045efd7", "Green velvet chair")],
-      items: [{ kind: "amount", title: "Furniture budget", source: "This year", amount: 2500, paid: false, at: Date.now() + 60 * DAY }],
-      pages: [
-        { title: "Living room", emoji: "🛋️", view: "grid", views: ["grid", "list"], defaultKind: "image", sections: one([
+      items: [
+        { kind: "amount", title: "Furniture budget", source: "This year", amount: 2500, paid: false, at: Date.now() + 60 * DAY },
+        ...tagged("living-room", [
           img("photo-1616046229478-9901c5536a45", "Sage walls and a round mirror"),
           { kind: "palette", title: "Sage & oak", colors: ["#8A9A7B", "#C9B79C", "#EDE6DA", "#5B4636", "#2F3A2F"] },
           img("photo-1493663284031-b7e3aefcae8e", "Teal cushions"),
           { kind: "link", title: "Oak side table", source: "hay.com", url: "https://hay.com" },
           img("photo-1484101403633-562f891dc89a", "A soft grey sofa"),
           img("photo-1616137466211-f939a420be84", "All white, lots of light"),
-        ]) },
-        { title: "Bedroom", emoji: "🛏️", view: "grid", views: ["grid", "list"], defaultKind: "image", tone: "#C99432", sections: one([
+        ]),
+        ...tagged("bedroom", [
           img("photo-1615874959474-d609969a20ed", "Rattan lamp and linen"),
           { kind: "quote", title: "Have nothing in your house that you do not know to be useful, or believe to be beautiful.", body: "William Morris" },
           img("photo-1505693416388-ac5ce068fe85", "Tufted headboard"),
           img("photo-1512918728675-ed5a9ecdebfd", "Low bed, warm wood"),
-        ]) },
-        { title: "Plants", emoji: "🌿", view: "grid", views: ["grid", "list"], defaultKind: "image", sections: one([
+        ]),
+        ...tagged("plants", [
           img("photo-1519710164239-da123dc03ef4", "One plant, one chair"),
           { kind: "note", title: "Monstera", body: "Water every 7 to 10 days. Bright, indirect light." },
           img("photo-1598928506311-c55ded91a20c", "A little jungle"),
-        ]) },
-        { title: "Dream house", emoji: "🏠", view: "grid", views: ["grid", "list"], defaultKind: "image", tone: "#3E67A6", sections: one([
+        ]),
+        ...tagged("dream-house", [
           img("photo-1600585154340-be6161a56a0c", "Big windows, big tree"),
           img("photo-1502005229762-cf1b2da7c5d6", "Floating stairs"),
           img("photo-1585412727339-54e4bae3bbf9", "Coffered ceiling"),
-        ]) },
+        ]),
       ],
     },
   ], "c-home");
 }
 
 /**
- * A group's Mind: one shared collection whose stacks ("shelves") everyone in
- * the group can read; people with "Edit the group's Mind" add and sort them.
+ * A group's Mind: one shared collection everyone in the group can read;
+ * people with "Edit the group's Mind" add to it and tag what's in it.
  * Stored like a person's Mind, under its own id.
  */
 export const groupMindId = (groupId: string) => `group:${groupId}`;
@@ -451,24 +381,24 @@ function nodTeamMind(): Mind {
   return build([
     {
       id: "c-shared", name: "NOD Team", emoji: "🗂️", tone: "#C99432", chatIds: [], vault: [],
-      pages: [
-        { title: "Brand kit", emoji: "🎨", view: "grid", views: ["grid", "list"], defaultKind: "image", sections: one([
+      items: [
+        ...tagged("brand-kit", [
           { kind: "palette", title: "NOD colours", colors: ["#1C1917", "#FAFAF9", "#00359E", "#C99432", "#5B8A6B"] },
           { kind: "file", title: "NOD-logo-pack.zip", size: 2_400_000 },
           { kind: "file", title: "Type scale v2.fig", size: 860_000 },
           { kind: "image", title: "Spaces launch moodboard", image: photo("photo-1618221195710-dd6b41faaea6"), source: "Reema" },
-        ]) },
-        { title: "Launch", emoji: "🚀", view: "list", views: ["list", "grid"], defaultKind: "link", sections: one([
+        ]),
+        ...tagged("launch", [
           { kind: "link", title: "Launch plan", source: "notion.so", url: "https://notion.so" },
           { kind: "link", title: "Press kit", source: "nod.app", url: "https://nod.app" },
           { kind: "date", title: "Launch day", at: Date.now() + 9 * DAY },
           { kind: "file", title: "Investor update – October.pdf", size: 1_200_000 },
-        ]) },
-        { title: "How we work", emoji: "📝", view: "list", views: ["list", "grid"], defaultKind: "note", sections: one([
+        ]),
+        ...tagged("how-we-work", [
           { kind: "note", title: "Writing for NOD", body: "Short sentences. Say what happens, not what the button is called. No exclamation marks." },
           { kind: "note", title: "Release checklist", body: "Changelog, QA on iOS and Android, support briefed, announcement scheduled." },
           { kind: "quote", title: "Make it work, make it right, make it fast.", body: "Kent Beck" },
-        ]) },
+        ]),
       ],
     },
   ], "c-shared");
@@ -480,7 +410,7 @@ export function seedMind(userId: string): Mind {
   if (userId === "me") return alaeMind();
   if (userId === "charles") return charlesMind();
   if (userId === "reema") return reemaMind();
-  return { version: 4, collections: [], current: null, blocks: {} };
+  return { version: 5, collections: [], current: null, blocks: {} };
 }
 
 /* ---------------------------------------------------------------------------
@@ -502,7 +432,49 @@ function load(fresh = false): Record<string, Mind> {
   if (cache && text === raw) return cache;
   raw = text;
   try { cache = JSON.parse(text); } catch { cache = {}; }
+  // Minds saved before collections went flat are folded on the way in (and saved that way on the next write).
+  for (const [id, m] of Object.entries(cache!)) {
+    const v = (m as { version?: number } | null)?.version;
+    if (v === 3 || v === 4) cache![id] = flatten(m as unknown as LegacyMind);
+  }
   return cache!;
+}
+
+/* A Mind as it was stored while collections held stacks (pages, with sections, inside each other). */
+type LegacyPage = { id: string; title: string; parentId?: string; sections?: { blockIds?: string[] }[] };
+type LegacyMind = Omit<Mind, "version" | "collections"> & {
+  version: 3 | 4;
+  collections: (Omit<Collection, "items" | "view"> & { items?: string[]; pages?: LegacyPage[]; view?: string })[];
+};
+
+/**
+ * Folds a Mind from before into one level per collection. Each stack's items
+ * move to the end of their collection, tagged with the stack's name and the
+ * names of the stacks it sat in, so filtering by that tag gives the stack back.
+ */
+export function flatten(old: LegacyMind): Mind {
+  const blocks = { ...old.blocks };
+  const collections: Collection[] = old.collections.map(({ pages = [], items = [], view, ...c }) => {
+    const ids = new Set(pages.map((p) => p.id));
+    const moved: string[] = [];
+    const seen = new Set<string>();
+    const walk = (list: LegacyPage[], above: string[]) => list.forEach((p) => {
+      if (seen.has(p.id)) return;
+      seen.add(p.id);
+      const tags = [...above, tagOf(p.title)].filter(Boolean);
+      for (const id of (p.sections ?? []).flatMap((s) => s.blockIds ?? [])) {
+        const b = blocks[id];
+        if (!b || moved.includes(id) || items.includes(id)) continue;
+        blocks[id] = { ...b, tags: [...new Set([...(b.tags ?? []), ...tags])] };
+        moved.push(id);
+      }
+      walk(pages.filter((k) => k.parentId === p.id), tags);
+    });
+    // Parents before what's inside them; a stack whose parent is gone counts as top level.
+    walk(pages.filter((p) => !p.parentId || !ids.has(p.parentId)), []);
+    return { ...c, items: [...items, ...moved], view: view === "grid" || view === "shelf" ? view : "list" };
+  });
+  return { ...old, version: 5, collections, blocks };
 }
 function write() {
   const text = JSON.stringify(cache);
@@ -522,12 +494,7 @@ function subscribe(listener: () => void) {
 export function mindOf(userId: string): Mind {
   const all = load();
   const m = all[userId] as Mind | { version: number } | undefined;
-  if (m?.version === 3) {
-    // Collections gained top-level items; everything else carries over.
-    const old = m as unknown as Mind;
-    all[userId] = { ...old, version: 4, collections: old.collections.map((c) => ({ ...c, items: c.items ?? [] })) };
-    write();
-  } else if (!m || m.version !== 4) {
+  if (!m || m.version !== 5) {
     all[userId] = seedMind(userId);
     write();
   }
@@ -590,7 +557,7 @@ export function projectCollection(m: Mind | null | undefined, collectionId: stri
   if (!m || !found) return null;
   const col = { ...found, vault: [] };
   const blocks = Object.fromEntries(sharedItems(m, col).map((b) => [b.id, b]));
-  return { version: 4, collections: [col], current: col.id, blocks };
+  return { version: 5, collections: [col], current: col.id, blocks };
 }
 
 /** A fresh copy of someone's collection for `editor` to edit; returns the key the editor works under. */
@@ -602,8 +569,8 @@ export function startShareDraft(owner: string, collectionId: string, editor: str
 }
 
 /**
- * Puts `editor`'s edited copy back into its owner's Mind. The copy's stacks
- * and items win (the last save does), but what the owner did meanwhile isn't
+ * Puts `editor`'s edited copy back into its owner's Mind. The copy's items and
+ * their order win (the last save does), but what the owner did meanwhile isn't
  * thrown away: items they added stay (at the top of the collection), an item
  * they moved to another collection stays there, and each item's own sharing
  * is theirs. The owner's "To sort" pile is left as it is.
@@ -631,9 +598,8 @@ export function commitShareDraft(owner: string, collectionId: string, editor: st
     });
     const col: Collection = {
       ...edited,
-      pages: edited.pages.map((p) => ({ ...p, sections: p.sections.map((s) => ({ ...s, blockIds: keep(s.blockIds) })) })),
       items: [...keep(edited.items), ...ownerAdded],
-      // Anything the editor put in To sort (a deleted stack's items) joins the owner's pile.
+      // Anything the editor put in To sort joins the owner's pile.
       vault: [...keep(edited.vault), ...before.vault],
       sharing: before.sharing, published: before.published, from: before.from, chatIds: before.chatIds,
     };
@@ -643,7 +609,7 @@ export function commitShareDraft(owner: string, collectionId: string, editor: st
 
 /** Every person's Mind on this device, by whose it is (not group Minds, not copies being edited). */
 export function peopleMinds(): [string, Mind][] {
-  return Object.entries(load()).filter(([id, m]) => !id.startsWith("draft:") && !id.startsWith("group:") && (m as Mind)?.version === 4) as [string, Mind][];
+  return Object.entries(load()).filter(([id, m]) => !id.startsWith("draft:") && !id.startsWith("group:") && (m as Mind)?.version === 5) as [string, Mind][];
 }
 
 /**
@@ -670,14 +636,9 @@ export function useMind(userId: string) {
 
 export const collectionOf = (mind: Mind, id: string | null) => mind.collections.find((c) => c.id === id) ?? mind.collections[0] ?? null;
 
-export function pageItems(mind: Mind, page: Page) {
-  return page.sections.flatMap((s) => s.blockIds.map((id) => mind.blocks[id]).filter(Boolean));
-}
+/** Everything in a collection, its "To sort" pile included. */
 export function collectionItems(mind: Mind, c: Collection) {
-  return [...c.pages.flatMap((p) => pageItems(mind, p)), ...[...c.items, ...c.vault].map((id) => mind.blocks[id]).filter(Boolean)];
-}
-export function childrenOf(c: Collection, pageId: string) {
-  return c.pages.filter((p) => p.parentId === pageId);
+  return [...c.items, ...c.vault].map((id) => mind.blocks[id]).filter(Boolean);
 }
 export function tagsOf(items: Block[]) {
   const count = new Map<string, number>();
@@ -685,26 +646,20 @@ export function tagsOf(items: Block[]) {
   return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
 }
 
-/** Where an item lives: a page and section, the top of a collection, or its "To sort" pile. */
+/** Where an item lives: a collection, and whether it's still waiting in its "To sort" pile. */
 export function locate(mind: Mind, blockId: string) {
   for (const c of mind.collections) {
-    if (c.vault.includes(blockId)) return { collection: c, page: null, section: null, toSort: true };
-    if (c.items.includes(blockId)) return { collection: c, page: null, section: null, toSort: false };
-    for (const page of c.pages) for (const section of page.sections) {
-      if (section.blockIds.includes(blockId)) return { collection: c, page, section, toSort: false };
-    }
+    if (c.vault.includes(blockId)) return { collection: c, toSort: true };
+    if (c.items.includes(blockId)) return { collection: c, toSort: false };
   }
   return null;
 }
 
-/** The items at the top level of a collection, beside its pages. */
+/** A collection's items, without its "To sort" pile. */
 export const rootItems = (mind: Mind, c: Collection) => c.items.map((id) => mind.blocks[id]).filter(Boolean);
 
 export function patchCollection(mind: Mind, id: string, fn: (c: Collection) => Collection): Mind {
   return { ...mind, collections: mind.collections.map((c) => (c.id === id ? fn(c) : c)) };
-}
-export function patchPage(mind: Mind, pageId: string, fn: (p: Page) => Page): Mind {
-  return { ...mind, collections: mind.collections.map((c) => ({ ...c, pages: c.pages.map((p) => (p.id === pageId ? fn(p) : p)) })) };
 }
 export function patchBlock(mind: Mind, id: string, patch: Partial<Block>): Mind {
   // Gone meanwhile (deleted in another tab while a sheet was open): nothing to change, and no half-made item left behind.
@@ -722,42 +677,22 @@ export function detach(mind: Mind, blockId: string): Mind {
       ...c,
       vault: c.vault.filter((id) => id !== blockId),
       items: c.items.filter((id) => id !== blockId),
-      pages: c.pages.map((p) => ({ ...p, sections: p.sections.map((s) => ({ ...s, blockIds: s.blockIds.filter((id) => id !== blockId) })) })),
     })),
   };
 }
 
 /**
- * Put an item into a section (before another item, or at the end), at the top
- * level of a collection (`root`), or on its "To sort" pile.
+ * Put an item in a collection (`root`: with the rest, before another item or
+ * at the end), or on its "To sort" pile.
  */
-export function place(mind: Mind, blockId: string, to: { collectionId: string; pageId?: string | null; sectionId?: string | null; beforeId?: string | null; root?: boolean }): Mind {
+export function place(mind: Mind, blockId: string, to: { collectionId: string; beforeId?: string | null; root?: boolean }): Mind {
   const out = detach(mind, blockId);
   return patchCollection(out, to.collectionId, (c) => {
-    if (!to.pageId && to.root) {
-      const list = [...c.items];
-      const at = to.beforeId ? list.indexOf(to.beforeId) : -1;
-      list.splice(at >= 0 ? at : list.length, 0, blockId);
-      return { ...c, items: list };
-    }
-    if (!to.pageId) return { ...c, vault: [blockId, ...c.vault] };
-    return {
-      ...c,
-      pages: c.pages.map((p) => {
-        if (p.id !== to.pageId) return p;
-        const sid = to.sectionId ?? p.sections[0]?.id;
-        return {
-          ...p,
-          sections: p.sections.map((s) => {
-            if (s.id !== sid) return s;
-            const list = [...s.blockIds];
-            const at = to.beforeId ? list.indexOf(to.beforeId) : -1;
-            list.splice(at >= 0 ? at : list.length, 0, blockId);
-            return { ...s, blockIds: list };
-          }),
-        };
-      }),
-    };
+    if (!to.root) return { ...c, vault: [blockId, ...c.vault] };
+    const list = [...c.items];
+    const at = to.beforeId ? list.indexOf(to.beforeId) : -1;
+    list.splice(at >= 0 ? at : list.length, 0, blockId);
+    return { ...c, items: list };
   });
 }
 
@@ -786,7 +721,7 @@ export function routeSave(mind: Mind, input: { text: string; chatId: string; cha
     const bump = (n: number, why: string) => { score += n; if (!reason || n >= 3) reason = why; };
     if (c.chatIds.includes(input.chatId)) bump(3, `you keep ${input.chatName} here`);
     const items = collectionItems(mind, c);
-    const vocab = new Set([c.name, ...c.pages.map((p) => p.title), ...tagsOf(items), ...items.slice(0, 80).map((b) => b.title)].flatMap(words));
+    const vocab = new Set([c.name, ...tagsOf(items).map((t) => t.replace(/-/g, " ")), ...items.slice(0, 80).map((b) => b.title)].flatMap(words));
     const hits = [...tokens].filter((w) => vocab.has(w));
     if (hits.length) bump(Math.min(4, hits.length * 1.5), `it mentions “${hits[0]}”`);
     if (input.kind === "photos" && items.filter((b) => b.kind === "image").length > 2) bump(2, "it's a photo, like the rest");

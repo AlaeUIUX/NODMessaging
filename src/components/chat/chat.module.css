@@ -4190,27 +4190,6 @@ div.actionRow:hover { background: transparent; }
 .mindShelf > :has(.mbk_book) { flex-basis: 116px; }
 .mindShelf > :has(.mbk_flashcard) { flex-basis: 150px; }
 .mindShelf > :has(.mbk_video), .mindShelf > :has(.mbk_quote) { flex-basis: 230px; }
-.mindBoardView { display: flex; gap: 10px; margin: 0 -16px; padding: 2px 16px 10px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: 16px; scrollbar-width: none; }
-.mindBoardView::-webkit-scrollbar { display: none; }
-.mindColumn {
-  flex: 0 0 236px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 180px;
-  padding: 10px;
-  border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--ink) 4%, transparent);
-  scroll-snap-align: start;
-  transition: background var(--t-mid), box-shadow var(--t-mid);
-}
-.mindColumnHead { display: flex; align-items: center; gap: 6px; margin: 0 2px 2px; font: var(--t-subhead); font-weight: var(--w-emph); }
-.mindColumnHead span { width: 8px; height: 8px; border-radius: var(--r-pill); }
-.mindColumnHead em { margin-left: auto; font-style: normal; font: var(--t-footnote); color: var(--ink-3); }
-.mindCol_todo { background: var(--ink-3); }
-.mindCol_doing { background: #C99432; }
-.mindCol_done { background: #30A46C; }
-.mindColumnEmpty { margin: 0; padding: 18px 8px; border: 1.5px dashed var(--line-2); border-radius: var(--r-md); text-align: center; font: var(--t-footnote); color: var(--ink-3); }
 
 /* drag and drop */
 .mindBlockWrap {
@@ -4839,44 +4818,6 @@ a.bsheetAction { text-decoration: none !important; }
 .mindSwipeBody { position: relative; z-index: 1; touch-action: pan-y; }
 .mindSwipeBody.mindSwipeSettling { transition: transform var(--t-slow) var(--ease-spring); }
 .mindInboxItem > .mindSwipe { flex: 1; min-width: 0; }
-
-/* ==========================================================================
-   Mind — stacks: a plain page row (List) or card (Grid, Shelf), the same
-   surface as everything else. What says "stack" is its chevron and its count.
-   ========================================================================== */
-
-.mindPageRow.mindStackRow { position: relative; }
-
-.mindStackGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; padding-top: 4px; margin-bottom: 8px; }
-.mindStackCard {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-  padding: 12px;
-  border: none;
-  border-radius: var(--r-lg);
-  background: var(--card-bg);
-  box-shadow: var(--mb-shadow);
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: transform var(--t-fast) var(--ease-out);
-}
-.mindStackCard:active { transform: scale(.97); }
-.mindStackTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
-.mindStackBadge { padding: 2px 8px; border-radius: var(--r-pill); background: var(--fill); color: var(--ink-2); font-style: normal; font: var(--t-caption1); font-weight: var(--w-emph); white-space: nowrap; }
-.mindStackCard .folderPeek:empty { display: none; }
-/* On a shelf: a taller card, like a spine you can pull out */
-.mindStackCard.mindStackShelf { min-height: 172px; justify-content: space-between; }
-.mindShelf > .mindStackCard { flex: 0 0 150px; }
-.mindShelf:has(> .mindStackCard) { padding-top: 4px; }
-.mindFolders.mindShelf, .mindFolders.mindStackGrid { margin-bottom: 10px; }
-
-/* the structure tiles in the + sheet: dashed, since they hold things rather than being one */
-.addIcon.mindKindIcon.mindKindStructure { box-shadow: none; background: color-mix(in srgb, var(--accent) 7%, transparent); outline: 1.5px dashed color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: -1.5px; }
 
 /* ==========================================================================
    Mind — hold for a menu, hold and move to drag

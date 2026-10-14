@@ -5,27 +5,27 @@ import { chatIdentity, TONES } from "@/lib/chat/avatar";
 import { Emoji } from "@/lib/chat/emoji";
 import { can, groupInfo } from "@/lib/chat/groups";
 import {
-  blankPage, childrenOf, groupMindId, makeCollection, newId, pageItems, place, rootItems, startDraft, updateMind, useMind,
-  type Block, type Collection, type Mind, type Page,
+  groupMindId, makeCollection, newId, place, rootItems, startDraft, updateMind, useMind,
+  type Block, type Collection, type Mind,
 } from "@/lib/chat/mind";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Attachment, Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
-import { DragScroll } from "./Composer";
-import { IconBookmark, IconCheck, IconEdit, IconFile, IconLink, IconOpen } from "./Icons";
+import { IconBookmark, IconCheck, IconEdit, IconFile, IconFilter, IconLink, IconOpen } from "./Icons";
 import { MindEditor } from "./Mind";
 import { BlockView, KIND_LABEL } from "./MindBlocks";
+import { FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, type MindFilter } from "./MindFilter";
 import { HoldMenu, useHoldMenu } from "./MindHold";
 import { Sheet, useChatUi } from "./ui";
 import styles from "./chat.module.css";
 import gm from "./groupmind.module.css";
 
 /**
- * A group's own Mind, on its page: a few shelves of things kept for everyone
- * (files, links, notes, pictures), to look through and save to your own Mind.
- * People with "Edit the group's Mind" tap Edit: the Mind opens full screen,
- * like a board, with everything your own Mind can do, and Save shares the
- * result. Kept small here on purpose: shelves and what's on them.
+ * A group's own Mind, on its page: things kept for everyone (files, links,
+ * notes, pictures), filtered by their tags, to look through and save to your
+ * own Mind. People with "Edit the group's Mind" tap Edit: the Mind opens full
+ * screen, like a board, with everything your own Mind can do, and Save shares
+ * the result. Kept small here on purpose: what's kept, and the filter.
  *
  * Underneath, "From the chat" lists the files and links shared in this
  * channel, so nothing the Files and Links tabs used to show goes missing.
@@ -42,13 +42,7 @@ function ensureShared(m: Mind, group: Chat): { mind: Mind; col: Collection } {
   const existing = m.collections[0];
   if (existing) return { mind: m, col: existing };
   const col = makeCollection(group.name, "🗂️", TONES[group.tone ?? "graphite"]);
-  col.pages = [blankPage("Shared", "📌", col.tone, "link")];
   return { mind: { ...m, collections: [col], current: col.id }, col };
-}
-
-/** A shelf's things, with whatever sits in stacks inside it. */
-function shelfItems(mind: Mind, col: Collection, p: Page): Block[] {
-  return [...pageItems(mind, p), ...childrenOf(col, p.id).flatMap((c) => shelfItems(mind, col, c))];
 }
 
 export default function GroupMind({ group, files, links, onJump, onToast }: {
@@ -63,13 +57,12 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
   const id = groupMindId(group.id);
   const { mind, update } = useMind(id);
   const editor = can(groupInfo(group), me, "editMind");
-  const [shelf, setShelf] = useState<string>("all");
+  const [filter, setFilter] = useState<MindFilter>(NO_FILTER);
   const hold = useHoldMenu();
   const col = sharedOf(mind);
-  const shelves = col?.pages.filter((p) => !p.parentId) ?? [];
-  const loose = mind && col ? rootItems(mind, col) : [];
-  const total = loose.length + shelves.reduce((n, p) => n + shelfItems(mind!, col!, p).length, 0);
-  const shown = shelf === "all" ? shelves : shelves.filter((p) => p.id === shelf);
+  const all = mind && col ? rootItems(mind, col) : [];
+  const total = all.length;
+  const shown = all.filter((b) => passes(filter, b));
   const title = `${group.name}’s Mind`;
   const who = chatIdentity(group, me, userById);
 
@@ -93,13 +86,12 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
     ...links.map((l) => ({ key: `l:${l.id}`, kept: kept.has(l.url), at: l.message.createdAt, link: l })),
   ].sort((a, b) => b.at - a.at).slice(0, 6);
 
-  /** "Keep" from the chat: straight onto the first shelf (sorting it happens in Edit). */
+  /** "Keep" from the chat: straight into the group's collection (tagging it happens in Edit). */
   const keep = (block: Omit<Block, "id" | "createdAt" | "tags">) => {
     update((m0) => {
       const { mind: m, col: c } = ensureShared(m0, group);
-      const page = c.pages.find((p) => !p.parentId);
       const bid = newId();
-      return place({ ...m, blocks: { ...m.blocks, [bid]: { ...block, id: bid, tags: [], createdAt: Date.now(), updatedAt: undefined } } }, bid, { collectionId: c.id, pageId: page?.id, sectionId: page?.sections[0]?.id, root: !page });
+      return place({ ...m, blocks: { ...m.blocks, [bid]: { ...block, id: bid, tags: [], createdAt: Date.now(), updatedAt: undefined } } }, bid, { collectionId: c.id, root: true });
     });
   };
 
@@ -129,7 +121,7 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
 
   return (
     <div className={gm.wrap} style={{ ["--tone" as string]: TONES[group.tone ?? "graphite"] }}>
-      {/* The group's own space: its picture and name on top, its shelves and what's on them inside. */}
+      {/* The group's own space: its picture and name on top, what's kept for everyone inside. */}
       <section className={gm.card} aria-label={title}>
         <div className={gm.head}>
           <Avatar glyph={who.glyph} tone={who.tone} photo={who.photo} size={40} />
@@ -137,6 +129,16 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
             <b>{title}</b>
             <small>{total ? `${total} ${total === 1 ? "thing" : "things"} kept for everyone` : "Nothing kept yet"}{editor ? "" : " · Admins keep it"}</small>
           </span>
+          {total > 0 && (
+            <button
+              className={`${gm.filter} ${isFiltering(filter) ? gm.filterOn : ""}`}
+              onClick={(e) => ui.openSheet(<FilterMenu anchor={e.currentTarget} items={all} filter={filter} onChange={setFilter} onClose={ui.closeSheet} />)}
+              aria-label={isFiltering(filter) ? "Filter, on" : "Filter"}
+              aria-haspopup="menu"
+            >
+              <IconFilter size={16} />
+            </button>
+          )}
           {editor && (
             <button className={gm.add} onClick={edit}>
               <IconEdit size={15} /> Edit
@@ -144,16 +146,7 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
           )}
         </div>
 
-        {shelves.length > 1 && (
-          <DragScroll className={gm.shelves} sideWheel={false}>
-            <button className={`${gm.shelf} ${shelf === "all" ? gm.shelfOn : ""}`} onClick={() => setShelf("all")}>All <em>{total}</em></button>
-            {shelves.map((p) => (
-              <button key={p.id} className={`${gm.shelf} ${shelf === p.id ? gm.shelfOn : ""}`} onClick={() => setShelf(p.id)}>
-                <Emoji char={p.emoji} /> {p.title} <em>{shelfItems(mind!, col!, p).length}</em>
-              </button>
-            ))}
-          </DragScroll>
-        )}
+        <FilterBar filter={filter} onChange={setFilter} />
 
         {total === 0 ? (
           <div className={gm.empty}>
@@ -161,19 +154,9 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
             <p>{editor ? "Brand files, the links everyone asks for, the docs that explain how you work. Tap Edit, or keep something from the chat below." : "When an admin keeps files, links or notes for the group, they show up here."}</p>
           </div>
         ) : (
-          <>
-            {shelf === "all" && loose.length > 0 && <section className={gm.section}>{masonry(loose)}</section>}
-            {shown.map((p) => {
-              const items = shelfItems(mind!, col!, p);
-              if (!items.length && shelf === "all") return null;
-              return (
-                <section key={p.id} className={gm.section}>
-                  {shelf === "all" && <p className={gm.sectionHead}><Emoji char={p.emoji} /> <b>{p.title}</b> <em>{items.length}</em></p>}
-                  {items.length ? masonry(items) : <p className={gm.none}>Nothing on this shelf yet.</p>}
-                </section>
-              );
-            })}
-          </>
+          <section className={gm.section}>
+            {shown.length ? masonry(shown) : <p className={gm.none}>Nothing kept here matches the filter.</p>}
+          </section>
         )}
       </section>
 

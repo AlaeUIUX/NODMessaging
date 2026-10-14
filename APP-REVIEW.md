@@ -16,7 +16,7 @@
 ## Quick wins that build on what's already there
 
 - **Link previews in chat:** the link-reading route Mind now uses (`/api/unfurl`) can power them, and YouTube links could play inline with the same player.
-- **Send to chat from Mind:** share an item or a whole stack into a conversation, so Mind works both ways.
+- **Send to chat from Mind:** share an item or a whole collection into a conversation, so Mind works both ways.
 - **Small chat additions:**
   - a pinned-messages bar at the top of each chat
   - "Remind me about this" on any message, reusing the Reminder card

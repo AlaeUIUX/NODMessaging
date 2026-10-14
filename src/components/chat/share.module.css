@@ -185,3 +185,9 @@ button.row:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
 
 /* A photo shared on its own shouldn't fill the whole chat. */
 .itemFrame img { max-height: 240px; }
+
+/* A shared collection's page: one grid, filtered like your own collections. */
+.filterBar { margin: 18px 0 0; }
+.filterBar:empty { display: none; }
+.flatGrid { margin-top: 18px; }
+.filterOn { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }

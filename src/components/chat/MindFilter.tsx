@@ -9,7 +9,7 @@ import { useDialog } from "./ui";
 import styles from "./chat.module.css";
 
 /**
- * Finding your way around a collection or a stack once it gets deep: a search
+ * Finding your way around a collection once it gets big: a search
  * that looks only inside it, a filter (by tag, by when it last changed, by
  * kind) and the "…" menu, side by side at the top right. Tags aren't places:
  * they're your own words on each item, the same #tag in every collection, so

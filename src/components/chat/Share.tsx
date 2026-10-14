@@ -7,15 +7,16 @@ import { patchBlock, rootItems, sharedItems, startShareDraft, useMind, type Bloc
 import { allPeople, usePeopleVersion } from "@/lib/chat/people";
 import {
   accessOf, answerRequest, audienceLabel, cloneCollection, copyAllowed, copyIn, copyItem, grant, refOf, requestAccess, setRole as setPersonRole,
-  resolveShare, sharedWithYou, shareLink, sharingOf, stacksInOrder, updateSharing, withdrawRequest,
+  resolveShare, sharedWithYou, shareLink, sharingOf, updateSharing, withdrawRequest,
   type Access, type Shared, type ShareRef,
 } from "@/lib/chat/share";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Card, Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
-import { IconBack, IconCheck, IconClose, IconCopy, IconEdit, IconGlobe, IconLink, IconMail, IconPadlock, IconMessage, IconSearch, IconShare } from "./Icons";
+import { IconBack, IconCheck, IconClose, IconCopy, IconEdit, IconFilter, IconGlobe, IconLink, IconMail, IconPadlock, IconMessage, IconSearch, IconShare } from "./Icons";
 import { BlockEditor, KIND_EMOJI, MindEditor, toggleItem } from "./Mind";
 import { BlockView, KIND_LABEL, toneFor } from "./MindBlocks";
+import { FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, type MindFilter } from "./MindFilter";
 import { Segmented, Sheet, Toggle, useChatUi } from "./ui";
 import styles from "./chat.module.css";
 import x from "./explore.module.css";
@@ -40,10 +41,9 @@ const nameOf = (id: string) => userById(id).name;
 function describe(s: Shared) {
   if (s.block) return { emoji: KIND_EMOJI[s.block.kind] ?? "📌", title: s.block.title || KIND_LABEL[s.block.kind], kind: KIND_LABEL[s.block.kind], meta: `In ${s.collection.emoji} ${s.collection.name}` };
   const items = sharedItems(s.mind, s.collection).length;
-  const stacks = s.collection.pages.length;
-  return {
+    return {
     emoji: s.collection.emoji, title: s.collection.name, kind: "Collection",
-    meta: [stacks ? `${stacks} ${stacks === 1 ? "stack" : "stacks"}` : "", `${items} ${items === 1 ? "item" : "items"}`].filter(Boolean).join(" · "),
+    meta: `${items} ${items === 1 ? "item" : "items"}`,
   };
 }
 
@@ -482,9 +482,10 @@ function NoAccess({ share, me }: { share: ShareRef; me: string }) {
 
 /**
  * A collection shared with you, read-only, laid out like a collection on
- * Explore: the things at its top, then each stack (with the stacks inside it)
- * as a shelf. Edit opens the full Mind editor on a copy when you may edit;
- * Make a copy puts your own copy in your Mind when the owner allows it.
+ * Explore: everything in it in one grid, with the same Filter (by tag, by
+ * when it changed, by kind) as your own collections. Edit opens the full Mind
+ * editor on a copy when you may edit; Make a copy puts your own copy in your
+ * Mind when the owner allows it.
  */
 export function SharedPage({ share, onClose, onToast }: { share: ShareRef; onClose: () => void; onToast: (t: string) => void }) {
   const { me } = useChat();
@@ -492,6 +493,7 @@ export function SharedPage({ share, onClose, onToast }: { share: ShareRef; onClo
   const { mind: mine } = useMind(me);
   const [sheet, setSheet] = useState<ReactNode>(null);
   const [leaving, setLeaving] = useState(false);
+  const [filter, setFilter] = useState<MindFilter>(NO_FILTER);
   const s = resolveShare(mind, share);
   const access = s ? accessOf(share, s, me) : null;
   const owner = userById(share.owner);
@@ -505,8 +507,7 @@ export function SharedPage({ share, onClose, onToast }: { share: ShareRef; onClo
     const sharing = sharingOf(s);
     const copied = copyIn(mine, share);
     const asked = sharing.requests.find((r) => r.userId === me && r.role === "edit");
-    const loose = rootItems(s.mind, col);
-    const stacks = stacksInOrder(col);
+    const shown = rootItems(s.mind, col).filter((b) => passes(filter, b));
     const openItem = (b: Block) => setSheet(<SharedItemSheet share={{ owner: share.owner, collectionId: col.id, blockId: b.id }} onClose={closeSheet} onToast={onToast} />);
     const edit = () => {
       const key = startShareDraft(share.owner, col.id, me);
@@ -539,7 +540,7 @@ export function SharedPage({ share, onClose, onToast }: { share: ShareRef; onClo
           <h2>{col.name}</h2>
           <span className={x.byline}>
             <Avatar glyph={initials(owner.fullName)} tone={owner.tone} photo={owner.photo} size={18} shape="circle" />
-            <span>{access === "owner" ? "Your collection" : `${owner.name}’s collection`} · {col.pages.length} {col.pages.length === 1 ? "stack" : "stacks"} · {total} {total === 1 ? "item" : "items"}</span>
+            <span>{access === "owner" ? "Your collection" : `${owner.name}’s collection`} · {total} {total === 1 ? "item" : "items"}</span>
           </span>
           <span className={sh.pageAccess}>
             <span className={`${sh.role} ${access === "view" ? "" : sh.roleEdit}`}>{access === "owner" ? audienceLabel(sharing, nameOf) : roleLabel(access)}</span>
@@ -556,22 +557,9 @@ export function SharedPage({ share, onClose, onToast }: { share: ShareRef; onClo
           </div>
           {access !== "owner" && <small className={x.pageHint}>{access === "edit" ? `What you change shows for ${owner.name} and everyone it’s shared with.` : `It stays ${owner.name}’s: you’re seeing it as it is now.`}{copyAllowed(s) ? " A copy is yours to change." : ""}</small>}
         </div>
-        {loose.length > 0 && (
-          <section className={x.pageStack}>
-            <p className={x.stackHead}><Emoji char={col.emoji} /> <b>In {col.name}</b> <em>{loose.length}</em></p>
-            <div className={x.masonry}>{loose.map(tile)}</div>
-          </section>
-        )}
-        {stacks.map(({ page, path }) => {
-          const items = page.sections.flatMap((sec) => sec.blockIds.map((id) => s.mind.blocks[id]).filter(Boolean));
-          if (!items.length) return null;
-          return (
-            <section key={page.id} className={x.pageStack}>
-              <p className={x.stackHead}><Emoji char={page.emoji} /> <b>{path.join(" › ")}</b> <em>{items.length}</em></p>
-              <div className={x.masonry}>{items.map(tile)}</div>
-            </section>
-          );
-        })}
+        <div className={sh.filterBar}><FilterBar filter={filter} onChange={setFilter} /></div>
+        {shown.length > 0 && <div className={`${x.masonry} ${sh.flatGrid}`}>{shown.map(tile)}</div>}
+        {total > 0 && !shown.length && <p className={sh.note}>Nothing in {col.name} matches the filter.</p>}
         {!total && <p className={sh.note}>Nothing in here yet.</p>}
       </>
     );
@@ -582,7 +570,16 @@ export function SharedPage({ share, onClose, onToast }: { share: ShareRef; onClo
       <header className={x.pageBar}>
         <button className={`${styles.circleBtn} ${styles.glass}`} onClick={back} aria-label="Back"><IconBack /></button>
         <b>{s && access ? s.collection.name : "Shared"}</b>
-        <span />
+        {s && access ? (
+          <button
+            className={`${styles.circleBtn} ${styles.glass} ${isFiltering(filter) ? sh.filterOn : ""}`}
+            onClick={(e) => setSheet(<FilterMenu anchor={e.currentTarget} items={rootItems(s.mind, s.collection)} filter={filter} onChange={setFilter} onClose={closeSheet} />)}
+            aria-label={isFiltering(filter) ? "Filter, on" : "Filter"}
+            aria-haspopup="menu"
+          >
+            <IconFilter />
+          </button>
+        ) : <span />}
       </header>
       <div className={x.pageScroll}>{body()}</div>
       {sheet}

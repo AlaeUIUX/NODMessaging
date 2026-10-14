@@ -1,6 +1,6 @@
 import {
   makeCollection, mindOf, newId, place, sharedItems, updateMind,
-  type Block, type Collection, type Mind, type Page, type ShareRole, type Sharing,
+  type Block, type Collection, type Mind, type ShareRole, type Sharing,
 } from "./mind";
 import type { Card } from "./types";
 
@@ -162,10 +162,9 @@ const copyOf = (b: Block): Block => {
 export const copyIn = (mind: Mind | null, ref: ShareRef) => mind?.collections.find((c) => c.from?.id === `share:${shareToken(ref)}`) ?? null;
 
 /**
- * Copies a shared collection into `to`'s Mind: every stack (nesting and
- * views kept), section and item, all theirs to change. Saves from chats
- * stay behind: they point at messages the copy's owner may not be part of.
- * Returns the new collection.
+ * Copies a shared collection into `to`'s Mind: every item (tags and all) and
+ * its layout, all theirs to change. Saves from chats stay behind: they point
+ * at messages the copy's owner may not be part of. Returns the new collection.
  */
 export function cloneCollection(ref: ShareRef, to: string): Collection | null {
   const s = lookUp(ref);
@@ -179,16 +178,9 @@ export function cloneCollection(ref: ShareRef, to: string): Collection | null {
     blocks[copy.id] = copy;
     return [copy.id];
   });
-  const pageIds = new Map(src.pages.map((p) => [p.id, newId("p")]));
-  const pages: Page[] = src.pages.map((p) => ({
-    ...p,
-    id: pageIds.get(p.id)!,
-    parentId: p.parentId ? pageIds.get(p.parentId) : undefined,
-    sections: p.sections.map((sec) => ({ ...sec, id: newId("s"), blockIds: keep(sec.blockIds) })),
-  }));
   const col: Collection = {
     ...makeCollection(src.name, src.emoji, src.tone),
-    pages, items: keep(src.items), view: src.view,
+    items: keep(src.items), view: src.view,
     from: { id: `share:${shareToken(ref)}`, by: ref.owner },
   };
   updateMind(to, (m) => ({ ...m, blocks: { ...m.blocks, ...blocks }, collections: [...m.collections, col] }));
@@ -213,17 +205,4 @@ export function sharedWithYou(me: string) {
   const col: Collection = { ...makeCollection("Shared with you", "📥", "#3E67A6"), from: { id: "shared-with-you", by: me } };
   updateMind(me, (m) => ({ ...m, collections: [...m.collections, col] }));
   return col.id;
-}
-
-/** Stacks of a collection in reading order (each parent before what's inside it), with how deep each sits. */
-export function stacksInOrder(col: Collection) {
-  const out: { page: Page; depth: number; path: string[] }[] = [];
-  const walk = (parent: string | undefined, depth: number, path: string[]) => {
-    col.pages.filter((p) => p.parentId === parent).forEach((p) => {
-      out.push({ page: p, depth, path: [...path, p.title] });
-      walk(p.id, depth + 1, [...path, p.title]);
-    });
-  };
-  walk(undefined, 0, []);
-  return out;
 }

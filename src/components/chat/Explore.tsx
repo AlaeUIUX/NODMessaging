@@ -14,9 +14,10 @@ import type { AvatarTone, Chat } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { DragScroll } from "./Composer";
 import { GroupBanner } from "./Groups";
-import { IconBack, IconBookmark, IconCheck, IconClose, IconFolder, IconOpen, IconSparkles, IconUserGroup } from "./Icons";
+import { IconBack, IconBookmark, IconCheck, IconClose, IconFilter, IconFolder, IconOpen, IconSparkles, IconUserGroup } from "./Icons";
 import Logo from "./Logo";
 import { BlockView, KIND_LABEL } from "./MindBlocks";
+import { FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, type MindFilter } from "./MindFilter";
 import { HoldMenu, useHoldMenu, type HoldAction } from "./MindHold";
 import { Sheet, useNow } from "./ui";
 import styles from "./chat.module.css";
@@ -278,7 +279,7 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
       {page && (() => {
         const pc = publicCollection(page.id);
         return pc ? (
-          <CollectionPage pc={pc} own={pc.by === me} leaving={page.leaving} added={!!addedFrom(mind, pc.id)} saved={saved} onBack={closePage} onAdd={() => add(pc)} onItem={(item) => showItem(item, pc)} holdItem={(item) => itemMenu(item, pc)} />
+          <CollectionPage pc={pc} openSheet={setSheet} closeSheet={closeSheet} own={pc.by === me} leaving={page.leaving} added={!!addedFrom(mind, pc.id)} saved={saved} onBack={closePage} onAdd={() => add(pc)} onItem={(item) => showItem(item, pc)} holdItem={(item) => itemMenu(item, pc)} />
         ) : null;
       })()}
       {sheet}
@@ -323,7 +324,7 @@ type HoldProps = ReturnType<ReturnType<typeof useHoldMenu>>;
 /** The top pick: tap anywhere to look inside, hold for its menu, or add it with the small pill. */
 function Hero({ r, added, onOpen, onAdd, holdProps }: { r: Ranked<PublicCollection>; added: boolean; onOpen: () => void; onAdd: () => void; holdProps: HoldProps }) {
   const pc = r.value;
-  const total = pc.stacks.reduce((n, s) => n + s.items.length, 0);
+  const total = pc.items.length;
   return (
     <article className={`${x.hero} ${x.holdable}`} style={{ ["--tone" as string]: pc.tone }} {...holdProps}>
       <button className={x.heroCover} style={{ backgroundImage: coverOf(pc) }} onClick={onOpen} aria-label={`Look inside ${pc.name}`}>
@@ -360,7 +361,7 @@ function CollectionCard({ r, i, own, added, plain, onOpen, holdProps }: {
         </span>
         <b className={x.colName}>{pc.name}</b>
         <span className={x.colDesc}>{pc.description}</span>
-        <Byline id={pc.by} extra={`${pc.saves ? `${count(pc.saves)} saves` : "New"} · ${pc.stacks.reduce((n, st) => n + st.items.length, 0)} things`} />
+        <Byline id={pc.by} extra={`${pc.saves ? `${count(pc.saves)} saves` : "New"} · ${pc.items.length} things`} />
         {!plain && <small className={x.colReason}>{emojify(r.reason)}</small>}
       </button>
     </div>
@@ -495,12 +496,12 @@ function SaveSheet({ item, from, onClose, onPick, onNew }: { item: PublicItem; f
                 {list.map((c) => (
                   <button key={c.id} className={styles.actionRow} onClick={() => close(() => onPick(c.id))}>
                     <span className={styles.mindEmoji} style={{ background: `color-mix(in srgb, ${c.tone} 16%, transparent)` }}><Emoji char={c.emoji} /></span>
-                    <span className={styles.contactText}><b>{c.name}</b><small>{c.id === suggested?.id ? "Suggested: it fits what’s in here" : `${c.pages.length} ${c.pages.length === 1 ? "stack" : "stacks"}`}</small></span>
+                    <span className={styles.contactText}><b>{c.name}</b><small>{c.id === suggested?.id ? "Suggested: it fits what’s in here" : `${c.items.length} ${c.items.length === 1 ? "thing" : "things"}`}</small></span>
                     {c.id === suggested?.id && <span className={x.suggested}>Suggested</span>}
                   </button>
                 ))}
               </div>
-              <p className={styles.sheetNote}>It lands at the top of the collection; move it into a stack any time.</p>
+              <p className={styles.sheetNote}>It goes in with its tags, so the collection’s filter finds it.</p>
             </>
           ) : (
             <button className={`${styles.primaryWide} ${x.rowBtn}`} onClick={() => close(onNew)}>Start “{from.name}” in your Mind</button>
@@ -566,8 +567,10 @@ function GroupSheet({ groupId, reason, onClose, onJoin, onOpen }: { groupId: str
   );
 }
 
-function CollectionPage({ pc, own, leaving, added, saved, onBack, onAdd, onItem, holdItem }: {
+function CollectionPage({ pc, openSheet, closeSheet, own, leaving, added, saved, onBack, onAdd, onItem, holdItem }: {
   pc: PublicCollection;
+  openSheet: (n: React.ReactNode) => void;
+  closeSheet: () => void;
   /** You published it: this is how it looks to everyone else. */
   own: boolean;
   leaving: boolean;
@@ -578,7 +581,10 @@ function CollectionPage({ pc, own, leaving, added, saved, onBack, onAdd, onItem,
   onItem: (item: PublicItem) => void;
   holdItem: (item: PublicItem) => HoldProps;
 }) {
-  const total = pc.stacks.reduce((n, s) => n + s.items.length, 0);
+  const [filter, setFilter] = useState<MindFilter>(NO_FILTER);
+  const total = pc.items.length;
+  const blocks = pc.items.map((item) => ({ item, block: asBlock(item) }));
+  const shown = blocks.filter(({ block }) => passes(filter, block)).map(({ item }) => item);
   return (
     <div className={`${styles.screen} ${styles.chatScreen} ${x.page} ${leaving ? styles.leaving : ""}`} style={{ ["--tone" as string]: pc.tone }}>
       <header className={x.pageBar}>
@@ -595,7 +601,7 @@ function CollectionPage({ pc, own, leaving, added, saved, onBack, onAdd, onItem,
         <div className={x.pageHead}>
           <span className={x.pageEmoji}><Emoji char={pc.emoji} /></span>
           <h2>{pc.name}</h2>
-          <Byline id={pc.by} extra={`${count(pc.saves)} saves · ${pc.stacks.length} stacks · ${total} things`} />
+          <Byline id={pc.by} extra={`${count(pc.saves)} saves · ${total} things`} />
           <p>{pc.description}</p>
           {pc.topics.length > 0 && (
             <ul className={x.topics} aria-label="Topics">
@@ -605,17 +611,27 @@ function CollectionPage({ pc, own, leaving, added, saved, onBack, onAdd, onItem,
           <small className={x.pageHint}>
             {own ? "You published this from your Mind. It’s how everyone sees it; what you change there shows here too."
               : added ? "It’s in your Mind now: change anything in it there."
-              : "Add to Mind copies every stack. Or hold any one thing to save just that."}
+              : "Add to Mind copies all of it, tags and all. Or hold any one thing to save just that."}
           </small>
         </div>
-        {pc.stacks.map((s) => (
-          <section key={s.title} className={x.pageStack}>
-            <p className={x.stackHead}><Emoji char={s.emoji} /> <b>{s.title}</b> <em>{s.items.length}</em></p>
-            <div className={x.masonry}>
-              {s.items.map((item) => <ItemTile key={item.id} item={item} saved={!!saved[item.id]} onOpen={() => onItem(item)} holdProps={own ? undefined : holdItem(item)} />)}
-            </div>
-          </section>
-        ))}
+        <section className={x.pageStack}>
+          <div className={x.stackBar}>
+            <p className={x.stackHead}><b>{isFiltering(filter) ? `${shown.length} of ${total}` : `${total} ${total === 1 ? "thing" : "things"}`}</b></p>
+            <button
+              className={`${x.filterBtn} ${isFiltering(filter) ? x.filterOn : ""}`}
+              onClick={(e) => openSheet(<FilterMenu anchor={e.currentTarget} items={blocks.map(({ block }) => block)} filter={filter} onChange={setFilter} onClose={closeSheet} />)}
+              aria-label={isFiltering(filter) ? "Filter, on" : "Filter"}
+              aria-haspopup="menu"
+            >
+              <IconFilter size={16} /> Filter
+            </button>
+          </div>
+          <FilterBar filter={filter} onChange={setFilter} />
+          <div className={x.masonry}>
+            {shown.map((item) => <ItemTile key={item.id} item={item} saved={!!saved[item.id]} onOpen={() => onItem(item)} holdProps={own ? undefined : holdItem(item)} />)}
+          </div>
+          {!shown.length && <p className={x.pageHint}>Nothing here matches the filter.</p>}
+        </section>
       </div>
     </div>
   );

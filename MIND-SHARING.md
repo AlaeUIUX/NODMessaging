@@ -10,7 +10,7 @@ Share a whole collection, or one item in it, with the people you talk to. Access
 
 The card is a **pointer**, not a snapshot. It reads the owner's Mind live, so items added, a book moved to "Finished", or access granted or removed all show on the card straight away.
 
-- **Collection card:** icon and name, how many stacks and items, four previews (covers, photos and video stills first), and what you can do.
+- **Collection card:** icon and name, how many items, four previews (covers, photos and video stills first), and what you can do.
 - **Item card:** the item itself, laid out like it is in Mind.
 - **Your access:** "Can view", "Can edit", or for the owner who it's shared with ("Shared with Charles").
 - **Buttons:**
@@ -80,10 +80,10 @@ So if a collection is shared with you, you can open every item in it.
 ![Shared page](docs/mind-sharing/6-shared-page.png)
 
 It opens as a read-only page laid out like a collection on Explore:
-- the cover, name and owner, with how many stacks and items
+- the cover, name and owner, with how many items
 - your access, and for viewers an **Ask Alae to edit** link
 - the action buttons
-- the things at the top of the collection, then every stack in order, with nested stacks shown as "Verbs › Separable verbs"
+- everything in the collection in one grid, with a Filter (tags, when it changed, type) like your own collections
 
 Tapping an item opens its sheet:
 - **Viewers** see it in detail. Videos play, and **Save a copy to my Mind** lets them pick one of their collections, or a "📥 Shared with you" collection that's created the first time.
@@ -103,7 +103,7 @@ On Save, the things only the owner controls stay as the owner left them: who it'
 ### Making a copy
 
 **Make a copy** copies the collection into your Mind:
-- every stack, with its nesting, views and sections
+- every item, with its tags, and the collection's layout
 - every item
 
 The copy is yours to change, and nothing flows back to the original. Two things stay behind:

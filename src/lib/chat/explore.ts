@@ -1,6 +1,6 @@
 import {
-  blankPage, childrenOf, makeCollection, newId, pageItems, peopleMinds, place, rootItems,
-  type Block, type BlockKind, type Collection, type Mind, type MindView, type Page,
+  collectionItems, makeCollection, newId, peopleMinds, place, rootItems, tagOf, tagsOf,
+  type Block, type BlockKind, type Collection, type Mind, type MindView,
 } from "./mind";
 import { groupInfo } from "./groups";
 import type { AvatarTone, Chat } from "./types";
@@ -55,8 +55,8 @@ export const STRANGERS: Stranger[] = [
    Public collections
 --------------------------------------------------------------------------- */
 
-export type PublicItem = Omit<Block, "createdAt" | "tags">;
-export interface PublicStack { title: string; emoji: string; view: MindView; defaultKind: BlockKind; items: PublicItem[] }
+/** One thing in a public collection: a Mind item without its dates, its tags kept (they're how a collection is browsed). */
+export type PublicItem = Omit<Block, "createdAt" | "tags"> & { tags?: string[] };
 export interface PublicCollection {
   id: string;
   name: string;
@@ -69,8 +69,20 @@ export interface PublicCollection {
   topics: Topic[];
   saves: number;
   updatedAt: number;
-  stacks: PublicStack[];
+  /** How it's laid out, as its owner left it. */
+  view: MindView;
+  /** Everything in it, on one level; tags group it. */
+  items: PublicItem[];
 }
+
+/* The collections made for Explore are written as groups of things; each group's name becomes its things' tag. */
+type AuthoredGroup = { title: string; emoji: string; view: string; defaultKind: BlockKind; items: PublicItem[] };
+type Authored = Omit<PublicCollection, "items" | "view"> & { stacks: AuthoredGroup[] };
+const flat = ({ stacks, ...pc }: Authored): PublicCollection => ({
+  ...pc,
+  view: stacks[0]?.view === "grid" || stacks[0]?.view === "shelf" ? stacks[0].view : "list",
+  items: stacks.flatMap((g) => g.items.map((item) => ({ ...item, tags: [...new Set([tagOf(g.title), ...(item.tags ?? [])])] }))),
+});
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -86,7 +98,7 @@ const book = (col: string, title: string, source: string, image?: string, url?: 
 
 const now = Date.now();
 
-export const PUBLIC_COLLECTIONS: PublicCollection[] = [
+const AUTHORED: Authored[] = [
   {
     id: "pc-german-travel", name: "German for travellers", emoji: "🧳", tone: "#C99432", by: "lena",
     cover: pic("photo-1516550893923-42d28e5677af", 900),
@@ -228,6 +240,7 @@ export const PUBLIC_COLLECTIONS: PublicCollection[] = [
     ],
   },
 ];
+export const PUBLIC_COLLECTIONS: PublicCollection[] = AUTHORED.map(flat);
 
 /* ---------------------------------------------------------------------------
    What friends have been up to (people you share a chat with)
@@ -243,7 +256,7 @@ export interface Activity {
   at: number;
 }
 
-const itemsOf = (colId: string) => PUBLIC_COLLECTIONS.find((c) => c.id === colId)!.stacks.flatMap((s) => s.items).map((i) => i.id);
+const itemsOf = (colId: string) => PUBLIC_COLLECTIONS.find((c) => c.id === colId)!.items.map((i) => i.id);
 
 export const ACTIVITY: Activity[] = [
   { id: "ac-1", by: "reema", kind: "saved", collectionId: "pc-vienna-coffee", itemIds: itemsOf("pc-vienna-coffee").slice(0, 4), at: now - 2 * HOUR },
@@ -262,10 +275,10 @@ export const publishedId = (owner: string, colId: string) => `pub-${owner}-${col
 
 /**
  * The topics a published collection is about: its own name counts double,
- * its stacks' names once each, and only a topic named twice is kept, so one
- * stray word never tags it with something it isn't.
+ * its tags once each, and only a topic named twice is kept, so one stray word
+ * never files it under something it isn't.
  */
-function topicsOf(c: Collection): Topic[] {
+function topicsOf(m: Mind, c: Collection): Topic[] {
   const score = new Map<Topic, number>();
   const feel = (text: string, weight: number) => {
     const words = new Set(wordsIn(text));
@@ -274,22 +287,21 @@ function topicsOf(c: Collection): Topic[] {
     }
   };
   feel(c.name, 2);
-  for (const p of c.pages) feel(p.title, 1);
+  for (const t of tagsOf(rootItems(m, c))) feel(t.replace(/-/g, " "), 1);
   return [...score.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t]) => t);
 }
 
-/** A Mind item as Explore shows it (no dates or tags of its owner's). */
+/** A Mind item as Explore shows it: no dates of its owner's, its tags kept. */
 function asPublic(pcId: string, b: Block): PublicItem {
-  const item: PublicItem & { createdAt?: number; tags?: string[] } = { ...b, id: `${pcId}:${b.id}` };
+  const item: PublicItem & { createdAt?: number; updatedAt?: number } = { ...b, id: `${pcId}:${b.id}` };
   delete item.createdAt;
-  delete item.tags;
+  delete item.updatedAt;
   return item;
 }
 
 /**
  * Everyone's published collections, live: what Explore shows is what's in the
- * collection right now. Top-level stacks become its stacks (with whatever is
- * in stacks inside them); things at the top become a first stack of their own.
+ * collection right now ("To sort" stays out: that's its owner's inbox).
  */
 export function publishedCollections(): PublicCollection[] {
   const minds = peopleMinds();
@@ -298,24 +310,19 @@ export function publishedCollections(): PublicCollection[] {
     for (const c of m.collections) {
       if (!c.published) continue;
       const id = publishedId(owner, c.id);
-      const itemsOf = (p: Page): Block[] => [...pageItems(m, p), ...childrenOf(c, p.id).flatMap(itemsOf)];
-      const stacks: PublicStack[] = c.pages
-        .filter((p) => !p.parentId)
-        .map((p) => ({ title: p.title, emoji: p.emoji, view: p.view, defaultKind: p.defaultKind, items: itemsOf(p).map((b) => asPublic(id, b)) }));
-      const loose = rootItems(m, c);
-      if (loose.length) stacks.unshift({ title: c.name, emoji: c.emoji, view: c.view ?? "list", defaultKind: "note", items: loose.map((b) => asPublic(id, b)) });
-      const all = stacks.flatMap((x) => x.items);
+      const all = rootItems(m, c).map((b) => asPublic(id, b));
       const picture = all.find((b) => b.kind === "image" && (b.image || b.attachment?.url || b.attachment?.dataUrl));
       out.push({
         id, name: c.name, emoji: c.emoji, tone: c.tone,
         cover: picture?.image ?? picture?.attachment?.url ?? picture?.attachment?.dataUrl ?? "",
         by: owner,
-        description: c.published.description.trim() || `${all.length} ${all.length === 1 ? "thing" : "things"} in ${stacks.length} ${stacks.length === 1 ? "stack" : "stacks"}`,
-        topics: topicsOf(c),
+        description: c.published.description.trim() || `${all.length} ${all.length === 1 ? "thing" : "things"}`,
+        topics: topicsOf(m, c),
         // Saves: how many other people have it in their Mind.
         saves: minds.filter(([who, other]) => who !== owner && other.collections.some((x) => x.from?.id === id)).length,
         updatedAt: c.published.at,
-        stacks,
+        view: c.view ?? "list",
+        items: all,
       });
     }
   }
@@ -327,11 +334,11 @@ export const allPublic = () => [...PUBLIC_COLLECTIONS, ...publishedCollections()
 /** The collections you published, as others see them. */
 export const publishedBy = (me: string) => publishedCollections().filter((c) => c.by === me);
 
-export const allPublicItems = () => allPublic().flatMap((c) => c.stacks.flatMap((s) => s.items.map((item) => ({ item, collection: c }))));
+export const allPublicItems = () => allPublic().flatMap((c) => c.items.map((item) => ({ item, collection: c })));
 export const publicItem = (id: string) => allPublicItems().find((x) => x.item.id === id) ?? null;
 export const publicCollection = (id: string) => allPublic().find((c) => c.id === id) ?? null;
 /** A public item as a Mind block, for showing it (and saving it). */
-export const asBlock = (item: PublicItem, at = now): Block => ({ ...item, tags: [], createdAt: at });
+export const asBlock = (item: PublicItem, at = now): Block => ({ ...item, tags: item.tags ?? [], createdAt: at });
 
 /* ---------------------------------------------------------------------------
    Interests, and the ranking
@@ -350,7 +357,7 @@ export function interestsOf(mind: Mind | null, chats: Chat[], me: string) {
   };
   for (const c of mind?.collections ?? []) {
     feel(c.name, 4);
-    for (const p of c.pages) feel(p.title, 2);
+    if (mind) for (const t of tagsOf(collectionItems(mind, c))) feel(t.replace(/-/g, " "), 2);
   }
   for (const b of Object.values(mind?.blocks ?? {}).slice(0, 200)) feel(`${b.title} ${b.tags.join(" ")}`, 0.4);
   for (const c of chats) {
@@ -364,7 +371,7 @@ export function interestsOf(mind: Mind | null, chats: Chat[], me: string) {
 function collectionFor(mind: Mind | null, topics: Topic[]) {
   let best: { c: Collection; score: number } | null = null;
   for (const c of mind?.collections ?? []) {
-    const words = new Set(wordsIn(`${c.name} ${c.pages.map((p) => p.title).join(" ")}`));
+    const words = new Set(wordsIn(`${c.name} ${mind ? tagsOf(collectionItems(mind, c)).join(" ").replace(/-/g, " ") : ""}`));
     const score = topics.reduce((s, t) => s + (TOPIC_WORDS[t].some((x) => words.has(x)) ? 1 : 0), 0);
     if (score && (!best || score > best.score)) best = { c, score };
   }
@@ -466,18 +473,14 @@ export function saveItem(m: Mind, item: PublicItem, collectionId: string): { min
   return { mind: place({ ...m, blocks: { ...m.blocks, [id]: block } }, id, { collectionId, root: true }), id };
 }
 
-/** A whole public collection, copied in: its stacks become stacks, its items yours to change. */
+/** A whole public collection, copied in: its items (and their tags) yours to change, laid out as it was. */
 export function addCollection(m: Mind, pc: PublicCollection): { mind: Mind; id: string } {
-  const col: Collection = { ...makeCollection(pc.name, pc.emoji, pc.tone), from: { id: pc.id, by: pc.by } };
+  const col: Collection = { ...makeCollection(pc.name, pc.emoji, pc.tone), from: { id: pc.id, by: pc.by }, view: pc.view };
   const blocks = { ...m.blocks };
-  col.pages = pc.stacks.map((s) => {
-    const page = { ...blankPage(s.title, s.emoji, pc.tone, s.defaultKind), view: s.view, views: [s.view, ...(["list", "grid", "shelf"] as MindView[]).filter((v) => v !== s.view)] };
-    page.sections = [{ ...page.sections[0], blockIds: s.items.map((item) => {
-      const id = newId();
-      blocks[id] = { ...asBlock(item, Date.now()), id };
-      return id;
-    }) }];
-    return page;
+  col.items = pc.items.map((item) => {
+    const id = newId();
+    blocks[id] = { ...asBlock(item, Date.now()), id };
+    return id;
   });
   return { mind: { ...m, blocks, collections: [...m.collections, col] }, id: col.id };
 }
