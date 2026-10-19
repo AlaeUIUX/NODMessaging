@@ -165,7 +165,7 @@ export default function ContactPage({ chat: opened, startTab, onClose, onJump, o
   const [tab, setTab] = useState<ContactTab>(() => (opened.kind === "group" && (startTab === "files" || startTab === "links") ? "mind" : startTab));
   const [leaving, setLeaving] = useState(false);
   const [compact, setCompact] = useState(false);
-  // Groups: the bar is clear over the cover at rest, and frosts once anything scrolls under it.
+  // Groups: the bar is clear at rest, and frosts once anything scrolls under it.
   const [scrolled, setScrolled] = useState(false);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
@@ -551,11 +551,10 @@ export default function ContactPage({ chat: opened, startTab, onClose, onJump, o
 
       <div ref={scrollRef} className={s.scroll} onScroll={group ? (e) => setScrolled(e.currentTarget.scrollTop > 4) : undefined}>
         {group ? (
-          // Like a Discord server: the cover is its own rounded panel under the bar, never behind it.
+          // No cover: the group's picture (or its initials) is the group, the way a contact's photo is them.
           <div className={gs.groupHead}>
-            <div className={gs.pageCover} style={{ ["--tone" as string]: TONES[identity.tone], ...(gInfo?.cover ? { backgroundImage: `url(${gInfo.cover})` } : {}) }} aria-hidden="true" />
             <div className={gs.groupHeadBody}>
-              <span className={gs.groupHeadAvatar}><Avatar glyph={identity.glyph} tone={identity.tone} photo={identity.photo} size={72} /></span>
+              <span className={gs.groupHeadAvatar}><Avatar glyph={identity.glyph} tone={identity.tone} photo={identity.photo} size={88} /></span>
               <h2 ref={heroNameRef} className={gs.groupName}>{identity.label}</h2>
               <p className={gs.groupMeta}>{presence}</p>
               {gInfo?.description && <p className={gs.pageDesc}>{gInfo.description}</p>}

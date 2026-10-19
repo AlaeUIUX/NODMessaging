@@ -393,8 +393,7 @@ function GroupCard({ r, joined, onOpen, onJoin }: { r: Ranked<Chat>; joined: boo
   return (
     <div className={x.groupCard} style={{ ["--tone" as string]: TONES[tone] }}>
       <button className={x.groupMain} onClick={onOpen}>
-        <span className={x.groupCover} style={info.cover ? { backgroundImage: `url(${info.cover})` } : undefined} />
-        <span className={x.groupAvatar}><Avatar glyph={initials(g.name)} tone={tone} photo={g.photo} size={44} /></span>
+        <span className={x.groupAvatar}><Avatar glyph={initials(g.name)} tone={tone} photo={g.photo} size={52} /></span>
         <b className={x.groupName}>{g.name}</b>
         <small className={x.groupMeta}>{count(info.discover?.members ?? g.memberIds.length)} members</small>
         <small className={x.groupReason}>{r.reason}</small>
@@ -412,7 +411,7 @@ function GroupRow({ r, joined, onOpen, onJoin }: { r: Ranked<Chat>; joined: bool
   return (
     <div className={x.groupRow} style={{ ["--tone" as string]: TONES[g.tone ?? "graphite"] }}>
       <button className={x.groupRowMain} onClick={onOpen}>
-        <span className={x.groupThumb} style={info.cover ? { backgroundImage: `url(${info.cover})` } : undefined} />
+        <span className={x.groupThumb}><Avatar glyph={initials(g.name)} tone={g.tone ?? "graphite"} photo={g.photo} size={64} /></span>
         <span className={x.groupRowText}>
           <b>{g.name}</b>
           <small>{info.description}</small>
@@ -467,7 +466,7 @@ function ActivityRow({ a, now, saved, chats, onItem, holdItem, onCollection, onG
       )}
       {group && (
         <button className={x.activityGroup} onClick={() => onGroup(group)} style={{ ["--tone" as string]: TONES[group.tone ?? "graphite"] }}>
-          <span className={x.groupThumb} style={groupInfo(group).cover ? { backgroundImage: `url(${groupInfo(group).cover})` } : undefined} />
+          <span className={x.groupThumb}><Avatar glyph={initials(group.name)} tone={group.tone ?? "graphite"} photo={group.photo} size={48} /></span>
           <span className={x.groupRowText}><b>{group.name}</b><small>{groupInfo(group).description}</small></span>
         </button>
       )}
@@ -535,7 +534,7 @@ function GroupSheet({ groupId, reason, onClose, onJoin, onOpen }: { groupId: str
     <Sheet title={group.name} onClose={onClose}>
       {(close) => (
         <>
-          <GroupBanner look={{ name: group.name, description: info.description, tone: group.tone ?? "graphite", photo: group.photo, cover: info.cover }} compact />
+          <GroupBanner look={{ name: group.name, description: info.description, tone: group.tone ?? "graphite", photo: group.photo }} compact />
           <div className={x.groupFacts}>
             <span><IconUserGroup size={15} /> {(info.discover?.members ?? group.memberIds.length).toLocaleString()} members</span>
             {reason && <span><IconSparkles size={14} /> {reason}</span>}

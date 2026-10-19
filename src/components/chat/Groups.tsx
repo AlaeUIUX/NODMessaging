@@ -35,41 +35,6 @@ import g from "./groups.module.css";
  */
 
 const TONE_NAMES: Record<AvatarTone, string> = { clay: "Clay", sage: "Sage", ochre: "Ochre", denim: "Denim", plum: "Plum", graphite: "Graphite" };
-const COVERS = [
-  "photo-1522071820081-009f0129c71c",
-  "photo-1497366216548-37526070297c",
-  "photo-1506905925346-21bda4d32df4",
-  "photo-1516550893923-42d28e5677af",
-].map((q) => `https://images.unsplash.com/${q}?w=900&q=70&fm=jpg`);
-
-/** A photo cropped to a wide 5:2 band and shrunk, as a small JPEG data URL. */
-async function coverPhoto(file: File): Promise<string | null> {
-  if (!file.type.startsWith("image/")) return null;
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const i = new Image();
-      i.onload = () => resolve(i);
-      i.onerror = reject;
-      i.src = url;
-    });
-    const w = 900, h = 360;
-    const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
-    const sw = w / scale, sh = h / scale;
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, w, h);
-    return canvas.toDataURL("image/jpeg", 0.78);
-  } catch {
-    return null;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
 /** The live group (and its info) for an id, or null once it's gone. */
 function useGroup(groupId: string) {
   const { state } = useChat();
@@ -78,16 +43,15 @@ function useGroup(groupId: string) {
 }
 
 /* ===========================================================================
-   The look: cover, picture, name, description, colour
+   The look: picture (or initials), name, description, colour
    =========================================================================== */
 
-export interface Look { name: string; description: string; tone: AvatarTone; photo?: string; cover?: string }
+export interface Look { name: string; description: string; tone: AvatarTone; photo?: string }
 
-/** The group's header: its cover (or a wash of its colour), picture, name and description. */
+/** The group's header: its picture (or initials), name and description. No cover: the picture is the group. */
 export function GroupBanner({ look, compact, children }: { look: Look; compact?: boolean; children?: React.ReactNode }) {
   return (
-    <div className={`${g.banner} ${compact ? g.bannerCompact : ""}`} style={{ ["--tone" as string]: TONES[look.tone] }}>
-      <div className={g.cover} style={look.cover ? { backgroundImage: `url(${look.cover})` } : undefined} />
+    <div className={`${g.banner} ${compact ? g.bannerCompact : ""}`}>
       <div className={g.bannerBody}>
         <span className={g.bannerAvatar}>
           <Avatar glyph={initials(look.name || "Group")} tone={look.tone} photo={look.photo} size={compact ? 56 : 76} />
@@ -102,12 +66,10 @@ export function GroupBanner({ look, compact, children }: { look: Look; compact?:
 
 function LookFields({ look, onChange }: { look: Look; onChange: (patch: Partial<Look>) => void }) {
   const photoRef = useRef<HTMLInputElement>(null);
-  const coverRef = useRef<HTMLInputElement>(null);
   return (
     <div className={g.look}>
       <div className={g.lookPreview}>
         <GroupBanner look={look} />
-        <button className={g.coverBtn} onClick={() => coverRef.current?.click()}><IconCamera size={14} /> Cover</button>
         <button className={g.photoBtn} onClick={() => photoRef.current?.click()} aria-label={look.photo ? "Change picture" : "Add a picture"}>
           <IconCamera size={15} />
         </button>
@@ -116,11 +78,6 @@ function LookFields({ look, onChange }: { look: Look; onChange: (patch: Partial<
         const f = e.target.files?.[0];
         e.target.value = "";
         if (f) { const photo = await squarePhoto(f); if (photo) onChange({ photo }); }
-      }} />
-      <input ref={coverRef} type="file" accept="image/*" hidden onChange={async (e) => {
-        const f = e.target.files?.[0];
-        e.target.value = "";
-        if (f) { const cover = await coverPhoto(f); if (cover) onChange({ cover }); }
       }} />
       {look.photo && <button className={`${a.textBtn} ${g.removePhoto}`} onClick={() => onChange({ photo: undefined })}>Remove picture</button>}
 
@@ -143,16 +100,6 @@ function LookFields({ look, onChange }: { look: Look; onChange: (patch: Partial<
             {look.tone === t && <IconCheck size={12} />}
           </button>
         ))}
-      </div>
-
-      <p className={styles.sheetLabel}>Cover</p>
-      <div className={g.covers}>
-        <button className={g.coverUpload} onClick={() => coverRef.current?.click()} aria-label="Upload a cover"><IconCamera size={18} /></button>
-        <button className={`${g.coverPick} ${!look.cover ? g.coverOn : ""}`} style={{ background: TONES[look.tone] }} onClick={() => onChange({ cover: undefined })} aria-label="Just the colour" />
-        {COVERS.map((c) => (
-          <button key={c} className={`${g.coverPick} ${look.cover === c ? g.coverOn : ""}`} style={{ backgroundImage: `url(${c})` }} onClick={() => onChange({ cover: c })} aria-label="Sample cover" />
-        ))}
-        {look.cover && !COVERS.includes(look.cover) && <span className={`${g.coverPick} ${g.coverOn}`} style={{ backgroundImage: `url(${look.cover})` }} />}
       </div>
     </div>
   );
@@ -475,7 +422,7 @@ export function GroupSettings({ groupId, leaving, onBack, onToast, onLeft }: {
     setTimeout(() => setPage((p) => (p?.leaving ? null : p)), 220);
   };
   const closeSheet = () => setSheet(null);
-  const look: Look = { name: group.name, description: info.description, tone: group.tone ?? "graphite", photo: group.photo, cover: info.cover };
+  const look: Look = { name: group.name, description: info.description, tone: group.tone ?? "graphite", photo: group.photo };
   const admin = isAdmin(info, me);
   const customRoles = info.roles.filter((r) => r.id !== ADMIN && r.id !== MEMBER).length;
 
@@ -573,10 +520,10 @@ interface PageProps { group: Chat; leaving: boolean; onBack: () => void; onSheet
 function OverviewPage({ group, leaving, onBack, onSaved }: { group: Chat; leaving: boolean; onBack: () => void; onSaved: () => void }) {
   const { updateGroup } = useChat();
   const info = groupInfo(group);
-  const [look, setLook] = useState<Look>({ name: group.name, description: info.description, tone: group.tone ?? "graphite", photo: group.photo, cover: info.cover });
+  const [look, setLook] = useState<Look>({ name: group.name, description: info.description, tone: group.tone ?? "graphite", photo: group.photo });
   const save = () => {
     updateGroup(group.id, (x) => {
-      const next: Chat = { ...x, name: look.name.trim() || x.name, tone: look.tone, group: { ...groupInfo(x), description: look.description.trim(), cover: look.cover } };
+      const next: Chat = { ...x, name: look.name.trim() || x.name, tone: look.tone, group: { ...groupInfo(x), description: look.description.trim() } };
       if (look.photo) next.photo = look.photo; else delete next.photo;
       return next;
     });

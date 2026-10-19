@@ -41,10 +41,9 @@ export function newChannelId(groupId: string, name: string) {
   return `${groupId}--${channelName(name) || "channel"}-${rand()}`;
 }
 
-export function newGroupInfo(createdBy: string, description: string, cover?: string): GroupInfo {
+export function newGroupInfo(createdBy: string, description: string): GroupInfo {
   return {
     description,
-    cover,
     roles: baseRoles(),
     memberRoles: { [createdBy]: [ADMIN] },
     channels: [],

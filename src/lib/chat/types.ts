@@ -278,8 +278,6 @@ export interface GroupInvite { userId: string; by: string; at: number }
 
 export interface GroupInfo {
   description: string;
-  /** A wide picture (data URL or image URL) behind the group's name. */
-  cover?: string;
   /** Admin and Member first, then custom roles. */
   roles: GroupRole[];
   /** The roles each person has on top of Member. */

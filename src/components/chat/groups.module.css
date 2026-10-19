@@ -2,29 +2,20 @@
    Groups: the banner, channel chips, invitations, roles and settings
    ========================================================================== */
 
-/* ---- the banner: cover (or a wash of the group's colour), picture, name ---- */
+/* ---- the banner: picture (or initials), name, description; no cover ---- */
 
 .banner { position: relative; border-radius: 22px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--e1); }
-.cover {
-  height: 112px;
-  background-color: var(--tone);
-  background-image: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, #fff 26%, transparent), transparent 60%);
-  background-size: cover;
-  background-position: center;
-}
-.bannerBody { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0 16px 16px; }
-.bannerAvatar { margin-top: -38px; margin-bottom: 8px; border-radius: 24px; box-shadow: 0 0 0 4px var(--surface); }
+.bannerBody { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 16px; }
+.bannerAvatar { margin-bottom: 8px; }
 .bannerAvatar > * { display: flex; }
 .bannerName { font: var(--t-title3); font-weight: var(--w-emph); letter-spacing: -.01em; color: var(--ink); overflow-wrap: anywhere; }
 .bannerDesc { margin: 2px 0 0; font: var(--t-subhead); color: var(--ink-2); text-wrap: pretty; }
-.bannerCompact .cover { height: 84px; }
-.bannerCompact .bannerAvatar { margin-top: -28px; border-radius: 18px; }
 .bannerCompact .bannerBody > button { position: absolute; top: 12px; right: 14px; }
 
-/* the editable look: tap the cover or the picture */
+/* the editable look: tap the picture */
 .look { display: flex; flex-direction: column; gap: 6px; }
 .lookPreview { position: relative; }
-.coverBtn, .photoBtn {
+.photoBtn {
   position: absolute;
   display: inline-flex;
   align-items: center;
@@ -38,25 +29,9 @@
   font: var(--t-footnote);
   font-weight: var(--w-emph);
 }
-.coverBtn { top: 10px; right: 10px; height: 30px; padding: 0 12px; border-radius: var(--r-pill); }
-.photoBtn { top: 128px; left: 74px; width: 30px; height: 30px; justify-content: center; border-radius: var(--r-pill); background: var(--surface); color: var(--ink); box-shadow: 0 0 0 3px var(--surface), var(--e1); }
-.coverBtn:active, .photoBtn:active { transform: scale(.94); }
+.photoBtn { top: 76px; left: 76px; width: 30px; height: 30px; justify-content: center; border-radius: var(--r-pill); background: var(--surface); color: var(--ink); box-shadow: 0 0 0 3px var(--surface), var(--e1); }
+.photoBtn:active { transform: scale(.94); }
 .removePhoto { align-self: flex-start; margin-top: 2px; }
-.covers { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px; }
-.covers::-webkit-scrollbar { display: none; }
-.coverPick, .coverUpload {
-  flex: 0 0 72px;
-  height: 44px;
-  border: none;
-  border-radius: 12px;
-  background-size: cover;
-  background-position: center;
-  cursor: pointer;
-  transition: transform var(--t-fast), box-shadow var(--t-fast);
-}
-.coverUpload { display: grid; place-items: center; color: var(--ink-2); background: color-mix(in srgb, var(--ink) 6%, transparent); box-shadow: inset 0 0 0 1.5px var(--line-2); }
-.coverPick:active, .coverUpload:active { transform: scale(.95); }
-.coverOn { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ink); }
 
 .stepBack { align-self: flex-start; padding: 4px 0; border: none; background: none; color: var(--accent); font: var(--t-subhead); font-weight: var(--w-control); cursor: pointer; }
 
@@ -183,7 +158,7 @@
 
 /* ---- the group page (contact page for a group) ---- */
 
-/* Clear over the cover at rest; frosted once something scrolls under it. */
+/* Clear at rest; frosted once something scrolls under it. */
 .groupTop.groupTop { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; transition: background var(--t-mid), backdrop-filter var(--t-mid); }
 .groupTop.groupTopScrolled {
   background: color-mix(in srgb, var(--bg) 84%, transparent);
@@ -191,19 +166,10 @@
   backdrop-filter: blur(20px) saturate(180%);
   box-shadow: 0 .5px 0 var(--line);
 }
-.groupHead { padding: 4px 12px 18px; }
-/* The cover is its own rounded panel, like a Discord server's banner. */
-.pageCover {
-  height: 136px;
-  border-radius: 24px;
-  background-color: var(--tone);
-  background-image: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, #fff 24%, transparent), transparent 60%);
-  background-size: cover;
-  background-position: center;
-  box-shadow: inset 0 0 0 .5px color-mix(in srgb, #000 10%, transparent);
-}
-.groupHeadBody { display: flex; flex-direction: column; align-items: flex-start; padding: 0 8px; }
-.groupHeadAvatar { margin: -36px 0 0 8px; border-radius: 22px; box-shadow: 0 0 0 4px var(--bg); }
+.groupHead { padding: 12px 12px 18px; }
+/* Centred, like a contact's page: the picture, the name, who's in it. */
+.groupHeadBody { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0 8px; }
+.groupHeadAvatar { margin: 0; }
 .groupHeadAvatar > * { display: flex; }
 .groupName { margin: 10px 0 0; font: var(--t-title2); font-weight: var(--w-emph); letter-spacing: -.02em; overflow-wrap: anywhere; }
 .groupMeta { margin: 2px 0 0; font: var(--t-subhead); color: var(--ink-3); }

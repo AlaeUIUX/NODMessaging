@@ -217,9 +217,8 @@
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--line), var(--e1);
 }
-.groupMain { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 0 0 10px; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.groupCover { display: block; width: 100%; height: 78px; background-color: var(--tone); background-size: cover; background-position: center; }
-.groupAvatar { margin: -22px 0 6px 12px; border-radius: 15px; box-shadow: 0 0 0 3px var(--surface); }
+.groupMain { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 0 0 12px; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.groupAvatar { margin: 12px 0 8px 12px; }
 .groupAvatar > * { display: flex; }
 .groupName { padding: 0 12px; font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .groupMeta { padding: 0 12px; font: var(--t-footnote); color: var(--ink-3); }
@@ -230,7 +229,7 @@
 .groupList { display: flex; flex-direction: column; gap: 10px; }
 .groupRow { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 10px; border-radius: 20px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--e1); }
 .groupRowMain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 0; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.groupThumb { width: 64px; height: 64px; flex-shrink: 0; border-radius: 16px; background-color: var(--tone); background-size: cover; background-position: center; }
+.groupThumb { flex-shrink: 0; display: flex; }
 .groupRowText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .groupRowText b { font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .groupRowText small { font: var(--t-footnote); color: var(--ink-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -277,7 +276,6 @@
 .miniCard i { position: absolute; left: 10px; top: 10px; font-style: normal; font-size: 18px; line-height: 1; }
 .miniCard em { font-style: normal; font: var(--t-caption2, var(--t-caption1)); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
 .activityGroup { display: flex; align-items: center; gap: 12px; margin-left: 42px; padding: 8px; border: none; border-radius: 18px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--e1); color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.activityGroup .groupThumb { width: 48px; height: 48px; border-radius: 12px; }
 
 /* ---- sheets ---- */
 

@@ -14,7 +14,8 @@ export const USERS: User[] = [
 ];
 
 const DAY = 24 * 60 * 60 * 1000;
-const cover = (q: string) => `https://images.unsplash.com/${q}?w=900&q=70&fm=jpg`;
+/** A square group picture from Unsplash. */
+const picture = (q: string) => `https://images.unsplash.com/${q}?w=240&h=240&fit=crop&q=70&fm=jpg`;
 const TEAM = ["me", "charles", "reema", "jamshad", "salman"];
 
 /**
@@ -26,7 +27,6 @@ const NOD_TEAM: Chat = {
   id: "general", name: "NOD Team", kind: "group", memberIds: TEAM, tone: "ochre",
   group: {
     description: "The people building NOD. Launch planning, design reviews and the occasional lunch vote.",
-    cover: cover("photo-1522071820081-009f0129c71c"),
     roles: [
       ...baseRoles(),
       { id: "design", name: "Design", tone: "plum", permissions: [] },
@@ -47,10 +47,9 @@ const NOD_TEAM: Chat = {
 
 /** Reema's group, with an invitation waiting for Alae: accept it from the inbox. */
 const VIENNA: Chat = {
-  id: "vienna", name: "Weekend in Vienna", kind: "group", memberIds: ["reema", "salman"], tone: "sage",
+  id: "vienna", name: "Weekend in Vienna", kind: "group", memberIds: ["reema", "salman"], tone: "sage", photo: picture("photo-1516550893923-42d28e5677af"),
   group: {
     description: "Coffee houses, the Naschmarkt and one very long museum day. November, dates TBC.",
-    cover: cover("photo-1516550893923-42d28e5677af"),
     roles: baseRoles(),
     memberRoles: { reema: [ADMIN] },
     channels: [{ id: "vienna", name: "general", roles: [], postRoles: [] }],
@@ -62,10 +61,10 @@ const VIENNA: Chat = {
 };
 
 /** Public groups, found on Explore. Nobody in the demo has invited Alae; anyone can join. */
-const publicGroup = (id: string, name: string, tone: Chat["tone"], members: string[], admin: string, description: string, cover: string, topics: string[], total: number): Chat => ({
-  id, name, kind: "group", memberIds: members, tone,
+const publicGroup = (id: string, name: string, tone: Chat["tone"], members: string[], admin: string, description: string, photo: string, topics: string[], total: number): Chat => ({
+  id, name, kind: "group", memberIds: members, tone, photo: picture(photo),
   group: {
-    description, cover: `https://images.unsplash.com/${cover}?w=900&q=70&fm=jpg`,
+    description,
     roles: baseRoles(), memberRoles: { [admin]: [ADMIN] },
     channels: [{ id, name: "general", roles: [], postRoles: [] }],
     invites: [], inviteCode: id, createdBy: admin, createdAt: Date.now() - 120 * DAY,

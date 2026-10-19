@@ -279,7 +279,7 @@ interface ChatContextValue {
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-export interface NewGroup { name: string; description: string; tone: AvatarTone; photo?: string; cover?: string; invite: string[] }
+export interface NewGroup { name: string; description: string; tone: AvatarTone; photo?: string; invite: string[] }
 
 /** A plain text message, for simulated people. */
 function textFrom(chatId: string, authorId: string, body: string): Message {
@@ -836,7 +836,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         memberIds: [who],
         tone: input.tone,
         ...(input.photo ? { photo: input.photo } : {}),
-        group: newGroupInfo(who, input.description.trim(), input.cover),
+        group: newGroupInfo(who, input.description.trim()),
       };
       const chat: Chat = { ...draft, group: groupInfo(draft) };
       putChats([chat]);
