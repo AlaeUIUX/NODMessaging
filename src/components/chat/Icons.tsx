@@ -11,7 +11,7 @@ import {
   Shield01Icon, PaintBoardIcon, Database01Icon, InformationCircleIcon, HelpCircleIcon, SmartPhone01Icon, KeyboardIcon, ComputerIcon, Contact01Icon,
   MinusSignIcon, SlidersHorizontalIcon, ChartLineData01Icon, Wallet01Icon, ArrowDown02Icon,
   ClipboardPasteIcon, SquareLock01Icon, SquareUnlock01Icon, Redo02Icon, ShuffleIcon, ImageAdd01Icon, FileAddIcon, Book02Icon, Video01Icon,
-  FilterHorizontalIcon,
+  FilterHorizontalIcon, Megaphone02Icon,
 } from "@hugeicons/core-free-icons";
 
 /**
@@ -134,3 +134,14 @@ export const IconFileAdd = make(FileAddIcon);
 export const IconBook = make(Book02Icon);
 export const IconVideo = make(Video01Icon);
 export const IconFilter = make(FilterHorizontalIcon);
+export const IconMegaphone = make(Megaphone02Icon);
+
+/** Hugeicons' free set has no walkie-talkie; this one is drawn on the same 24px grid and stroke. */
+const WalkieTalkieIcon: IconSvgElement = [
+  ["path", { d: "M9 7V2.5", stroke: "currentColor", strokeLinecap: "round", key: "0" }],
+  ["path", { d: "M9.5 7H14.5C16.4 7 17.5 8.1 17.5 10V19C17.5 20.9 16.4 22 14.5 22H9.5C7.6 22 6.5 20.9 6.5 19V10C6.5 8.1 7.6 7 9.5 7Z", stroke: "currentColor", strokeLinejoin: "round", key: "1" }],
+  ["path", { d: "M9.5 10.5H14.5V13H9.5V10.5Z", stroke: "currentColor", strokeLinejoin: "round", key: "2" }],
+  ["path", { d: "M9.5 16H14.5M9.5 18.5H14.5", stroke: "currentColor", strokeLinecap: "round", key: "3" }],
+  ["path", { d: "M17.5 11.5H18.5M17.5 14H18.5", stroke: "currentColor", strokeLinecap: "round", key: "4" }],
+];
+export const IconWalkie = make(WalkieTalkieIcon);
