@@ -197,7 +197,7 @@ export function Transcript({ s, items, me, divider, showChannel }: { s: OpState;
                   <span className={c.txRole}>
                     <span className={c.txWhere}>{id.where}</span>
                     <span>{id.role}</span>
-                    <span className={c.txCrew}><i className={c.crewDot} style={{ background: crewOf(p.crew).color }} />{crewOf(p.crew).name}</span>
+                    {p.crew !== "command" && <span className={c.txCrew}><i className={c.crewDot} style={{ background: crewOf(p.crew).color }} />{crewOf(p.crew).name}</span>}
                   </span>
                 </span>
               </header>
@@ -207,7 +207,7 @@ export function Transcript({ s, items, me, divider, showChannel }: { s: OpState;
               </p>
               {t.live && <Wave n={22} />}
               <footer className={c.txFoot}>
-                <span className={`${c.txVia} ${t.target.all ? c.txViaAll : ""}`}>{showChannel || via ? (showChannel ? targetLabel(s, t.target) : via) : `${channelLabel(s, myChannel)}`}</span>
+                {(showChannel || via) && <span className={`${c.txVia} ${t.target.all ? c.txViaAll : ""}`}>{showChannel ? targetLabel(s, t.target) : via}</span>}
                 {t.by !== me && <span className={c.voiceId} title="Speaker recognised by voice">Voice ID · {firstName(t.by)}</span>}
                 {t.source === "voice" && t.by === me && <span className={c.voiceId}>Dictated</span>}
               </footer>
