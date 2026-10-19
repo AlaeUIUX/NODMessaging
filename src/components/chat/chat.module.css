@@ -1927,6 +1927,9 @@
   font-size: var(--fs-sub);
   font-weight: 500;
   white-space: nowrap;
+  /* As wide as it needs, never past the screen's edges: a long label gives way first (it ellipsizes). */
+  width: max-content;
+  max-width: calc(100% - 24px);
   animation: toastIn var(--t-slow) var(--ease-spring) both;
 }
 .toast svg { width: 15px; height: 15px; color: #1FA855; }
@@ -3136,7 +3139,7 @@
   .statusbar > * { visibility: hidden; }
   /* Text fields at 16px: anything smaller makes iOS zoom the page on focus. */
   .searchBar input, .sheetSearch input, .input, .plainInput, .optionField input, .checkAdd input,
-  .linkPop input, .mindField, .mindField input, .mindCompose input, .mindTagInput { font-size: 16px; }
+  .linkPop input, .mindField, .mindField input, .mindCompose input, .mindTagInput, .mindTagBox input, .mindStep input, .mindNumber input { font-size: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -4351,22 +4354,81 @@ figure.mb { margin: 0; }
 
 /* progress */
 .mbk_progress { flex-direction: column; align-items: stretch; gap: 8px; }
-.mbProgressFoot { font: var(--t-footnote); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.mbProgHead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
+.mbProgHead b { font: var(--t-subhead); font-weight: var(--w-emph); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mbProgHead em { font-style: normal; font: var(--t-footnote); font-weight: var(--w-emph); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.mbk_progress .mbBar { height: 8px; }
+.mbProgressFoot { display: flex; align-items: center; gap: 8px; min-height: 28px; font: var(--t-footnote); color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .mbProgressFoot b { color: var(--ink); font-weight: var(--w-emph); }
+.mbProgLeft { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.mbPlusOne { height: 28px; min-width: 40px; padding: 0 10px; border: none; border-radius: var(--r-pill); background: var(--ink); color: var(--bg); font: var(--t-footnote); font-weight: var(--w-emph); cursor: pointer; transition: transform var(--t-mid) var(--ease-spring); }
+.mbPlusOne:active { transform: scale(.88); }
+.mbReached .mbBar i { background: var(--ok-mark); }
+.mbReached .mbProgLeft { color: var(--ok); font-weight: var(--w-emph); }
+/* In a narrow tile: the count on its own line, then what is left and +1 */
+.mb_tile .mbProgressFoot { flex-wrap: wrap; row-gap: 2px; }
+.mb_tile .mbProgressFoot > span:first-child { flex-basis: 100%; }
+.mb_tile .mbProgLeft { margin-left: 0; }
+.mb_tile .mbPlusOne { margin-left: auto; }
+.mbk_reminder.mb_tile { flex-direction: row; align-items: flex-start; }
+.mbk_reminder.mb_row, .mbk_reminder.mb_tile { gap: 10px; }
+.mbk_reminder .mbText small { white-space: normal; }
+.mb_detail.mbk_progress .mbProgHead b { font: var(--t-title3); font-weight: var(--w-emph); white-space: normal; }
+
+/* to-do with steps: a checklist card, ticked off right there */
+.mbk_todo.mbList { flex-direction: column; align-items: stretch; gap: 8px; }
+.mbListHead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
+.mbListHead b { font: var(--t-subhead); font-weight: var(--w-emph); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mbListHead em { display: inline-flex; align-items: center; gap: 3px; font-style: normal; font: var(--t-footnote); font-weight: var(--w-emph); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.mbListDone .mbListHead em { color: var(--ok); }
+.mbListDone .mbBar i { background: var(--ok-mark); }
+.mbSteps { display: grid; gap: 6px; margin: 2px 0 0; padding: 0; list-style: none; }
+.mbSteps li { display: flex; align-items: flex-start; gap: 8px; min-width: 0; font: var(--t-footnote); color: var(--ink); }
+.mbSteps li span { min-width: 0; padding-top: 1px; overflow-wrap: anywhere; }
+.mbStepDone span { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+.mbCheck.mbCheckSm { width: 18px; height: 18px; margin-top: 0; }
+.mbMore { font: var(--t-caption1); color: var(--ink-3); }
+
+/* reminder: when, coloured by how close it is */
+.mbWhen { display: inline-flex; align-items: center; gap: 4px; }
+.mbWhen svg { flex-shrink: 0; }
+.mbWhen_soon { color: var(--warn); font-weight: var(--w-control); }
+.mbWhen_late { color: var(--bad); font-weight: var(--w-control); }
+.mbWhen_later, .mbWhen_done { color: var(--ink-3); }
+
+/* the sheets: when a reminder goes off, a checklist you type into, a goal in numbers */
+.mindWhen { display: grid; gap: 8px; }
+.mindWhen .mindField input[type="time"] { border: none; background: transparent; color: var(--ink); font: var(--t-callout); }
+.mindWhenSays { display: flex; align-items: center; gap: 6px; margin: 2px 2px 0; font: var(--t-footnote); }
+.mindSteps { display: grid; border-radius: var(--r-md); background: color-mix(in srgb, var(--ink) 4%, transparent); overflow: hidden; }
+.mindStep { position: relative; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 6px 0 14px; }
+.mindStep + .mindStep::before { content: ""; position: absolute; top: 0; left: 46px; right: 0; height: .5px; background: var(--line); }
+.mindStep input { flex: 1; min-width: 0; height: 44px; border: none; outline: none; background: transparent; color: var(--ink); font: var(--t-callout); }
+.mindStep input::placeholder { color: var(--ink-3); }
+.mindStep .mbCheck { margin-top: 0; }
+.mindStepDone input { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+.mindStepDrop { display: grid; place-items: center; width: 30px; height: 30px; border: none; border-radius: var(--r-pill); background: transparent; color: var(--ink-3); cursor: pointer; opacity: 0; transition: opacity var(--t-fast); }
+.mindStep:hover .mindStepDrop, .mindStep:focus-within .mindStepDrop { opacity: 1; }
+@media (hover: none) { .mindStepDrop { opacity: .7; } }
+.mindStepPlus { display: grid; place-items: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: var(--r-pill); color: var(--ink-3); border: 1.5px dashed var(--line-2); }
+.mindStepsHead { display: flex; align-items: center; gap: 10px; }
+.mindStepsHead .mbBar { flex: 1; }
+.mindStepsHead em { font-style: normal; font: var(--t-footnote); color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mindNumbers { display: flex; gap: 8px; }
+.mindNumber { flex: 1; min-width: 0; display: grid; gap: 2px; padding: 8px 12px; border-radius: var(--r-md); background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.mindNumber span { font: var(--t-caption1); color: var(--ink-3); }
+.mindNumber input { width: 100%; min-width: 0; height: 28px; padding: 0; border: none; outline: none; background: transparent; color: var(--ink); font: var(--t-headline); font-variant-numeric: tabular-nums; }
+.mindStepper span b { font-weight: var(--w-emph); }
 
 /* image */
+/* A picture is the whole card, edge to edge, like a pin: no caption. Its own shape in a grid, a calm crop in a list. */
 .mbk_image { flex-direction: column; gap: 0; padding: 0 !important; }
-.mbk_image img { display: block; width: 100%; background: var(--fill); object-fit: cover; }
+.mbk_image img { display: block; width: 100%; height: auto; background: var(--fill); object-fit: cover; }
 .mbk_image.mb_tile img { min-height: 90px; }
-.mbk_image figcaption { padding: 8px 10px 10px; font: var(--t-footnote); color: var(--ink-2); }
-.mbk_image.mb_row { flex-direction: row; align-items: center; gap: 12px; padding: 8px 12px 8px 8px !important; }
-.mbk_image.mb_row img { width: 56px; height: 56px; border-radius: var(--r-sm); flex-shrink: 0; }
-.mbk_image.mb_row figcaption, .mbk_image.mb_detail figcaption { display: flex; flex-direction: column; gap: 2px; padding: 0; min-width: 0; }
-.mbk_image figcaption b { font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); }
-.mbk_image figcaption small { font: var(--t-footnote); color: var(--ink-3); }
+.mbk_image.mb_row img { max-height: 340px; }
 /* In detail the card itself is invisible: only the photo is rounded, and nothing under it is clipped (the caption sat on the clipped corner). */
 .mbk_image.mb_detail { gap: 12px; background: none; box-shadow: none; overflow: visible; border-radius: 0; }
-.mbk_image.mb_detail img { border-radius: var(--r-md); max-height: 320px; }
+.mbk_image.mb_detail img { border-radius: var(--r-md); max-height: 60vh; object-fit: contain; background: transparent; }
 
 /* palette */
 .mbSwatches { display: flex; height: 64px; border-radius: var(--r-sm); overflow: hidden; }
@@ -4421,6 +4483,19 @@ figure.mb { margin: 0; }
 .mindDetail > .mbk_image, .mindDetail > .mbk_flashcard, .mindDetail > .mbk_book { box-shadow: none; }
 .mindNote { resize: none; min-height: 64px; line-height: 22px; }
 /* 16px text: anything smaller makes iOS zoom in on focus */
+/* Tags: a field of chips, each word a tag on Enter; the tags you use elsewhere under it */
+.mindTags { display: grid; gap: 8px; }
+.mindTagBox { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 48px; padding: 7px 8px; border-radius: var(--r-md); background: color-mix(in srgb, var(--ink) 5%, transparent); cursor: text; transition: box-shadow var(--t-fast); }
+.mindTagBox:focus-within { box-shadow: inset 0 0 0 1.5px var(--ink-3); }
+.mindTagChip { display: inline-flex; align-items: center; gap: 2px; height: 32px; padding: 0 4px 0 11px; border-radius: var(--r-pill); background: var(--ink); color: var(--bg); font: var(--t-subhead); font-weight: var(--w-control); animation: mindTagIn .22s var(--ease-out); }
+.mindTagChip button { display: grid; place-items: center; width: 24px; height: 24px; border: none; border-radius: var(--r-pill); background: transparent; color: inherit; opacity: .7; cursor: pointer; }
+.mindTagChip button:hover { opacity: 1; background: color-mix(in srgb, var(--bg) 18%, transparent); }
+.mindTagBox input { flex: 1; min-width: 120px; height: 32px; padding: 0 6px; border: none; outline: none; background: transparent; color: var(--ink); font: var(--t-callout); }
+.mindTagBox input::placeholder { color: var(--ink-3); }
+.mindTagSuggest { display: flex; flex-wrap: wrap; gap: 6px; }
+.mindTagSuggest .choice { display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 12px 0 9px; font: var(--t-footnote); font-weight: var(--w-control); color: var(--ink-2); }
+@keyframes mindTagIn { from { transform: scale(.6); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mindTagChip { animation: none; } }
 .mindTagInput { width: auto; min-width: 72px; height: 36px; padding: 0 14px; border: none; border-radius: var(--r-pill); background: transparent; box-shadow: inset 0 0 0 1px var(--line-2); color: var(--ink); font: var(--t-callout); outline: none; }
 .mindTagInput:focus { box-shadow: inset 0 0 0 1.5px var(--ink-3); }
 .mindDanger { align-self: center; padding: 10px; border: none; background: none; color: var(--danger); font: var(--t-subhead); font-weight: var(--w-control); cursor: pointer; }

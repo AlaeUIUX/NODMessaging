@@ -27,7 +27,10 @@ import { ProjectBoard, ProjectBuilder, TaskFromMessage } from "./Project";
 import { openItems, openState } from "@/lib/chat/open";
 import { newProject, newTask, parseTaskCommand, projectsOf } from "@/lib/chat/project";
 import { emojify } from "@/lib/chat/emoji";
+import { land } from "@/lib/chat/landing";
 import { saveToMind, UNASSIGNED } from "@/lib/chat/mind";
+import { fly } from "./flight";
+import { MindMark } from "./Landing";
 import { MoveSheet } from "./Mind";
 import { MediaGrid, MediaViewer, ReceiptSheet } from "./MediaViewer";
 import ReactionSheet from "./ReactionSheet";
@@ -68,9 +71,11 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   const [sheetFor, setSheetFor] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
-  const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean; actions?: { label: string; run: () => void }[] } | null>(null);
+  const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean; actions?: { label: string; run: () => void }[]; mind?: boolean } | null>(null);
   const [viewer, setViewer] = useState<{ message: Message; index: number } | null>(null);
   const [highlighted, setHighlighted] = useState<string | null>(null);
+  /** The message just saved to Mind, while its bubble plays the moment. */
+  const [saved, setSaved] = useState<string | null>(null);
   const [overlaySheet, setOverlaySheet] = useState<ReactNode>(null);
   const [alert, setAlert] = useState<{ kind: PermissionKind; resolve: (ok: boolean) => void } | null>(null);
   const [incoming, setIncoming] = useState<{ files: File[]; id: number } | null>(null);
@@ -183,9 +188,10 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     return () => ro.disconnect();
   }, []);
 
-  const flash = useCallback((text: string, actions?: { label: string; run: () => void }[]) => {
+  /** `mind`: about something kept in Mind; the toast leads with Mind's mark (where a saved message flies to) instead of a tick. */
+  const flash = useCallback((text: string, actions?: { label: string; run: () => void }[], opts?: { mind?: boolean }) => {
     const id = Date.now();
-    setToast({ text, id, actions });
+    setToast({ text, id, actions, mind: opts?.mind });
     // Fade out before unmounting, so toasts leave as gently as they arrive.
     // A toast with actions waits longer, so there's time to tap them.
     const stay = actions ? 4200 : 1800;
@@ -555,6 +561,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
           <MessageRow
             {...row}
             highlighted={highlighted === row.message.id}
+            saved={saved === row.message.id}
             focused={menu?.message.id === row.message.id}
             meId={me}
             onReply={onReply}
@@ -612,7 +619,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
 
       {toast && (
         <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${toast.actions ? styles.toastActions : ""} ${toast.leaving ? styles.toastLeaving : ""}`} role="status">
-          <IconCheck />
+          {toast.mind ? <MindMark /> : <IconCheck />}
           <span className={styles.toastText}>{emojify(toast.text)}</span>
           {toast.actions?.map((a) => (
             <button key={a.label} className={styles.toastBtn} onClick={() => { dismissToast(); a.run(); }}>{a.label}</button>
@@ -643,16 +650,29 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
               : openState(m, me)?.title ?? (c.type === "payment" ? c.note : undefined));
             const title = cardTitle || stripFormatting(m.body).split(/\n/)[0].slice(0, 80) || m.attachments[0]?.name || "Saved message";
             const result = saveToMind(me, { chatId: chat.id, messageId: m.id, title });
+            if (result.status === "saved") {
+              // It lands in Mind the next time it's opened (and the Mind tab gives a nudge on the way back).
+              land(result.blockId, "tab:mind");
+              // Here, a copy of it flies down into Mind's mark on the toast, the way a saved post drops into its
+              // collection, and the bubble itself catches the light once the menu has closed.
+              const screen = screenRef.current;
+              const row = screen?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(m.id)}"]`);
+              const bubble = row?.querySelector<HTMLElement>("[data-bubble]");
+              if (screen && row && bubble) fly({ el: bubble, host: screen, wrap: row.className, target: () => screen.querySelector<HTMLElement>("[data-mind-target]") });
+              setTimeout(() => setSaved(m.id), 240);
+              setTimeout(() => setSaved((s) => (s === m.id ? null : s)), 1700);
+            }
             const where = result.collection ? `${result.collection.emoji} ${result.collection.name}` : "Mind";
             const choose = () => setOverlaySheet(
               <MoveSheet me={me} id={result.blockId} title="Save to" onClose={closeSheet} onMoved={(t) => flash(t)} />,
             );
-            // Unassigned is where a save waits for a place: choosing one now is the obvious next step.
+            // Unassigned is where a save waits for a place: sorting it now is the obvious next step.
+            // Short labels, so where it went is never cut off on a phone.
             const waiting = result.collection?.id === UNASSIGNED;
             flash(result.status === "saved" ? `Saved to ${where}` : `Already in ${where}`, [
-              { label: waiting ? "Choose collection" : "Edit location", run: choose },
+              { label: waiting ? "Sort" : "Move", run: choose },
               { label: "Done", run: () => {} },
-            ]);
+            ], { mind: true });
           }}
           onCopy={() => {
             void navigator.clipboard?.writeText(stripFormatting(menuMessage.body));

@@ -3,6 +3,7 @@ import {
   type Block, type BlockKind, type Collection, type Mind, type MindView,
 } from "./mind";
 import { groupInfo } from "./groups";
+import { land } from "./landing";
 import type { AvatarTone, Chat } from "./types";
 
 /**
@@ -38,6 +39,12 @@ const TOPIC_WORDS: Record<Topic, string[]> = {
   startups: ["startup", "founder", "founders", "investor", "pitch", "launch", "pricing"],
   reading: ["book", "books", "read", "reading", "library"],
 };
+
+/** The topics a piece of text touches, by the words in it. */
+export function topicsIn(text: string): Topic[] {
+  const words = new Set(text.toLowerCase().match(/[a-zà-ÿß]{3,}/g) ?? []);
+  return (Object.keys(TOPIC_WORDS) as Topic[]).filter((t) => TOPIC_WORDS[t].some((w) => words.has(w)));
+}
 
 /* ---------------------------------------------------------------------------
    Who made things: people on NOD (the demo's users) and people you don't know yet
@@ -471,6 +478,7 @@ export function suggestCollection(mind: Mind | null, topics: Topic[]) {
 export function saveItem(m: Mind, item: PublicItem, collectionId: string): { mind: Mind; id: string } {
   const id = newId();
   const block: Block = { ...asBlock(item, Date.now()), id, ...(item.kind === "todo" ? { done: false } : {}) };
+  land(id);
   return { mind: place({ ...m, blocks: { ...m.blocks, [id]: block } }, id, { collectionId }), id };
 }
 
@@ -483,6 +491,7 @@ export function addCollection(m: Mind, pc: PublicCollection): { mind: Mind; id: 
     blocks[id] = { ...asBlock(item, Date.now()), id };
     return id;
   });
+  land(...col.items);
   return { mind: { ...m, blocks, collections: [...m.collections, col] }, id: col.id };
 }
 

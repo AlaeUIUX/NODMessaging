@@ -1,0 +1,193 @@
+/* ==========================================================================
+   Unassigned, as a tray rather than a folder. It sits above the collections,
+   full width, with a dashed accent edge (unfinished, not a place to keep
+   things), a little fanned pile of what's waiting and Sort at hand. Once
+   everything has a place it's gone.
+   ========================================================================== */
+
+.tray {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 10px 10px;
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%),
+    color-mix(in srgb, var(--accent) 4%, var(--surface));
+  outline: 1.5px dashed color-mix(in srgb, var(--accent) 34%, transparent);
+  outline-offset: -1.5px;
+  animation: trayIn var(--t-slow) var(--ease-out) backwards;
+}
+@keyframes trayIn { from { opacity: 0; transform: translateY(-6px); } }
+
+.open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.open:active .fan { transform: scale(.94); }
+
+/* The pile: the newest three, fanned like cards dropped in a tray. */
+.fan {
+  position: relative;
+  flex-shrink: 0;
+  width: 58px;
+  height: 52px;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.card {
+  position: absolute;
+  left: 11px;
+  top: 7px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  box-shadow: var(--e2), 0 0 0 1px var(--line);
+  font-size: 17px;
+  /* --n: 0 is the newest, on top. */
+  z-index: calc(3 - var(--n));
+  transform: translateX(calc(var(--n) * 9px - 7px)) rotate(calc(var(--n) * 11deg - 8deg));
+}
+.card img { width: 100%; height: 100%; object-fit: cover; }
+.count {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  z-index: 4;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 0 2px var(--bg);
+  font: var(--t-caption1);
+  line-height: 20px;
+  font-weight: var(--w-emph);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+[data-theme="dark"] .count, [data-theme="dark"] .sort { color: #0F0E0D; }
+
+.text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.text b { font: var(--t-headline); letter-spacing: -.01em; }
+.text small { font: var(--t-footnote); color: var(--ink-2); text-wrap: pretty; }
+
+.sort {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: #fff;
+  font: var(--t-subhead);
+  font-weight: var(--w-emph);
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.sort:active { transform: scale(.95); }
+
+/* One tap for the obvious ones: what fits where, in that collection's colour. */
+.guess {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 40px;
+  padding: 0 6px 0 12px;
+  border: none;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--tone) 12%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 18%, transparent);
+  color: var(--ink-2);
+  font: var(--t-footnote);
+  text-align: left;
+  cursor: pointer;
+  animation: trayIn var(--t-slow) var(--ease-out) backwards;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.guess:active { transform: scale(.98); }
+.guess > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guess b { color: var(--ink); font-weight: var(--w-emph); }
+.guess em {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  background: var(--tone);
+  color: #fff;
+  font-style: normal;
+  font-weight: var(--w-emph);
+}
+
+/* ---- Where the tray sits, and how it goes ----
+   All sorted: the tray fades, softens and shrinks into a puff of sparkles,
+   then its slot closes so the collections slide up into its place. The
+   negative margin takes the stack's gap and the heading's offset with it. */
+.slot { position: relative; display: grid; grid-template-rows: 1fr; }
+.clip { min-height: 0; }
+.leaving { pointer-events: none; animation: collapse 480ms 220ms var(--ease-out) forwards; }
+.leaving .clip { overflow: hidden; }
+.leaving .tray { animation: vanish 440ms var(--ease-out) forwards; }
+@keyframes collapse { to { grid-template-rows: 0fr; margin-bottom: -20px; } }
+@keyframes vanish {
+  0% { opacity: 1; transform: none; filter: none; }
+  25% { opacity: 1; transform: scale(1.015); filter: none; }
+  100% { opacity: 0; transform: translateY(-4px) scale(.88); filter: blur(10px); }
+}
+
+/* Inside Unassigned: the same accent, as a banner over what's waiting. */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  outline: 1.5px dashed color-mix(in srgb, var(--accent) 30%, transparent);
+  outline-offset: -1.5px;
+}
+.bannerIcon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.banner p { flex: 1; min-width: 0; margin: 0; display: flex; flex-direction: column; gap: 1px; font: var(--t-footnote); color: var(--ink-2); text-wrap: pretty; }
+.banner b { color: var(--ink); font: var(--t-subhead); font-weight: var(--w-emph); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tray, .guess { animation: none; }
+  /* Still ends (so it's cleared away), just at once. */
+  .leaving { animation-duration: 1ms; animation-delay: 0ms; }
+  .leaving .tray { animation: none; opacity: 0; }
+}

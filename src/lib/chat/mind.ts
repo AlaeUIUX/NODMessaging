@@ -20,7 +20,7 @@ import type { Attachment } from "./types";
 
 export type MindView = "shelf" | "list" | "grid";
 export type BlockKind =
-  | "note" | "todo" | "link" | "video" | "book" | "quote" | "flashcard" | "image" | "file"
+  | "note" | "todo" | "reminder" | "link" | "video" | "book" | "quote" | "flashcard" | "image" | "file"
   | "palette" | "progress" | "habit" | "amount" | "date" | "chat";
 export type TaskStatus = "todo" | "doing" | "done";
 
@@ -40,6 +40,9 @@ export interface Sharing {
   /** Asking for access (or for edit access), waiting for the owner. */
   requests: { userId: string; role: ShareRole; at: number }[];
 }
+
+/** One line of a to-do's checklist. */
+export interface Step { id: string; text: string; done: boolean }
 
 export interface Block {
   id: string;
@@ -61,17 +64,22 @@ export interface Block {
   updatedAt?: number;
   status?: TaskStatus;
   shelf?: "want" | "reading" | "read";
+  /** To-dos: ticked off (a checklist, once every step is). Reminders: dealt with. */
   done?: boolean;
+  /** To-dos: the checklist, when it has steps. One without is a single to-do. */
+  checklist?: Step[];
   back?: string;
   due?: boolean;
+  /** Progress: how far along, out of the goal (`total`), counted in `unit` ("pages", "km"). */
   value?: number;
   total?: number;
+  unit?: string;
   colors?: string[];
   duration?: string;
   size?: number;
   amount?: number;
   paid?: boolean;
-  /** Amounts: when it's due. Dates: the day itself. */
+  /** Amounts: when it's due. Dates: the day itself. Reminders: when to remind. */
   at?: number;
   /** Habits: the days it was done (YYYY-MM-DD). */
   days?: string[];
@@ -218,6 +226,13 @@ const youtube = (id: string, title: string, channel: string, duration: string, t
   url: `https://www.youtube.com/watch?v=${id}`, image: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
 });
 const card = (front: string, back: string, due = false, tags: string[] = []): Item => ({ kind: "flashcard", title: front, back, due, tags });
+/** A to-do with steps; `[x]` at the start of one means it's done. */
+const checklist = (title: string, steps: string[], tags?: string[]): Item => {
+  const list = steps.map((s, i) => ({ id: `s${i}`, text: s.replace(/^\[x\] /, ""), done: s.startsWith("[x] ") }));
+  return { kind: "todo", title, checklist: list, done: list.every((s) => s.done), tags };
+};
+/** A reminder, `hours` from now. */
+const remind = (title: string, hours: number, tags?: string[]): Item => ({ kind: "reminder", title, at: Date.now() + hours * 3_600_000, done: false, tags });
 
 function alaeMind(): Mind {
   return build([
@@ -225,6 +240,8 @@ function alaeMind(): Mind {
       id: "c-german", name: "German", emoji: "🇩🇪", tone: "#C99432", chatIds: [], view: "grid",
       items: [
         { kind: "date", title: "Goethe B1 exam", at: Date.now() + 46 * DAY },
+        { kind: "progress", title: "Hammer's Grammar", value: 7, total: 22, unit: "chapters", tags: ["grammar"] },
+        remind("Book a speaking slot with Anja", 3),
         { kind: "habit", title: "Review cards for 10 minutes", days: [dayKey(shiftDays(Date.now(), -1)), dayKey(shiftDays(Date.now(), -2)), dayKey(shiftDays(Date.now(), -3)), dayKey(shiftDays(Date.now(), -5))] },
         ...tagged("vocab", [
           card("der Feierabend", "the end of the working day"), card("gemütlich", "cosy, comfortable"),
@@ -270,6 +287,8 @@ function alaeMind(): Mind {
     {
       id: "c-work", name: "Work", emoji: "💼", tone: "#3E67A6", chatIds: ["general", "dm"],
       items: tagged("spaces-launch", [
+        checklist("Launch week", ["[x] Freeze the copy", "[x] QA on iOS", "QA on Android", "Brief support", "Schedule the announcement"]),
+        remind("Send the investor update", 26),
         { kind: "chat", title: "Launch checklist", ref: { chatId: "general", messageId: "g-10" } },
         { kind: "chat", title: "Kickoff brief · Spaces v2", ref: { chatId: "general", messageId: "g-7" } },
         { kind: "todo", title: "Mock the QR code on the handoff screen" },
@@ -279,7 +298,7 @@ function alaeMind(): Mind {
     {
       id: "c-trip", name: "Trip ideas", emoji: "✈️", tone: "#5B8A6B", chatIds: [],
       items: [
-        { kind: "note", title: "Packing, every time", body: "Adapter, rail card, a book for the train." },
+        checklist("Packing, every time", ["[x] Adapter", "Rail card", "A book for the train", "Headphones"]),
         ...tagged("vienna-weekend", [
           { kind: "date", title: "Train to Vienna", at: Date.now() + 18 * DAY },
           { kind: "link", title: "Café Sperl", source: "cafesperl.at", url: "https://cafesperl.at" },

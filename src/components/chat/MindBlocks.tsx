@@ -13,8 +13,9 @@ import { INKS, outcome, pathOf } from "./Artifacts";
 import Avatar from "./Avatar";
 import { fileSize, Photo } from "./Media";
 import FileTypeIcon from "./FileTypeIcon";
-import { IconCheck, IconDownload, IconPlay } from "./Icons";
+import { IconBell, IconCheck, IconDownload, IconPlay } from "./Icons";
 import { useMediaUrl } from "@/lib/chat/media";
+import { useNow } from "./ui";
 import styles from "./chat.module.css";
 
 /**
@@ -35,7 +36,7 @@ export function toneFor(s: string) {
 }
 
 export const KIND_LABEL: Record<Block["kind"], string> = {
-  note: "Note", link: "Link", video: "Video", book: "Book", quote: "Quote", flashcard: "Flashcard", todo: "To-do",
+  note: "Note", link: "Link", video: "Video", book: "Book", quote: "Quote", flashcard: "Flashcard", todo: "To-do", reminder: "Reminder",
   progress: "Progress", image: "Image", palette: "Palette", file: "File", amount: "Amount", date: "Date", habit: "Habit", chat: "From a chat",
 };
 
@@ -47,10 +48,30 @@ export function relDay(ts: number) {
   return days > 0 ? `in ${days} days` : `${-days} days ago`;
 }
 
+const HOUR = 3_600_000;
+
+/**
+ * When a reminder is, said the way a phone says it: "Tomorrow · 9:00" and
+ * "in 15 hours"; `state` is how close it is (past, within two hours, later).
+ */
+export function whenOf(at: number, now = Date.now()) {
+  const diff = at - now;
+  const abs = Math.abs(diff);
+  const d = new Date(at);
+  const days = daysUntil(at);
+  const day = days === 0 ? "Today" : days === 1 ? "Tomorrow" : days === -1 ? "Yesterday"
+    : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  const clock = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const span = abs < 60_000 ? "" : abs < HOUR ? `${Math.round(abs / 60_000)} min` : abs < 36 * HOUR ? `${Math.round(abs / HOUR)} h` : "";
+  const rel = abs < 60_000 ? "now" : span ? (diff > 0 ? `in ${span}` : `${span} ago`) : "";
+  return { label: `${day} · ${clock}`, rel, state: diff < 0 ? "late" as const : diff < 2 * HOUR ? "soon" as const : "later" as const };
+}
+
 export function BlockView({ block, shape, onToggle, autoPlay }: {
   block: Block;
   shape: BlockShape;
-  onToggle?: () => void;
+  /** Tick a to-do (or one step of its checklist), mark a reminder done, count one more on progress, mark a habit today. */
+  onToggle?: (stepId?: string) => void;
   /** Videos, in detail: start playing straight away (it was tapped to be watched). */
   autoPlay?: boolean;
 }) {
@@ -74,7 +95,8 @@ export function BlockView({ block, shape, onToggle, autoPlay }: {
       </figure>
     );
     case "flashcard": return <FlashcardBlock block={block} shape={shape} cls={cls} />;
-    case "todo": return (
+    case "todo": if (block.checklist?.length) return <ChecklistBlock block={block} shape={shape} cls={cls} onToggle={onToggle} />;
+      return (
       <div className={`${cls} ${block.done ? styles.mbDone : ""}`}>
         <button
           className={`${styles.mbCheck} ${block.done ? styles.mbCheckOn : ""}`}
@@ -87,23 +109,35 @@ export function BlockView({ block, shape, onToggle, autoPlay }: {
         <span className={styles.mbText}><b>{block.title}</b>{block.tags.length > 0 && shape !== "row" && <small>{block.tags.map((t) => `#${t}`).join(" ")}</small>}</span>
       </div>
     );
+    case "reminder": return <ReminderBlock block={block} cls={cls} onToggle={onToggle} />;
     case "progress": {
-      const pct = Math.round(((block.value ?? 0) / Math.max(1, block.total ?? 1)) * 100);
+      // A goal and how far along it is: "7 / 22 chapters", how many to go, and +1 right on the card.
+      const total = Math.max(1, block.total ?? 1);
+      const value = Math.min(total, Math.max(0, block.value ?? 0));
+      const pct = Math.round((value / total) * 100);
+      const unit = block.unit?.trim();
+      const reached = value >= total;
       return (
-        <div className={cls}>
-          <span className={styles.mbText}><b>{block.title}</b><small>{block.source}</small></span>
+        <div className={`${cls} ${reached ? styles.mbReached : ""}`}>
+          <span className={styles.mbProgHead}><b>{block.title}</b><em>{pct}%</em></span>
           <span className={styles.mbBar}><i style={{ width: `${pct}%` }} /></span>
-          <span className={styles.mbProgressFoot}><b>{block.value}</b> of {block.total} · {pct}%</span>
+          <span className={styles.mbProgressFoot}>
+            <span><b>{value}</b> / {total}{unit ? ` ${unit}` : ""}</span>
+            <span className={styles.mbProgLeft}>{reached ? <><IconCheck size={11} /> Goal reached</> : `${total - value} to go`}</span>
+            {shape !== "detail" && !reached && onToggle && (
+              <button className={styles.mbPlusOne} onClick={(e) => { e.stopPropagation(); onToggle(); }} onPointerDown={(e) => e.stopPropagation()} aria-label={`One more${unit ? ` of ${unit}` : ""}`}>+1</button>
+            )}
+          </span>
         </div>
       );
     }
+    // A picture is the whole card, like a pin: no title or caption on it. Tapping it opens its tags and the rest.
     case "image": return (
       <figure className={cls}>
         {block.attachment ? <Photo a={block.attachment} /> : (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={block.image} alt={block.title} draggable={false} loading="lazy" />
+          <img src={block.image} alt={block.title || "Image"} draggable={false} loading="lazy" />
         )}
-        {shape !== "tile" ? <figcaption><b>{block.title}</b><small>{block.source}</small></figcaption> : <figcaption>{block.title}</figcaption>}
       </figure>
     );
     case "palette": return (
@@ -170,6 +204,69 @@ export function BlockView({ block, shape, onToggle, autoPlay }: {
       </div>
     );
   }
+}
+
+/**
+ * A to-do with steps: its name, how many are done, and the steps themselves,
+ * each ticked off right on the card. The sheet shows (and edits) all of them.
+ */
+function ChecklistBlock({ block, shape, cls, onToggle }: { block: Block; shape: BlockShape; cls: string; onToggle?: (stepId?: string) => void }) {
+  const steps = block.checklist ?? [];
+  const done = steps.filter((s) => s.done).length;
+  const max = shape === "detail" ? steps.length : shape === "row" ? 3 : 5;
+  const shown = steps.slice(0, max);
+  return (
+    <div className={`${cls} ${styles.mbList} ${block.done ? styles.mbListDone : ""}`}>
+      <span className={styles.mbListHead}>
+        <b>{block.title}</b>
+        <em>{block.done ? <IconCheck size={11} /> : null}{done}/{steps.length}</em>
+      </span>
+      <span className={styles.mbBar}><i style={{ width: `${(done / Math.max(1, steps.length)) * 100}%` }} /></span>
+      <ul className={styles.mbSteps}>
+        {shown.map((s) => (
+          <li key={s.id} className={s.done ? styles.mbStepDone : undefined}>
+            <button
+              className={`${styles.mbCheck} ${styles.mbCheckSm} ${s.done ? styles.mbCheckOn : ""}`}
+              onClick={(e) => { e.stopPropagation(); onToggle?.(s.id); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              aria-label={s.done ? `${s.text}: mark as not done` : `${s.text}: mark as done`}
+              aria-pressed={s.done}
+            >
+              {s.done && <IconCheck size={10} />}
+            </button>
+            <span>{s.text}</span>
+          </li>
+        ))}
+      </ul>
+      {steps.length > shown.length && <small className={styles.mbMore}>+{steps.length - shown.length} more</small>}
+    </div>
+  );
+}
+
+/** A reminder: what, and when (orange when it's close, red once it's past), ticked off once it's dealt with. */
+function ReminderBlock({ block, cls, onToggle }: { block: Block; cls: string; onToggle?: (stepId?: string) => void }) {
+  const now = useNow(30_000);
+  const w = whenOf(block.at ?? now, now);
+  const state = block.done ? "done" : w.state;
+  return (
+    <div className={`${cls} ${block.done ? styles.mbDone : ""}`}>
+      <button
+        className={`${styles.mbCheck} ${block.done ? styles.mbCheckOn : ""}`}
+        onClick={(e) => { e.stopPropagation(); onToggle?.(); }}
+        onPointerDown={(e) => e.stopPropagation()}
+        aria-label={block.done ? "Mark as not done" : "Mark as done"}
+        aria-pressed={!!block.done}
+      >
+        {block.done && <IconCheck size={12} />}
+      </button>
+      <span className={styles.mbText}>
+        <b>{block.title}</b>
+        <small className={`${styles.mbWhen} ${styles[`mbWhen_${state}`]}`}>
+          <IconBell size={11} /> {w.label}{w.rel && !block.done ? ` · ${w.rel}` : ""}
+        </small>
+      </span>
+    </div>
+  );
 }
 
 function FileLink({ block }: { block: Block }) {

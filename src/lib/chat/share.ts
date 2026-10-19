@@ -2,6 +2,7 @@ import {
   isUnassigned, makeCollection, mindOf, newId, place, updateMind,
   type Block, type Collection, type Mind, type ShareRole, type Sharing,
 } from "./mind";
+import { land } from "./landing";
 import type { Card } from "./types";
 
 /**
@@ -183,6 +184,7 @@ export function cloneCollection(ref: ShareRef, to: string): Collection | null {
     items: keep(src.items), view: src.view,
     from: { id: `share:${shareToken(ref)}`, by: ref.owner },
   };
+  land(...col.items);
   updateMind(to, (m) => ({ ...m, blocks: { ...m.blocks, ...blocks }, collections: [...m.collections, col] }));
   return col;
 }
@@ -193,6 +195,7 @@ export function copyItem(ref: ShareRef, to: string, collectionId: string) {
   // A save from a chat stays behind, as it does when a whole collection is copied.
   if (!s?.block || s.block.kind === "chat") return null;
   const copy = copyOf(s.block);
+  land(copy.id);
   updateMind(to, (m) => place({ ...m, blocks: { ...m.blocks, [copy.id]: copy } }, copy.id, { collectionId }));
   return copy.id;
 }

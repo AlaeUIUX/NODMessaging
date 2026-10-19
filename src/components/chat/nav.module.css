@@ -1,0 +1,41 @@
+/* ==========================================================================
+   Dots on the tab bar: red on Chats when something's unread (the dot every
+   messenger uses), the accent on Mind while things wait to be sorted. A dot
+   pops in when it appears; a tab gets a small nudge when something just went
+   its way.
+   ========================================================================== */
+
+.icon { position: relative; }
+
+.dot {
+  position: absolute;
+  top: -2px;
+  right: -6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--surface);
+  animation: dotIn 420ms var(--ease-spring) both;
+}
+.unread { background: var(--danger); }
+.sort { background: var(--accent); }
+@keyframes dotIn { from { transform: scale(0); } }
+
+.ping { animation: ping 560ms 120ms var(--ease-spring); }
+.ping .dot { animation: dotPing 900ms 200ms var(--ease-out); }
+@keyframes ping {
+  0% { transform: none; }
+  35% { transform: scale(1.22) rotate(-8deg); }
+  100% { transform: none; }
+}
+@keyframes dotPing {
+  0% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent); }
+  100% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 9px transparent; }
+}
+
+/* For screen readers: the dot, in words. */
+.hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dot, .ping, .ping .dot { animation: none; }
+}

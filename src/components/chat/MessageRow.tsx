@@ -11,6 +11,7 @@ import { FileRow, MediaBlock } from "./Media";
 import { reducedMotion, useChatUi } from "./ui";
 import { Emoji, emojiCount, emojify } from "@/lib/chat/emoji";
 import { IconChevron, IconPause, IconPlay, IconReply } from "./Icons";
+import { LandingGlow, RECEIVE } from "./Landing";
 import styles from "./chat.module.css";
 
 export type BubblePos = "single" | "first" | "middle" | "last";
@@ -161,6 +162,8 @@ interface Props {
   isGroup: boolean;
   isNew: boolean;
   highlighted: boolean;
+  /** Just saved to Mind: the bubble catches the light for a moment. */
+  saved?: boolean;
   focused: boolean;
   meId: string;
   onReply: (message: Message) => void;
@@ -180,7 +183,7 @@ type Mode = "idle" | "pending" | "swipe" | "menu";
  * re-parses its markdown).
  */
 export default memo(function MessageRow({
-  message, quoted, isMine, pos, showAvatar, avatarSlot, showByline, showStatus, isGroup, isNew, highlighted, focused,
+  message, quoted, isMine, pos, showAvatar, avatarSlot, showByline, showStatus, isGroup, isNew, highlighted, saved, focused,
   meId, onReply, onMenu, onToggleReaction, onShowReactions, onShowReceipts, onRetry, onJumpTo,
 }: Props) {
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -406,6 +409,7 @@ export default memo(function MessageRow({
           </span>
           <div
             ref={bubbleRef}
+            data-bubble
             tabIndex={deleted ? -1 : 0}
             role="group"
             aria-label={`${author.name}: ${deleted ? "deleted" : stripFormatting(message.body) || "voice message"}`}
@@ -414,6 +418,7 @@ export default memo(function MessageRow({
               pressing ? styles.pressing : "",
               message.status === "pending" ? styles.pending : "",
               highlighted ? styles.flash : "",
+              saved ? RECEIVE : "",
               focused ? styles.hiddenForOverlay : "",
               vanishing ? styles.vanishing : "",
             ].filter(Boolean).join(" ")}
@@ -447,6 +452,7 @@ export default memo(function MessageRow({
           >
             <BubbleBody message={vanishing ?? message} />
             {burst > 0 && <span key={burst} className={styles.heartBurst}><Emoji char="❤️" /></span>}
+            {saved && <LandingGlow round="card" />}
             {tail && <span className={styles.tail} aria-hidden="true" />}
           </div>
 

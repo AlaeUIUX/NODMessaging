@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getForceFailure, setForceFailure } from "@/lib/chat/api";
 import { getPrefs, resetDemoData, THEME_EVENT, useAccounts, type ThemePref } from "@/lib/chat/account";
+import { mindOf } from "@/lib/chat/mind";
 import { effectiveRule, isQuiet, readMutes } from "@/lib/chat/mutes";
 import { parseShareToken, shareToken, type ShareRef } from "@/lib/chat/share";
 import { USERS } from "@/lib/chat/seed";
@@ -124,8 +125,9 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
 interface Banner { id: number; chatId: string; title: string; body: string }
 
 /**
- * Fires reminders when they come due, in whichever chat they live, and raises
- * a system-style banner — but only if notifications were allowed.
+ * Fires reminders when they come due, in whichever chat they live (and the
+ * ones kept in your Mind), and raises a system-style banner — but only if
+ * notifications were allowed.
  */
 function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
   const { state, me, updateCard } = useChat();
@@ -143,13 +145,20 @@ function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
       const seen = (announced.current ??= new Set());
       const prefs = getPrefs(me);
       // `started`: already under way when this tab opened, so it was due before we could say so.
-      const notify = (key: string, chat: Chat, title: string, body: string, started: boolean) => {
+      const notify = (key: string, chat: Chat | null, title: string, body: string, started: boolean) => {
         if (seen.has(key)) return;
         seen.add(key);
         if (first && started) return;
         // Muted chats are left out by onBanner (showBanner), from the same rules the inbox uses.
-        if (getPermission("notifications") === "granted") onBanner({ id: Date.now(), chatId: chat.id, title, body: prefs.previews ? body : "Tap to open the chat" });
+        if (getPermission("notifications") === "granted") onBanner({ id: Date.now(), chatId: chat?.id ?? "", title, body: prefs.previews ? body : chat ? "Tap to open the chat" : "Open Mind to see it" });
       };
+      // Reminders kept in Mind: once, when they come due, unless they were ticked off first.
+      if (prefs.notifyReminders) {
+        for (const b of Object.values(mindOf(me).blocks)) {
+          if (b.kind !== "reminder" || b.done || !b.at || b.at > now) continue;
+          notify(`mind:${b.id}:${b.at}`, null, "Reminder", b.title, true);
+        }
+      }
       for (const chat of latest.current.chats) {
         if (!chat.memberIds.includes(me)) continue;
         for (const m of latest.current.messages[chat.id] ?? []) {

@@ -1,0 +1,97 @@
+/* ==========================================================================
+   Landing: something just arrived in Mind. It settles in with a slight
+   tilt, a glint of light passes over it, a soft ring breathes out and a few
+   sparkles drift off its corner. About three quarters of a second, once.
+   Colours follow --tone (the collection's) and fall back to the accent.
+   ========================================================================== */
+
+/* Fill only backwards: once it has settled, its own :active press works again. */
+.land { animation: land 760ms 90ms var(--ease-spring) backwards; transform-origin: 50% 100%; }
+/* Scrolled to when it lands out of sight: clear of the floating header and the compose bar. */
+.land { scroll-margin: 110px 0 120px; }
+@keyframes land {
+  0% { opacity: 0; transform: perspective(700px) translateY(-16px) rotateX(22deg) scale(.94); }
+  55% { opacity: 1; transform: perspective(700px) translateY(2px) rotateX(-4deg) scale(1.012); }
+  100% { opacity: 1; transform: none; }
+}
+
+/* A container taking something in: a bump, not a drop. */
+.receive { animation: receive 620ms 120ms var(--ease-spring) backwards; }
+@keyframes receive {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.045) rotate(-.6deg); }
+  100% { transform: none; }
+}
+
+.glow {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: var(--r-md);
+  pointer-events: none;
+  animation: ring 1100ms 160ms var(--ease-out) both;
+}
+.glowBubble { border-radius: var(--r-lg); }
+/* Follows whatever it sits in: a folder with its tab corner, the tray. */
+.glowCard { border-radius: inherit; }
+@keyframes ring {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone, var(--accent)) 38%, transparent), inset 0 0 0 1.5px color-mix(in srgb, var(--tone, var(--accent)) 55%, transparent); }
+  100% { box-shadow: 0 0 0 12px transparent, inset 0 0 0 1.5px transparent; }
+}
+
+/* A strip of light that crosses once, like a glass card catching the sun. */
+.sheen { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; }
+.sheen::after {
+  content: "";
+  position: absolute;
+  top: -30%;
+  bottom: -30%;
+  left: -70%;
+  width: 55%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .42) 42%, rgba(255, 255, 255, .78) 50%, rgba(255, 255, 255, .42) 58%, transparent);
+  transform: skewX(-14deg);
+  animation: sheen 900ms 300ms var(--ease-out) both;
+}
+@keyframes sheen { from { left: -70%; opacity: 1; } to { left: 135%; opacity: .6; } }
+
+.spark {
+  position: absolute;
+  fill: var(--tone, var(--accent));
+  opacity: 0;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--tone, var(--accent)) 55%, transparent));
+  animation: spark 820ms var(--d) var(--ease-out) both;
+}
+.spark:nth-of-type(2n) { fill: color-mix(in srgb, var(--tone, var(--accent)) 55%, #fff); }
+@keyframes spark {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0) rotate(0deg); }
+  35% { opacity: 1; transform: translate(calc(-50% + var(--dx) * .5), calc(-50% + var(--dy) * .5)) scale(1) rotate(40deg); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(.35) rotate(90deg); }
+}
+
+/* The puff left behind when something vanishes for good. */
+.poof { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.poof .spark { fill: var(--accent); }
+.poof .spark:nth-of-type(3n) { fill: color-mix(in srgb, var(--accent) 50%, #fff); }
+
+/* Mind's mark on a toast: where a saved message flies to, and bumps when it lands. */
+.mindMark {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  margin-left: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-xs);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.mindMark i { width: 14px; height: 14px; background: currentColor; -webkit-mask: var(--src) center / contain no-repeat; mask: var(--src) center / contain no-repeat; }
+
+/* Mind's own suggestions wear one, still. */
+.sparkle { flex-shrink: 0; fill: var(--tone, var(--accent)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .land, .receive { animation: none; }
+  .glow, .poof { display: none; }
+}

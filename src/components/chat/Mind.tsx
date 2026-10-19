@@ -6,32 +6,36 @@ import { initials, TONES } from "@/lib/chat/avatar";
 import { Emoji, emojify, firstEmoji } from "@/lib/chat/emoji";
 import { findUrl, hostOf, normalizeUrl, parseVideo, splitUrl, videoProvider, videoThumb, watchUrl } from "@/lib/chat/links";
 import { findBooks, sameTitle, unfurl, type BookHit, type LinkMeta } from "@/lib/chat/lookup";
+import { isLanding, land } from "@/lib/chat/landing";
 import { toAttachment } from "@/lib/chat/media";
 import {
   amendBlock, collectionItems, commitDraft, commitShareDraft, draftOf, dropDraft, intoUnassigned, isUnassigned, learnChat, locate, makeCollection, newId, nowMs,
-  patchBlock, patchCollection, place, projectCollection, removeBlock, tagsOf, todayKey, UNASSIGNED, useMind,
-  type Block, type BlockKind, type Collection, type Mind, type MindView, type TaskStatus,
+  patchBlock, patchCollection, place, projectCollection, removeBlock, tagOf, tagsOf, todayKey, UNASSIGNED, useMind,
+  type Block, type BlockKind, type Collection, type Mind, type MindView, type Step, type TaskStatus,
 } from "@/lib/chat/mind";
 import { paletteName, randomPalette, swatchesOf, type Swatch } from "@/lib/chat/palette";
 import { accessOf, audienceLabel, lookUp, NO_SHARING, type ShareRef } from "@/lib/chat/share";
 import { useChat, userById } from "@/lib/chat/store";
+import { bestSort } from "@/lib/chat/suggest";
 import type { Chat } from "@/lib/chat/types";
 import Avatar from "./Avatar";
-import { BlockView, KIND_LABEL } from "./MindBlocks";
+import { BlockView, KIND_LABEL, whenOf } from "./MindBlocks";
 import { DateField } from "./DatePicker";
+import { LAND, LandingGlow, Poof, RECEIVE, Sparkle } from "./Landing";
 import { BookSearch, FilePicker, PasteButton, PasteField, PhotoPicker, VideoPreview } from "./MindFields";
 import { ActionMenu, FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, ScopeSearch, ScopeTools, type MindFilter } from "./MindFilter";
 import PaletteEditor from "./PaletteEditor";
 import { SendSheet, ShareSheet } from "./Share";
 import {
-  IconArrowRight, IconArrowUp, IconBack, IconCheck, IconChevron, IconClose, IconEdit, IconGrid,
+  IconArrowRight, IconArrowUp, IconBack, IconBell, IconCheck, IconChevron, IconClose, IconEdit, IconGrid,
   IconFolder, IconGlobe, IconInbox, IconLink, IconListView, IconMessage, IconOpen, IconPalette, IconPlus, IconShare, IconShelf, IconSmile, IconTrash, IconUserGroup, IconVideo,
 } from "./Icons";
 import { HoldMenu, useHold, type HoldAction, type HoldBind, type HoldSrc } from "./MindHold";
 import Logo from "./Logo";
-import { getPermission, PermissionAlert, Segmented, setPermission, Sheet, Toggle } from "./ui";
+import { getPermission, PermissionAlert, Segmented, setPermission, Sheet, smooth, Toggle } from "./ui";
 import styles from "./chat.module.css";
 import fieldStyles from "./mindfields.module.css";
+import tray from "./tray.module.css";
 
 /**
  * Mind: collections, each holding everything on one level, built one + (or one
@@ -81,6 +85,7 @@ const KINDS: { kind: BlockKind; label: string; emoji: string; group: "Capture" |
   { kind: "video", label: "Video", emoji: "🎬", group: "Capture" },
   { kind: "palette", label: "Palette", emoji: "🎨", group: "Capture" },
   { kind: "todo", label: "To-do", emoji: "✅", group: "Track" },
+  { kind: "reminder", label: "Reminder", emoji: "🔔", group: "Track" },
   { kind: "progress", label: "Progress", emoji: "📈", group: "Track" },
   { kind: "habit", label: "Habit", emoji: "🔁", group: "Track" },
   { kind: "amount", label: "Amount", emoji: "💶", group: "Track" },
@@ -166,6 +171,8 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
   };
 
   const itemCount = Object.keys(mind.blocks).length;
+  // Unassigned is a queue, not a collection: it isn't counted as one.
+  const kept = mind.collections.filter((c) => !isUnassigned(c)).length;
   const q = query.trim().toLowerCase();
 
   return (
@@ -179,7 +186,7 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
             </button>
             <div className={styles.profileText}>
               <b>{me === "me" ? "Your Mind" : `${meUser.name}'s Mind`}</b>
-              <span>{mind.collections.length ? `${mind.collections.length} collection${mind.collections.length === 1 ? "" : "s"} · ${itemCount} items` : "Empty for now"}</span>
+              <span>{mind.collections.length ? `${kept} collection${kept === 1 ? "" : "s"} · ${itemCount} items` : "Empty for now"}</span>
             </div>
           </div>
           <button className={styles.plusBtn} aria-label="Add something" onClick={() => setSheet(<MindAddSheet ctx={ctx} collectionId={UNASSIGNED} />)}>
@@ -336,7 +343,8 @@ export function MindEditor({ source, title, note = "Editing for everyone", share
 
 function FolderGrid({ ctx }: { ctx: Ctx }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const cols = ctx.mind.collections;
+  // Unassigned isn't one of them: it waits in the tray above until it's sorted away.
+  const cols = ctx.mind.collections.filter((c) => !isUnassigned(c));
   // Hold a collection for its menu; hold and move to put it somewhere else in the grid.
   const hold = useHold<Drop>({
     root: rootRef,
@@ -374,6 +382,7 @@ function FolderGrid({ ctx }: { ctx: Ctx }) {
   });
   return (
     <div className={styles.mindStack} ref={rootRef} style={{ position: "relative" }} {...hold.rootHandlers}>
+      <TraySlot ctx={ctx} />
       <div className={styles.mindSectionBar}>
         <p className={styles.sheetLabel}>Collections</p>
         <span className={styles.mindBarEnd}>
@@ -400,12 +409,108 @@ function FolderGrid({ ctx }: { ctx: Ctx }) {
   );
 }
 
+/**
+ * Where the tray sits, above the collections. Once everything in it has a
+ * place it doesn't blink out: it fades, softens and shrinks away in a small
+ * puff of sparkles, and the collections below close the gap.
+ */
+function TraySlot({ ctx }: { ctx: Ctx }) {
+  const waiting = ctx.mind.collections.find(isUnassigned);
+  const live = waiting?.items.length ? waiting : null;
+  // The tray as last shown, kept on screen while it vanishes.
+  const [shown, setShown] = useState<Collection | null>(live);
+  if (live && live !== shown) setShown(live);
+  const col = live ?? shown;
+  if (!col) return null;
+  const leaving = !live;
+  return (
+    <div
+      className={`${tray.slot} ${leaving ? tray.leaving : ""}`}
+      onAnimationEnd={(e) => { if (leaving && e.target === e.currentTarget) setShown(null); }}
+    >
+      <div className={tray.clip} inert={leaving}>
+        <SortTray ctx={ctx} col={col} leaving={leaving} />
+      </div>
+      {leaving && <Poof />}
+    </div>
+  );
+}
+
+/**
+ * Unassigned, as what it is: not a collection but a pile waiting to be put
+ * away. It sits above the collections as an inbox (a little fan of what's in
+ * it, how many, and Sort), and goes away once everything has a place. When
+ * some of it clearly belongs somewhere, one tap puts it there.
+ */
+function SortTray({ ctx, col, leaving }: { ctx: Ctx; col: Collection; leaving?: boolean }) {
+  const items = collectionItems(ctx.mind, col);
+  if (!items.length) return null;
+  const n = items.length;
+  const fan = [...items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3);
+  const arriving = !leaving && items.some((b) => isLanding(b.id));
+  const sort = () => ctx.openSheet(<SortSheet ctx={ctx} />);
+  // The obvious ones: the collection the most of what's waiting fits, one tap away.
+  const guess = leaving ? null : bestSort(ctx.mind, items);
+  const take = () => {
+    if (!guess) return;
+    const to = guess.collection;
+    const ids = guess.items.map((b) => b.id);
+    land(...ids);
+    ctx.update((m) => ids.reduce((acc, id) => {
+      const ref = acc.blocks[id]?.ref;
+      const next = place(acc, id, { collectionId: to.id });
+      return ref ? learnChat(next, to.id, ref.chatId) : next;
+    }, m));
+    ctx.flash(`Sorted ${ids.length === 1 ? "" : `${ids.length} `}into ${to.emoji} ${to.name}`);
+  };
+  return (
+    <section className={`${tray.tray} ${arriving ? RECEIVE : ""}`} aria-label={`${n} to sort`}>
+      <button className={tray.open} onClick={() => ctx.openFolder(col.id)} aria-label={`See the ${n} in Unassigned`}>
+        <span className={tray.fan} aria-hidden="true">
+          {fan.map((b, i) => (
+            <span key={b.id} className={`${tray.card} ${!leaving && isLanding(b.id) ? LAND : ""}`} style={{ ["--n" as string]: i }}>
+              {peekImage(b)
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={peekImage(b)} alt="" />
+                : <Emoji char={KIND_EMOJI[b.kind] ?? "💬"} />}
+            </span>
+          ))}
+          <b className={tray.count}>{n}</b>
+        </span>
+        <span className={tray.text}>
+          <b>{n} {n === 1 ? "thing" : "things"} to sort</b>
+          <small>Saved without a collection. Give {n === 1 ? "it" : "each"} a place and this goes away.</small>
+        </span>
+      </button>
+      <button className={tray.sort} onClick={sort}>Sort</button>
+      {guess && (
+        <button
+          key={`${guess.collection.id}:${guess.items.map((b) => b.id).join()}`}
+          className={tray.guess}
+          style={{ ["--tone" as string]: guess.collection.tone }}
+          onClick={take}
+        >
+          <Sparkle size={13} />
+          <span>
+            {guess.items.length === 1 ? <>“{guess.items[0].title || KIND_LABEL[guess.items[0].kind]}” fits</> : <>{guess.items.length} of these fit</>}
+            {" "}<b><Emoji char={guess.collection.emoji} /> {guess.collection.name}</b>
+          </span>
+          <em>{guess.items.length === 1 ? "Move" : `Move ${guess.items.length}`}</em>
+        </button>
+      )}
+      {arriving && <LandingGlow round="card" />}
+    </section>
+  );
+}
+
 /** A collection as a row: the same little folder, its name, what's in it. */
 function FolderRow({ ctx, col, i, hold, before, lifted, q }: { ctx: Ctx; col: Collection; i: number; hold?: HoldBind; before?: boolean; lifted?: boolean; q?: string }) {
   const items = collectionItems(ctx.mind, col);
+  // Something just went in: the row takes it with a bump and a glint.
+  const arriving = items.some((b) => isLanding(b.id));
   return (
     <button
-      className={[styles.folderRow, styles.rowEnter, before ? styles.mindDropAbove : "", lifted ? styles.mindDragSource : ""].filter(Boolean).join(" ")}
+      className={[styles.folderRow, arriving ? RECEIVE : styles.rowEnter, before ? styles.mindDropAbove : "", lifted ? styles.mindDragSource : ""].filter(Boolean).join(" ")}
       style={{ ["--tone" as string]: col.tone, ["--i" as string]: i }}
       {...hold}
       onClick={() => ctx.openFolder(col.id)}
@@ -420,6 +525,7 @@ function FolderRow({ ctx, col, i, hold, before, lifted, q }: { ctx: Ctx; col: Co
         {col.published && <span className={styles.folderPub} title="On Explore"><IconGlobe size={12} /></span>}
         <IconChevron size={14} />
       </span>
+      {arriving && <LandingGlow />}
     </button>
   );
 }
@@ -427,9 +533,11 @@ function FolderRow({ ctx, col, i, hold, before, lifted, q }: { ctx: Ctx; col: Co
 function FolderCard({ ctx, col, i, hold, before, lifted }: { ctx: Ctx; col: Collection; i: number; hold?: HoldBind; before?: boolean; lifted?: boolean }) {
   const items = collectionItems(ctx.mind, col);
   const peek = [...items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3);
+  // Something just went in: the folder takes it with a bump, and its peek of it drops into place.
+  const arriving = items.some((b) => isLanding(b.id));
   return (
     <button
-      className={[styles.folderCard, styles.rowEnter, before ? styles.mindStackBeforeX : "", lifted ? styles.mindDragSource : ""].filter(Boolean).join(" ")}
+      className={[styles.folderCard, arriving ? RECEIVE : styles.rowEnter, before ? styles.mindStackBeforeX : "", lifted ? styles.mindDragSource : ""].filter(Boolean).join(" ")}
       style={{ ["--tone" as string]: col.tone, ["--i" as string]: i }}
       data-axis="x"
       {...hold}
@@ -449,9 +557,10 @@ function FolderCard({ ctx, col, i, hold, before, lifted }: { ctx: Ctx; col: Coll
       <span className={styles.folderPeek} aria-hidden="true">
         {peek.map((b) => (peekImage(b)
           // eslint-disable-next-line @next/next/no-img-element
-          ? <img key={b.id} src={peekImage(b)} alt="" />
-          : <span key={b.id}><Emoji char={KIND_EMOJI[b.kind] ?? "💬"} /></span>))}
+          ? <img key={b.id} className={isLanding(b.id) ? LAND : undefined} src={peekImage(b)} alt="" />
+          : <span key={b.id} className={isLanding(b.id) ? LAND : undefined}><Emoji char={KIND_EMOJI[b.kind] ?? "💬"} /></span>))}
       </span>
+      {arriving && <LandingGlow round="card" />}
     </button>
   );
 }
@@ -535,6 +644,7 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
       b.title = rest || (video ? videoProvider(video) : host) || text;
       standIn = !rest;
     }
+    land(id);
     ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: b } }, id, { collectionId: col.id }));
     if (b.url) enrich(ctx.store, id, b, standIn);
     setDraft("");
@@ -564,27 +674,38 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
   });
   const target = hold.target;
 
+  // Something just landed out of sight (the end of a long collection): bring it into view so it's seen arriving.
+  useEffect(() => {
+    scrollRef.current?.querySelector("[data-landing]")?.scrollIntoView({ block: "nearest", behavior: smooth() });
+  }, [all.length]);
+
   const axis = view === "list" ? "y" : "x";
-  const item = (b: Block, body: React.ReactNode) => (
+  const item = (b: Block, body: React.ReactNode) => {
+    const landing = isLanding(b.id);
+    return (
     <div
       key={b.id}
       data-root-item={b.id}
       data-axis={axis}
+      data-landing={landing || undefined}
       className={[
         styles.mindBlockWrap,
+        landing ? LAND : "",
         hold.isDragging("item", b.id) ? styles.mindDragSource : "",
         target?.t === "rootBefore" && target.before === b.id ? (axis === "x" ? styles.mindDropLeft : styles.mindDropAbove) : "",
       ].filter(Boolean).join(" ")}
       {...hold.bind({ kind: "item", id: b.id })}
     >
       {body}
+      {landing && <LandingGlow />}
     </div>
-  );
-  const tile = (b: Block) => item(b, <Tile onOpen={() => open(b)}><BlockView block={b} shape="tile" onToggle={() => toggleItem(ctx.update, b)} /></Tile>);
+    );
+  };
+  const tile = (b: Block) => item(b, <Tile onOpen={() => open(b)}><BlockView block={b} shape="tile" onToggle={(step) => toggleItem(ctx.update, b, step)} /></Tile>);
   const row = (b: Block) => item(b, (
     <SwipeItem actions={itemActions(ctx, b)}>
       <Tile onOpen={() => open(b)}>
-        <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
+        <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={(step) => toggleItem(ctx.update, b, step)} />
       </Tile>
     </SwipeItem>
   ));
@@ -603,9 +724,10 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
       </div>
 
       {unsorted && all.length > 0 && (
-        <div className={styles.mindSortHint}>
-          <p><b>Waiting for a collection.</b> What you save without picking one lands here. Sort gives each a place.</p>
-          <button className={styles.mindSort} onClick={sort}>Sort {all.length}</button>
+        <div className={tray.banner}>
+          <span className={tray.bannerIcon}><IconInbox size={18} /></span>
+          <p><b>Waiting for a place</b>Saved without a collection. Once each has one, Unassigned goes away.</p>
+          <button className={tray.sort} onClick={sort}>Sort {all.length}</button>
         </div>
       )}
 
@@ -786,7 +908,7 @@ function SearchResults({ ctx, q, within, keep }: {
                     <span className={styles.searchKind}>{KIND_LABEL[b.kind]}</span>
                   </span>
                   <Tile onOpen={() => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />)}>
-                    <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={() => toggleItem(ctx.update, b)} />
+                    <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} onToggle={(step) => toggleItem(ctx.update, b, step)} />
                   </Tile>
                 </div>
               );
@@ -817,10 +939,34 @@ function Tile({ onOpen, children }: { onOpen: () => void; children: React.ReactN
   );
 }
 
-export function toggleItem(update: Ctx["update"], b: Block) {
-  if (b.kind === "todo") {
+/**
+ * The one tap an item answers to right on its card: tick a to-do (or one step
+ * of its checklist), mark a reminder done, count one more on progress, mark a
+ * habit for today. Reads the item as it is now, not as the card last saw it.
+ */
+export function toggleItem(update: Ctx["update"], b: Block, stepId?: string) {
+  if (b.kind === "todo" && stepId) {
+    update((m) => {
+      const cur = m.blocks[b.id];
+      if (!cur?.checklist) return m;
+      const checklist = cur.checklist.map((s) => (s.id === stepId ? { ...s, done: !s.done } : s));
+      return patchBlock(m, b.id, { checklist, done: checklist.every((s) => s.done) });
+    });
+  } else if (b.kind === "todo") {
     const done = !b.done;
-    update((m) => patchBlock(m, b.id, { done, status: b.status ? (done ? "done" : "todo") : undefined }));
+    update((m) => patchBlock(m, b.id, {
+      done,
+      status: b.status ? (done ? "done" : "todo") : undefined,
+      // The whole list at once: every step follows.
+      ...(b.checklist ? { checklist: b.checklist.map((s) => ({ ...s, done })) } : {}),
+    }));
+  } else if (b.kind === "reminder") {
+    update((m) => patchBlock(m, b.id, { done: !m.blocks[b.id]?.done }));
+  } else if (b.kind === "progress") {
+    update((m) => {
+      const cur = m.blocks[b.id];
+      return cur ? patchBlock(m, b.id, { value: Math.min(cur.total ?? 1, (cur.value ?? 0) + 1) }) : m;
+    });
   } else if (b.kind === "habit") {
     const today = todayKey();
     const has = b.days?.includes(today);
@@ -1287,7 +1433,7 @@ function openHoldMenu(ctx: Ctx, src: HoldSrc, el: HTMLElement) {
   const where = locate(ctx.mind, b.id);
   show(KIND_LABEL[b.kind] ?? "Item", [
     { id: "open", label: "Open", icon: <IconArrowRight />, run: () => ctx.openSheet(<BlockSheet ctx={ctx} id={b.id} />) },
-    ...(b.kind !== "chat" ? [{ id: "rename", label: "Rename", icon: <IconEdit />, run: rename(KIND_LABEL[b.kind]?.toLowerCase() ?? "item", b.title, (title) => ctx.update((m) => patchBlock(m, b.id, { title }))) }] : []),
+    ...(b.kind !== "chat" && b.kind !== "image" ? [{ id: "rename", label: "Rename", icon: <IconEdit />, run: rename(KIND_LABEL[b.kind]?.toLowerCase() ?? "item", b.title, (title) => ctx.update((m) => patchBlock(m, b.id, { title }))) }] : []),
     {
       id: "move", label: where?.unsorted ? "Sort into…" : "Move to…", icon: <IconFolder />,
       run: () => ctx.openSheet(<MoveSheet me={ctx.store} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} />),
@@ -1401,6 +1547,127 @@ function KindGrid({ onPick, first }: { onPick: (k: BlockKind) => void; first?: B
   );
 }
 
+/** Quick times for a reminder, the way Reminders offers them. */
+function soon(id: "hour" | "evening" | "morning" | "week") {
+  const d = new Date();
+  if (id === "hour") { d.setMinutes(d.getMinutes() + 60, 0, 0); return d.getTime(); }
+  if (id === "evening") {
+    // Tonight at six, or tomorrow's if six has gone.
+    if (d.getHours() >= 17) d.setDate(d.getDate() + 1);
+    d.setHours(18, 0, 0, 0);
+    return d.getTime();
+  }
+  if (id === "morning") { d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d.getTime(); }
+  // Next Monday morning.
+  d.setDate(d.getDate() + (((8 - d.getDay()) % 7) || 7));
+  d.setHours(9, 0, 0, 0);
+  return d.getTime();
+}
+const SOONS = [
+  { id: "hour", label: "In an hour" },
+  { id: "evening", label: new Date().getHours() >= 17 ? "Tomorrow evening" : "This evening" },
+  { id: "morning", label: "Tomorrow morning" },
+  { id: "week", label: "Next week" },
+] as const;
+const hhmm = (t: number) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+/** The same day, at the time typed into a time field ("18:30"). */
+function atTime(t: number, value: string) {
+  const [h, min] = value.split(":").map(Number);
+  const d = new Date(t);
+  if (Number.isFinite(h) && Number.isFinite(min)) d.setHours(h, min, 0, 0);
+  return d.getTime();
+}
+
+/** What progress is counted in: the usual ones to tap, or your own word. */
+const UNITS = ["pages", "chapters", "km", "lessons", "workouts", "€"];
+
+/**
+ * When a reminder goes off: a quick pick (in an hour, this evening, tomorrow
+ * morning, next week), or a day and a time of your own. The line under it says
+ * it back ("Tomorrow · 9:00, in 15 h").
+ */
+function WhenField({ value, onChange }: { value: number; onChange: (t: number) => void }) {
+  const [quick, setQuick] = useState<string | null>(null);
+  const w = whenOf(value);
+  return (
+    <div className={styles.mindWhen}>
+      <div className={styles.chipGrid}>
+        {SOONS.map((s) => (
+          <button key={s.id} type="button" className={`${styles.choice} ${quick === s.id ? styles.choiceOn : ""}`} aria-pressed={quick === s.id} onClick={() => { setQuick(s.id); onChange(soon(s.id)); }}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+      <DateField label="Day" value={value} onChange={(t) => { setQuick(null); onChange(t); }} />
+      <label className={styles.mindField}>
+        <span>Time</span>
+        <input type="time" value={hhmm(value)} onChange={(e) => { setQuick(null); onChange(atTime(value, e.target.value)); }} aria-label="Time" />
+      </label>
+      <p className={`${styles.mindWhenSays} ${styles[`mbWhen_${w.state}`]}`}><IconBell size={13} /> {w.label}{w.rel ? `, ${w.rel}` : ""}</p>
+    </div>
+  );
+}
+
+/**
+ * A to-do's steps, as a list you type straight into: Enter adds the step and
+ * keeps the cursor in the field for the next, the way a checklist in Notes
+ * does. Tick a step, edit it in place, or empty it to take it out.
+ */
+function ChecklistEditor({ steps, onChange, addRef, placeholder = "Add a step" }: {
+  steps: Step[];
+  onChange: (steps: Step[]) => void;
+  /** The "add a step" field, for whoever wants to send the cursor there. */
+  addRef?: React.RefObject<HTMLInputElement | null>;
+  placeholder?: string;
+}) {
+  const [draft, setDraft] = useState("");
+  const own = useRef<HTMLInputElement>(null);
+  const field = addRef ?? own;
+  const add = () => {
+    const text = draft.trim();
+    if (text) onChange([...steps, { id: newId("s"), text, done: false }]);
+    setDraft("");
+  };
+  const change = (id: string, patch: Partial<Step>) => onChange(steps.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  const drop = (id: string) => onChange(steps.filter((s) => s.id !== id));
+  return (
+    <div className={styles.mindSteps}>
+      {steps.map((s, i) => (
+        <div key={s.id} className={`${styles.mindStep} ${s.done ? styles.mindStepDone : ""}`}>
+          <button type="button" className={`${styles.mbCheck} ${s.done ? styles.mbCheckOn : ""}`} onClick={() => change(s.id, { done: !s.done })} aria-label={s.done ? "Mark as not done" : "Mark as done"} aria-pressed={s.done}>
+            {s.done && <IconCheck size={12} />}
+          </button>
+          <input
+            value={s.text}
+            onChange={(e) => change(s.id, { text: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); field.current?.focus(); }
+              if (e.key === "Backspace" && !s.text) { e.preventDefault(); drop(s.id); field.current?.focus(); }
+            }}
+            onBlur={() => { if (!s.text.trim()) drop(s.id); }}
+            enterKeyHint="next"
+            aria-label={`Step ${i + 1}`}
+          />
+          <button type="button" className={styles.mindStepDrop} onClick={() => drop(s.id)} aria-label={`Remove ${s.text || "this step"}`}><IconClose size={12} /></button>
+        </div>
+      ))}
+      <div className={`${styles.mindStep} ${styles.mindStepNew}`}>
+        <span className={styles.mindStepPlus} aria-hidden="true"><IconPlus size={13} /></span>
+        <input
+          ref={field}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+          onBlur={add}
+          placeholder={placeholder}
+          enterKeyHint="next"
+          aria-label="New step"
+        />
+      </div>
+    </div>
+  );
+}
+
 const SAMPLE_IMAGES = ["photo-1586023492125-27b2c045efd7", "photo-1616137466211-f939a420be84", "photo-1519710164239-da123dc03ef4", "photo-1505693416388-ac5ce068fe85"];
 const DAY_MS = 86_400_000;
 /** A week from now, at this hour: where a new date starts. */
@@ -1440,6 +1707,10 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
   const [image, setImage] = useState<string>(SAMPLE_IMAGES[0]);
   const [upload, setUpload] = useState<File | null>(null);
   const [asking, setAsking] = useState<{ host: HTMLElement; answer: (ok: boolean) => void } | null>(null);
+  const [steps, setSteps] = useState<Step[]>([]);
+  const stepRef = useRef<HTMLInputElement>(null);
+  const [remindAt, setRemindAt] = useState(() => soon("hour"));
+  const [unit, setUnit] = useState("pages");
   const where = nameOf(ctx.mind, collectionId);
   const info = KINDS.find((k) => k.kind === kind)!;
 
@@ -1460,9 +1731,9 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
   const photo = isPhoto(upload);
 
   const fields: Partial<Record<BlockKind, [string, string?, string?]>> = {
-    note: ["Title", "Write something…"], todo: ["What needs doing?"],
+    note: ["Title", "Write something…"],
     quote: ["The quote", "Who said it, or what it means"], flashcard: ["Front, e.g. gemütlich", "Back, e.g. cosy"],
-    progress: ["What are you tracking?", "Done so far", "Out of"], habit: ["A habit, e.g. Review for 10 minutes"],
+    habit: ["A habit, e.g. Review for 10 minutes"],
     amount: ["What for? e.g. Invoice 044", "From whom? e.g. Acme Co", "Amount in €"], date: ["What's happening? e.g. Pitch day"],
   };
   const simple = fields[kind];
@@ -1471,6 +1742,8 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
     : kind === "link" ? !!link || !!title.trim()
     : kind === "video" ? !!link
     : kind === "book" ? (byHand ? !!a.trim() : !!book)
+    : kind === "todo" ? !!a.trim() || steps.length > 0
+    : kind === "progress" ? !!a.trim() && Number(c) > 0
     : !!a.trim();
 
   /** Asks for the photo library the way iOS does, once; then it just opens. */
@@ -1506,7 +1779,17 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
     if (kind === "book") block = book && !byHand ? { ...base, ...bookFields(book), shelf } : { ...base, source: b.trim(), shelf };
     if (kind === "quote") block = { ...base, body: b.trim() };
     if (kind === "flashcard") block = { ...base, back: b.trim() || "…", due: true };
-    if (kind === "progress") block = { ...base, value: Number(b) || 0, total: Math.max(1, Number(c) || 10) };
+    if (kind === "todo") {
+      // A step still being typed counts: Add shouldn't lose it.
+      const typed = stepRef.current?.value.trim();
+      const all = typed ? [...steps, { id: newId("s"), text: typed, done: false }] : steps;
+      block = all.length ? { ...base, title: t || "Checklist", checklist: all, done: false } : { ...base, done: false };
+    }
+    if (kind === "reminder") block = { ...base, at: remindAt, done: false };
+    if (kind === "progress") {
+      const total = Math.max(1, Number(c) || 1);
+      block = { ...base, value: Math.min(total, Math.max(0, Number(b) || 0)), total, unit: unit.trim() || undefined };
+    }
     if (kind === "habit") block = { ...base, days: [] };
     if (kind === "amount") block = { ...base, source: b.trim(), amount: Number(c.replace(",", ".")) || 0, paid: flag, at };
     if (kind === "date") block = { ...base, at };
@@ -1517,15 +1800,16 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
     if (kind === "image") {
       if (photo) {
         const att = await toAttachment(photo);
-        block = { ...base, title: t || photo.name.replace(/\.[^.]+$/, ""), attachment: att ?? undefined, source: "Uploaded by you" };
+        block = { ...base, title: "", attachment: att ?? undefined, source: "Uploaded by you" };
       } else {
-        block = { ...base, title: t || "Saved image", image: `https://images.unsplash.com/${image}?w=700&q=70&fm=jpg`, source: "Saved by you" };
+        block = { ...base, title: "", image: `https://images.unsplash.com/${image}?w=700&q=70&fm=jpg`, source: "Saved by you" };
       }
     }
     if (kind === "file" && upload) {
       const att = await toAttachment(upload);
       block = { ...base, title: t || upload.name, size: upload.size, attachment: att ?? undefined };
     }
+    land(id);
     ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: block } }, id, { collectionId }));
     // Added before the link answered: its title and still follow when they come.
     if (block.url && (kind === "link" || kind === "video") && (standIn || !meta)) enrich(ctx.store, id, block, standIn);
@@ -1595,8 +1879,8 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
 
       {kind === "image" && (
         <>
+          {/* No title: a picture speaks for itself. Tags find it again. */}
           <PhotoPicker file={photo} onFile={setUpload} before={askPhotos} />
-          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} placeholder="Title" value={a} onChange={(e) => setA(e.target.value)} onKeyDown={enter} aria-label="Title" />
           {!photo && (
             <>
               <p className={styles.sheetLabel}>Or use a sample</p>
@@ -1624,6 +1908,60 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
         <>
           <PaletteEditor value={swatches} onChange={setSwatches} />
           <input className={`${styles.plainInput} ${styles.mindTitleInput}`} placeholder={paletteName(swatches.map((s) => s.hex))} value={a} onChange={(e) => setA(e.target.value)} onKeyDown={enter} aria-label="Palette name (optional)" />
+        </>
+      )}
+
+      {kind === "todo" && (
+        <>
+          <input
+            className={`${styles.plainInput} ${styles.mindTitleInput}`}
+            data-autofocus
+            placeholder="What needs doing? e.g. Before the trip"
+            value={a}
+            onChange={(e) => setA(e.target.value)}
+            // Enter goes on to the first step, not straight to Add.
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); stepRef.current?.focus(); } }}
+            aria-label="What needs doing"
+          />
+          <p className={styles.sheetLabel}>Checklist</p>
+          <ChecklistEditor steps={steps} onChange={setSteps} addRef={stepRef} placeholder={steps.length ? "Add another step" : "Add a step, press Enter for the next"} />
+        </>
+      )}
+
+      {kind === "reminder" && (
+        <>
+          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} data-autofocus placeholder="Remind me to… e.g. Call the landlord" value={a} onChange={(e) => setA(e.target.value)} onKeyDown={enter} aria-label="Remind me to" />
+          <p className={styles.sheetLabel}>When</p>
+          <WhenField value={remindAt} onChange={setRemindAt} />
+        </>
+      )}
+
+      {kind === "progress" && (
+        <>
+          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} data-autofocus placeholder="What's the goal? e.g. Read Dune" value={a} onChange={(e) => setA(e.target.value)} onKeyDown={enter} aria-label="What's the goal" />
+          <p className={styles.sheetLabel}>Counted in</p>
+          <div className={styles.chipGrid}>
+            {UNITS.map((u) => (
+              <button key={u} type="button" className={`${styles.choice} ${unit === u ? styles.choiceOn : ""}`} aria-pressed={unit === u} onClick={() => setUnit(u)}>{u}</button>
+            ))}
+            <input className={styles.mindTagInput} placeholder="other" value={UNITS.includes(unit) ? "" : unit} size={Math.max(6, (UNITS.includes(unit) ? 0 : unit.length) + 1)} onChange={(e) => setUnit(e.target.value)} aria-label="Something else" />
+          </div>
+          <div className={styles.mindNumbers}>
+            <label className={styles.mindNumber}>
+              <span>Done so far</span>
+              <input inputMode="numeric" placeholder="0" value={b} onChange={(e) => setB(e.target.value.replace(/[^\d.]/g, ""))} onKeyDown={enter} />
+            </label>
+            <label className={styles.mindNumber}>
+              <span>Goal</span>
+              <input inputMode="numeric" placeholder="e.g. 300" value={c} onChange={(e) => setC(e.target.value.replace(/[^\d.]/g, ""))} onKeyDown={enter} />
+            </label>
+          </div>
+          {/* What it'll look like, as you fill it in. */}
+          {Number(c) > 0 && (
+            <div className={styles.mindDetail}>
+              <BlockView block={{ id: "preview", kind: "progress", title: a.trim() || "Your goal", value: Math.min(Number(c), Number(b) || 0), total: Number(c), unit, tags: [], createdAt: 0 }} shape="row" />
+            </div>
+          )}
         </>
       )}
 
@@ -1708,54 +2046,76 @@ function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
 }
 
 /**
- * An item's tags as chips: its own (on), then tags used anywhere in Mind to
- * add with a tap, then "+ Tag" to type a new one (Enter adds it, Escape drops
- * it). Tags aren't places: the same word ties things together across every
- * collection, for search and the filter.
+ * Tags as you type them: a field where each word becomes a tag the moment you
+ * press Enter (or space, or a comma), and the field stays open for the next.
+ * Backspace on an empty field takes the last one back. Tags used elsewhere in
+ * Mind sit under it, narrowed to what's being typed, to add with a tap. Tags
+ * aren't places: the same word ties things together across every collection.
  */
 function TagField({ value, suggestions, onChange }: { value: string[]; suggestions: string[]; onChange: (tags: string[]) => void }) {
-  const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
-  // Escape discards the tag: the blur that follows mustn't add it anyway.
-  const discard = useRef(false);
-  const add = () => {
-    if (discard.current) return;
-    const t = draft.trim().replace(/^#/, "");
-    if (t) onChange([...new Set([...value, t])]);
-    setDraft("");
-    setAdding(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  /** Adds every word in `text` as a tag. */
+  const commit = (text: string) => {
+    const words = text.split(/[\s,]+/).map(tagOf).filter(Boolean);
+    if (words.length) onChange([...new Set([...value, ...words])]);
   };
-  const shown = [...new Set([...value, ...suggestions])].slice(0, Math.max(12, value.length));
+  const typing = tagOf(draft);
+  const offered = suggestions.filter((t) => !value.includes(t) && (!typing || t.startsWith(typing))).slice(0, 10);
   return (
-    <div className={styles.chipGrid}>
-      {shown.map((t) => (
-        <button key={t} className={`${styles.choice} ${value.includes(t) ? styles.choiceOn : ""}`} aria-pressed={value.includes(t)} onClick={() => onChange(value.includes(t) ? value.filter((x) => x !== t) : [...value, t])}>#{t}</button>
-      ))}
-      {adding ? (
+    <div className={styles.mindTags}>
+      {/* The whole box is the field: a tap anywhere in it puts the cursor at the end. */}
+      <div className={styles.mindTagBox} onClick={() => inputRef.current?.focus()}>
+        {value.map((t) => (
+          <span key={t} className={styles.mindTagChip}>
+            #{t}
+            <button type="button" onClick={(e) => { e.stopPropagation(); onChange(value.filter((x) => x !== t)); }} aria-label={`Remove the tag ${t}`}><IconClose size={11} /></button>
+          </span>
+        ))}
         <input
-          className={styles.mindTagInput}
-          ref={(el) => el?.focus({ preventScroll: true })}
-          placeholder="tag"
+          ref={inputRef}
           value={draft}
-          size={Math.max(4, draft.length + 1)}
-          onChange={(e) => setDraft(e.target.value.replace(/\s+/g, "-").toLowerCase())}
+          placeholder={value.length ? "Add another" : "Type a tag, press Enter"}
+          onChange={(e) => {
+            const v = e.target.value;
+            // A space or a comma ends the word: it becomes a tag and the rest keeps going.
+            if (/[\s,]/.test(v)) {
+              const parts = v.split(/[\s,]+/);
+              commit(parts.slice(0, -1).join(" "));
+              setDraft(parts[parts.length - 1]);
+            } else setDraft(v);
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") add();
-            if (e.key === "Escape") {
-              // Cancel the tag only, not the sheet: the sheet listens for Escape on window.
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit(draft);
+              setDraft("");
+            } else if (e.key === "Backspace" && !draft && value.length) {
+              onChange(value.slice(0, -1));
+            } else if (e.key === "Escape" && draft) {
+              // Clear the word only, not the sheet: the sheet listens for Escape on window.
               e.preventDefault();
               e.stopPropagation();
               e.nativeEvent.stopImmediatePropagation();
-              discard.current = true;
               setDraft("");
-              setAdding(false);
             }
           }}
-          onBlur={add}
-          aria-label="New tag"
+          onBlur={() => { commit(draft); setDraft(""); }}
+          enterKeyHint="done"
+          autoCapitalize="none"
+          autoCorrect="off"
+          aria-label="Add a tag"
         />
-      ) : (
-        <button className={`${styles.choice} ${styles.mindAddTag}`} onClick={() => { discard.current = false; setAdding(true); }}><IconPlus size={14} /> Tag</button>
+      </div>
+      {offered.length > 0 && (
+        <div className={styles.mindTagSuggest} aria-label="Your tags">
+          {offered.map((t) => (
+            // Down on the pointer, before the field's blur, so tapping one doesn't also add a half-typed word.
+            <button key={t} type="button" className={styles.choice} onPointerDown={(e) => e.preventDefault()} onClick={() => { onChange([...new Set([...value, t])]); setDraft(""); }}>
+              <IconPlus size={12} /> {t}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -1766,10 +2126,21 @@ function TagField({ value, suggestions, onChange }: { value: string[]; suggestio
  * maker, a date, a shelf, a status, the stepper. The item sheet shows it, and
  * so does a shared item opened by someone allowed to edit it.
  */
-export function BlockEditor({ b, set, onToggle }: { b: Block; set: (patch: Partial<Block>) => void; onToggle: () => void }) {
+export function BlockEditor({ b, set, onToggle }: { b: Block; set: (patch: Partial<Block>) => void; onToggle: (stepId?: string) => void }) {
+  const steps = (checklist: Step[]) => set({ checklist: checklist.length ? checklist : undefined, done: checklist.length ? checklist.every((s) => s.done) : b.done });
   return (
     <>
-      {b.kind === "palette" ? (
+      {b.kind === "todo" && b.checklist?.length ? (
+        // A checklist opens as a list you can work through and change: tick, edit, add, take out.
+        <>
+          <input className={`${styles.plainInput} ${styles.mindTitleInput}`} value={b.title} onChange={(e) => set({ title: e.target.value })} placeholder="Checklist" aria-label="Checklist name" />
+          <div className={styles.mindStepsHead}>
+            <span className={styles.mbBar}><i style={{ width: `${(b.checklist.filter((s) => s.done).length / b.checklist.length) * 100}%` }} /></span>
+            <em>{b.checklist.filter((s) => s.done).length} of {b.checklist.length} done</em>
+          </div>
+          <ChecklistEditor steps={b.checklist} onChange={steps} placeholder="Add a step" />
+        </>
+      ) : b.kind === "palette" ? (
         // A palette opens in the palette maker: lock, generate, add, undo, all saved as you go.
         <>
           <input className={`${styles.plainInput} ${styles.mindTitleInput}`} value={b.title} onChange={(e) => set({ title: e.target.value })} placeholder={paletteName(b.colors ?? [])} aria-label="Palette name" />
@@ -1783,14 +2154,38 @@ export function BlockEditor({ b, set, onToggle }: { b: Block; set: (patch: Parti
       {b.kind === "amount" && <DateField label="Due" value={b.at ?? nowMs()} onChange={(at) => set({ at })} />}
       {b.kind === "book" && <Segmented value={b.shelf ?? "want"} options={SHELVES} onChange={(v) => set({ shelf: v })} />}
       {b.kind === "todo" && b.status && <Segmented value={b.status} options={COLUMNS} onChange={(v) => set({ status: v, done: v === "done" })} />}
+      {/* A single to-do grows into a checklist the moment it gets a step. */}
+      {b.kind === "todo" && !b.checklist?.length && !b.status && (
+        <>
+          <p className={styles.sheetLabel}>Steps</p>
+          <ChecklistEditor steps={[]} onChange={steps} placeholder="Break it into steps" />
+        </>
+      )}
+      {b.kind === "reminder" && <WhenField value={b.at ?? nowMs()} onChange={(at) => set({ at, done: false })} />}
       {b.kind === "flashcard" && <Segmented value={b.due ? "due" : "known"} options={[{ id: "due", label: "Still learning" }, { id: "known", label: "I know it" }]} onChange={(v) => set({ due: v === "due" })} />}
       {b.kind === "amount" && <Segmented value={b.paid ? "paid" : "unpaid"} options={[{ id: "unpaid", label: "Unpaid" }, { id: "paid", label: "Paid" }]} onChange={(v) => set({ paid: v === "paid" })} />}
       {b.kind === "progress" && (
-        <div className={styles.mindStepper}>
-          <button onClick={() => set({ value: Math.max(0, (b.value ?? 0) - 1) })} aria-label="Back one">−</button>
-          <span>{b.value} of {b.total}</span>
-          <button onClick={() => set({ value: Math.min(b.total ?? 1, (b.value ?? 0) + 1) })} aria-label="Forward one">+</button>
-        </div>
+        <>
+          <div className={styles.mindStepper}>
+            <button onClick={() => set({ value: Math.max(0, (b.value ?? 0) - 1) })} aria-label="One less">−</button>
+            <span><b>{b.value ?? 0}</b> / {b.total}{b.unit ? ` ${b.unit}` : ""}</span>
+            <button onClick={() => set({ value: Math.min(b.total ?? 1, (b.value ?? 0) + 1) })} aria-label="One more">+</button>
+          </div>
+          <div className={styles.mindNumbers}>
+            <label className={styles.mindNumber}>
+              <span>Done so far</span>
+              <input inputMode="numeric" value={b.value ?? 0} onChange={(e) => set({ value: Math.min(b.total ?? 1, Math.max(0, Number(e.target.value.replace(/[^\d.]/g, "")) || 0)) })} />
+            </label>
+            <label className={styles.mindNumber}>
+              <span>Goal</span>
+              <input inputMode="numeric" value={b.total ?? 1} onChange={(e) => { const total = Math.max(1, Number(e.target.value.replace(/[^\d.]/g, "")) || 1); set({ total, value: Math.min(total, b.value ?? 0) }); }} />
+            </label>
+            <label className={styles.mindNumber}>
+              <span>Counted in</span>
+              <input value={b.unit ?? ""} placeholder="pages" onChange={(e) => set({ unit: e.target.value || undefined })} />
+            </label>
+          </div>
+        </>
       )}
     </>
   );
@@ -1893,6 +2288,7 @@ function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
 
   const apply = () => {
     const used = new Set(Object.values(picks));
+    land(...Object.keys(picks));
     update((m) => {
       let next: Mind = { ...m, collections: [...m.collections, ...made.filter((c) => used.has(c.id))] };
       for (const b of items) {
@@ -1977,6 +2373,7 @@ export function MoveSheet({ me, id, onClose, onMoved, title }: { me: string; id:
   const sorting = !current || current.unsorted;
   const places = mind.collections.filter((c) => !isUnassigned(c));
   const move = (col: Collection, isNew = false) => {
+    land(id);
     update((m) => {
       let next = isNew ? { ...m, collections: [...m.collections, col] } : m;
       next = place(next, id, { collectionId: col.id });

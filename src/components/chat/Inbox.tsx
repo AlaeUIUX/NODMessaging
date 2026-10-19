@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { chatIdentity, initials, TONES } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { groupInfo, landingChannel, visibleChannels } from "@/lib/chat/groups";
+import { isLanding } from "@/lib/chat/landing";
+import { isUnassigned, useMind } from "@/lib/chat/mind";
 import { describe, effectiveRule, isQuiet, QUICK_MUTE, useMutes } from "@/lib/chat/mutes";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Chat, Message } from "@/lib/chat/types";
@@ -24,6 +26,7 @@ import AnalyticsTab from "./Analytics";
 import ExploreTab from "./Explore";
 import StatusBar from "./StatusBar";
 import styles from "./chat.module.css";
+import nav from "./nav.module.css";
 
 type Filter = "all" | "unread" | "dms" | "groups";
 type Tab = "chats" | "mind" | "analytics" | "explore";
@@ -161,7 +164,18 @@ function SwipeRow({
 }
 
 /** A single glass capsule of the four primary tabs, with a liquid lens. */
-function NavDock({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
+/**
+ * The tab bar. A tab can carry a dot: Chats when a conversation has something
+ * unread (like WhatsApp or Instagram), Mind while things wait in Unassigned to
+ * be sorted. `ping` gives a tab a small nudge: Mind, on the way back from
+ * saving something in a chat.
+ */
+function NavDock({ tab, onTab, dots, ping }: {
+  tab: Tab;
+  onTab: (t: Tab) => void;
+  dots?: Partial<Record<Tab, "unread" | "sort">>;
+  ping?: Tab | null;
+}) {
   const [stretch, setStretch] = useState(false);
   const index = Math.max(0, TABS.findIndex((t) => t.id === tab));
 
@@ -189,8 +203,12 @@ function NavDock({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
               onClick={() => choose(t.id)}
               aria-current={tab === t.id ? "page" : undefined}
             >
-              <span className={styles.tabIcon}><MaskIcon src={t.icon} w={t.w} h={t.h} /></span>
+              <span className={`${styles.tabIcon} ${nav.icon} ${ping === t.id ? nav.ping : ""}`}>
+                <MaskIcon src={t.icon} w={t.w} h={t.h} />
+                {dots?.[t.id] && <span className={`${nav.dot} ${nav[dots[t.id]!]}`} aria-hidden="true" />}
+              </span>
               {t.label}
+              {dots?.[t.id] && <span className={nav.hidden}>{dots[t.id] === "unread" ? ", unread messages" : ", things to sort"}</span>}
             </button>
           ))}
         </div>
@@ -304,6 +322,10 @@ export default function Inbox({ onOpen, pushed }: {
   // Muted chats keep their own count but stay out of the Unread badge (unless a mention gets through).
   const unreadChats = ready ? rows.filter((r) => r.alert > 0).length : 0;
   const spaceMention = ready && rows.some((r) => r.chat.kind === "group" && r.mentioned);
+  // Mind's dot: things waiting in Unassigned. Something just saved from a chat nudges the tab once you're back.
+  const { mind } = useMind(me);
+  const toSort = mind?.collections.find(isUnassigned)?.items.length ?? 0;
+  const mindPing = !pushed && isLanding("tab:mind");
 
   const visible = (ready ? rows : [])
     .filter(({ chat, last, unread }) => {
@@ -469,7 +491,12 @@ export default function Inbox({ onOpen, pushed }: {
       )}
 
       <div className={styles.edgeBottom} />
-      <NavDock tab={tab} onTab={setTab} />
+      <NavDock
+        tab={tab}
+        onTab={setTab}
+        dots={{ chats: unreadChats ? "unread" : undefined, mind: toSort ? "sort" : undefined }}
+        ping={mindPing ? "mind" : null}
+      />
       {newChat && (
         <NewChat
           onClose={() => setNewChat(false)}
