@@ -16,12 +16,12 @@ import {
 import { paletteName, randomPalette, swatchesOf, type Swatch } from "@/lib/chat/palette";
 import { accessOf, audienceLabel, lookUp, NO_SHARING, type ShareRef } from "@/lib/chat/share";
 import { useChat, userById } from "@/lib/chat/store";
-import { bestSort } from "@/lib/chat/suggest";
 import type { Chat } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { BlockView, KIND_LABEL, whenOf } from "./MindBlocks";
 import { DateField } from "./DatePicker";
-import { LAND, LandingGlow, Poof, RECEIVE, Sparkle } from "./Landing";
+import { DragScroll } from "./Composer";
+import { LAND, LandingGlow, Poof, RECEIVE } from "./Landing";
 import { BookSearch, FilePicker, PasteButton, PasteField, PhotoPicker, VideoPreview } from "./MindFields";
 import { ActionMenu, FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, ScopeSearch, ScopeTools, type MindFilter } from "./MindFilter";
 import PaletteEditor from "./PaletteEditor";
@@ -449,20 +449,6 @@ function SortTray({ ctx, col, leaving }: { ctx: Ctx; col: Collection; leaving?: 
   const fan = [...items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3);
   const arriving = !leaving && items.some((b) => isLanding(b.id));
   const sort = () => ctx.openSheet(<SortSheet ctx={ctx} />);
-  // The obvious ones: the collection the most of what's waiting fits, one tap away.
-  const guess = leaving ? null : bestSort(ctx.mind, items);
-  const take = () => {
-    if (!guess) return;
-    const to = guess.collection;
-    const ids = guess.items.map((b) => b.id);
-    land(...ids);
-    ctx.update((m) => ids.reduce((acc, id) => {
-      const ref = acc.blocks[id]?.ref;
-      const next = place(acc, id, { collectionId: to.id });
-      return ref ? learnChat(next, to.id, ref.chatId) : next;
-    }, m));
-    ctx.flash(`Sorted ${ids.length === 1 ? "" : `${ids.length} `}into ${to.emoji} ${to.name}`);
-  };
   return (
     <section className={`${tray.tray} ${arriving ? RECEIVE : ""}`} aria-label={`${n} to sort`}>
       <button className={tray.open} onClick={() => ctx.openFolder(col.id)} aria-label={`See the ${n} in Unassigned`}>
@@ -483,21 +469,6 @@ function SortTray({ ctx, col, leaving }: { ctx: Ctx; col: Collection; leaving?: 
         </span>
       </button>
       <button className={tray.sort} onClick={sort}>Sort</button>
-      {guess && (
-        <button
-          key={`${guess.collection.id}:${guess.items.map((b) => b.id).join()}`}
-          className={tray.guess}
-          style={{ ["--tone" as string]: guess.collection.tone }}
-          onClick={take}
-        >
-          <Sparkle size={13} />
-          <span>
-            {guess.items.length === 1 ? <>“{guess.items[0].title || KIND_LABEL[guess.items[0].kind]}” fits</> : <>{guess.items.length} of these fit</>}
-            {" "}<b><Emoji char={guess.collection.emoji} /> {guess.collection.name}</b>
-          </span>
-          <em>{guess.items.length === 1 ? "Move" : `Move ${guess.items.length}`}</em>
-        </button>
-      )}
       {arriving && <LandingGlow round="card" />}
     </section>
   );
@@ -563,6 +534,14 @@ function FolderCard({ ctx, col, i, hold, before, lifted }: { ctx: Ctx; col: Coll
       {arriving && <LandingGlow round="card" />}
     </button>
   );
+}
+
+/** The shelf view's rows: one per tag, the most used first, then whatever has no tag. */
+function shelvesOf(items: Block[]) {
+  const shelves: { tag: string | null; items: Block[] }[] = tagsOf(items).map((tag) => ({ tag, items: items.filter((b) => b.tags?.includes(tag)) }));
+  const loose = items.filter((b) => !b.tags?.length);
+  if (loose.length) shelves.push({ tag: null, items: loose });
+  return shelves;
 }
 
 /** "12 items", or for Unassigned, how many are waiting for a place. */
@@ -745,7 +724,15 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
             </button>
           )
         ) : view === "shelf" ? (
-          <div className={styles.mindShelf}>{items.map(tile)}</div>
+          // A shelf per tag, like rows on a streaming app; something with two tags sits on both. Untagged things get the last one.
+          <div className={styles.mindShelves}>
+            {shelvesOf(items).map((s) => (
+              <section key={s.tag ?? ""} className={styles.mindShelfGroup} aria-label={s.tag ? `#${s.tag}` : "No tag"}>
+                <p className={styles.mindShelfHead}>{s.tag ? `#${s.tag}` : "No tag"} <em>{s.items.length}</em></p>
+                <DragScroll className={styles.mindShelf} sideWheel={false}>{s.items.map(tile)}</DragScroll>
+              </section>
+            ))}
+          </div>
         ) : view === "grid" ? (
           <div className={styles.mindGridView}>{items.map(tile)}</div>
         ) : (
@@ -1813,8 +1800,8 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
     ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: block } }, id, { collectionId }));
     // Added before the link answered: its title and still follow when they come.
     if (block.url && (kind === "link" || kind === "video") && (standIn || !meta)) enrich(ctx.store, id, block, standIn);
+    // No toast: the item landing in its collection says it was added.
     ctx.closeSheet();
-    ctx.flash(`${info.emoji} Added to ${where}`);
   };
   const enter = (e: React.KeyboardEvent) => { if (e.key === "Enter" && ready) void create(); };
 

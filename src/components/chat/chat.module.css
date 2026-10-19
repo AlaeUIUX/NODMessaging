@@ -4187,6 +4187,12 @@ div.actionRow:hover { background: transparent; }
   min-height: 40px;
 }
 .mindShelf::-webkit-scrollbar { display: none; }
+/* Shelf view: one row per tag, each scrolling sideways on its own */
+.mindShelves { display: grid; gap: 14px; }
+.mindShelfGroup { display: grid; gap: 6px; min-width: 0; }
+.mindShelfHead { margin: 0; font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); }
+.mindShelfHead em { font-style: normal; font: var(--t-footnote); color: var(--ink-3); margin-left: 4px; }
+.mindShelf .mbk_image img { height: 180px; min-height: 0; }
 .mindShelf > * { flex: 0 0 210px; scroll-snap-align: start; }
 .mindShelf > :has(.mbk_book) { flex-basis: 116px; }
 .mindShelf > :has(.mbk_flashcard) { flex-basis: 150px; }

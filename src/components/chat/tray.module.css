@@ -108,48 +108,13 @@
 }
 .sort:active { transform: scale(.95); }
 
-/* One tap for the obvious ones: what fits where, in that collection's colour. */
-.guess {
-  flex-basis: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 40px;
-  padding: 0 6px 0 12px;
-  border: none;
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--tone) 12%, var(--surface));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 18%, transparent);
-  color: var(--ink-2);
-  font: var(--t-footnote);
-  text-align: left;
-  cursor: pointer;
-  animation: trayIn var(--t-slow) var(--ease-out) backwards;
-  transition: transform var(--t-fast) var(--ease-out);
-}
-.guess:active { transform: scale(.98); }
-.guess > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.guess b { color: var(--ink); font-weight: var(--w-emph); }
-.guess em {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 12px;
-  border-radius: var(--r-pill);
-  background: var(--tone);
-  color: #fff;
-  font-style: normal;
-  font-weight: var(--w-emph);
-}
-
 /* ---- Where the tray sits, and how it goes ----
    All sorted: the tray fades, softens and shrinks into a puff of sparkles,
    then its slot closes so the collections slide up into its place. The
    negative margin takes the stack's gap and the heading's offset with it. */
-.slot { position: relative; display: grid; grid-template-rows: 1fr; }
-.clip { min-height: 0; }
+/* One column as wide as the page: without it the column grows to the widest line (a long suggestion) and the tray runs off the screen. */
+.slot { position: relative; display: grid; grid-template-rows: 1fr; grid-template-columns: minmax(0, 1fr); }
+.clip { min-height: 0; min-width: 0; }
 .leaving { pointer-events: none; animation: collapse 480ms 220ms var(--ease-out) forwards; }
 .leaving .clip { overflow: hidden; }
 .leaving .tray { animation: vanish 440ms var(--ease-out) forwards; }
@@ -186,7 +151,7 @@
 .banner b { color: var(--ink); font: var(--t-subhead); font-weight: var(--w-emph); }
 
 @media (prefers-reduced-motion: reduce) {
-  .tray, .guess { animation: none; }
+  .tray { animation: none; }
   /* Still ends (so it's cleared away), just at once. */
   .leaving { animation-duration: 1ms; animation-delay: 0ms; }
   .leaving .tray { animation: none; opacity: 0; }

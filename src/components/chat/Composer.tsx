@@ -130,7 +130,8 @@ export function DragScroll({ className, children, sideWheel = true, glide = fals
       className={`${className ?? ""} ${dragging ? styles.toolDragging : ""}`}
       // While a mouse drags it, snapping would fight the drag; it settles on release.
       style={dragging ? { ...style, scrollSnapType: "none", scrollBehavior: "auto" } : style}
-      onPointerDown={(e) => {
+      // Capture: things inside (a held Mind item) stop the pointer going further, and the row must still see it.
+      onPointerDownCapture={(e) => {
         if (e.pointerType !== "mouse" || !ref.current) return;
         drag.current = { x: e.clientX, left: ref.current.scrollLeft, down: true, moved: false };
       }}
