@@ -8,7 +8,7 @@ import styles from "@/components/chat/chat.module.css";
 import { dictationSupported, useDictation } from "@/lib/chat/dictation";
 import { isAdmin } from "@/lib/chat/groups";
 import {
-  canBroadcast, clock, crewOf, isCommand, joinedChannel, leadsZone, listeners, missedCalls, radioChannel, radioChannels,
+  canBroadcast, clock, crewOf, isCommand, joinedChannel, leadsZone, listeners, missedCalls, NO_CHANNEL, radioChannel, radioChannels,
   radioLabel, reachCount, reaches, sampleLine, targetLabel, zoneById,
   type ChannelId, type OpLive, type RadioChannel, type Target, type Transmission,
 } from "@/lib/chat/operation";
@@ -302,10 +302,25 @@ function TalkButton({ groupId, target }: { groupId: string; target: Target }) {
   const ending = useRef(false);
   const asking = useRef(false);
 
-  // Leaving the radio mid-call ends the call with what was said so far.
-  useEffect(() => () => {
-    const id = txRef.current;
-    if (id) opDispatch(groupId, { t: "radio.release", id, text: said.current.text, at: Date.now(), source: said.current.source });
+  // Leaving the radio mid-call ends the call with what was said so far: the screen closing, the tab going
+  // away, or (in hold mode) the thumb losing the button while something takes focus or the app goes behind.
+  useEffect(() => {
+    const drop = () => {
+      const id = txRef.current;
+      if (!id) return;
+      txRef.current = null;
+      opDispatch(groupId, { t: "radio.release", id, text: said.current.text, at: Date.now(), source: said.current.source });
+    };
+    const ifHidden = () => { if (document.visibilityState === "hidden") drop(); };
+    window.addEventListener("pagehide", drop);
+    window.addEventListener("blur", drop);
+    document.addEventListener("visibilitychange", ifHidden);
+    return () => {
+      window.removeEventListener("pagehide", drop);
+      window.removeEventListener("blur", drop);
+      document.removeEventListener("visibilitychange", ifHidden);
+      drop();
+    };
   }, [groupId]);
 
   if (!info || !live) return null;
@@ -377,6 +392,8 @@ function TalkButton({ groupId, target }: { groupId: string; target: Target }) {
         }}
         onPointerUp={() => { if (mode === "hold") void end(); }}
         onPointerCancel={() => { if (mode === "hold") void end(); }}
+        onLostPointerCapture={() => { if (mode === "hold") void end(); }}
+        onBlur={() => { if (mode === "hold") void end(); }}
         onClick={() => { if (mode === "tap") void (txRef.current ? end() : press()); }}
         onKeyDown={(e) => {
           if (mode !== "hold" || (e.key !== " " && e.key !== "Enter")) return;
@@ -446,6 +463,8 @@ export function RadioScreen({ groupId, onClose }: { groupId: string; onClose: ()
   if (!info || !op || !live) return null;
 
   const joined = joinedChannel(info, live, me);
+  // No crew, no zone, not Command: nowhere to listen until they pick somewhere.
+  const untuned = joined === NO_CHANNEL;
   const ch = radioChannel(info, joined);
   const tuned = listeners(info, live, members, joined);
   const items = live.radio.tx
@@ -476,17 +495,29 @@ export function RadioScreen({ groupId, onClose }: { groupId: string; onClose: ()
         <span aria-hidden="true" />
       </header>
 
-      <button className={r.chCard} onClick={() => ui.openSheet(<ChannelSheet groupId={groupId} onPick={pick} />)} aria-label={`Channel: ${radioLabel(info, joined)}. Change channel`}>
-        <ChannelTile ch={ch} size="lg" />
-        <span className={r.pickMain}>
-          <b className={r.chName}>{ch.name}<IconChevronDown size={14} /></b>
-          <small>
-            {liveCall
-              ? <span className={r.chLive}>● {liveCall.by === me ? "You’re" : `${firstName(liveCall.by)} is`} on air</span>
-              : `${tuned.length} tuned in · ${ch.sub}`}
-          </small>
-        </span>
-        <Stack ids={tuned} size={24} max={4} />
+      <button className={r.chCard} onClick={() => ui.openSheet(<ChannelSheet groupId={groupId} onPick={pick} />)} aria-label={untuned ? "Pick a channel" : `Channel: ${radioLabel(info, joined)}. Change channel`}>
+        {untuned ? (
+          <>
+            <span className={r.chCodeLg}><IconWalkie size={20} /></span>
+            <span className={r.pickMain}>
+              <b className={r.chName}>Pick a channel<IconChevronDown size={14} /></b>
+              <small>You’re not on a crew or in a zone yet. Choose where to listen and talk.</small>
+            </span>
+          </>
+        ) : (
+          <>
+            <ChannelTile ch={ch} size="lg" />
+            <span className={r.pickMain}>
+              <b className={r.chName}>{ch.name}<IconChevronDown size={14} /></b>
+              <small>
+                {liveCall
+                  ? <span className={r.chLive}>● {liveCall.by === me ? "You’re" : `${firstName(liveCall.by)} is`} on air</span>
+                  : `${tuned.length} tuned in · ${ch.sub}`}
+              </small>
+            </span>
+            <Stack ids={tuned} size={24} max={4} />
+          </>
+        )}
       </button>
 
       {missed > 0 && <div className={r.missed}>{missed} missed while you were away · read below</div>}
@@ -502,7 +533,13 @@ export function RadioScreen({ groupId, onClose }: { groupId: string; onClose: ()
             Talk to <b>{targetLabel(info, talkTo)}</b><IconChevronDown size={13} />
           </button>
         )}
-        <TalkButton groupId={groupId} target={talkTo} />
+        {untuned && !target ? (
+          <button className={r.targetBtn} onClick={() => ui.openSheet(<ChannelSheet groupId={groupId} onPick={pick} />)}>
+            Pick a channel to talk
+          </button>
+        ) : (
+          <TalkButton groupId={groupId} target={talkTo} />
+        )}
         <small className={r.deckHint}>Transcribed live, with who said it · double-tap an earbud to talk</small>
       </div>
     </div>

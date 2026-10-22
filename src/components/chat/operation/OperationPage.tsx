@@ -6,7 +6,7 @@ import { canSee } from "@/lib/chat/groups";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { isQuiet, ruleFor, useMutes } from "@/lib/chat/mutes";
 import {
-  agoText, canDecide, dayOf, isCommand, leadsZone, missedCalls, onSite, pendingRequests, reaches, readRate, titleOf, zoneById,
+  agoText, canDecide, dayOf, isCommand, isOnAir, leadsZone, missedCalls, onSite, pendingRequests, reaches, readRate, titleOf, zoneById,
   type OpRequest,
 } from "@/lib/chat/operation";
 import { useChat, userById } from "@/lib/chat/store";
@@ -70,7 +70,7 @@ export function OperationPage({ groupId, onClose, onSettings, onSwitchChannel }:
   const pending = pendingRequests(live);
   const needs = pending.filter((r) => canDecide(info, me, r)).sort(byUrgency);
   const missed = missedCalls(info, live, me);
-  const onAir = live.radio.tx.some((t) => t.live && t.by !== me && reaches(info, live, t, me));
+  const onAir = live.radio.tx.some((t) => isOnAir(t, now) && t.by !== me && reaches(info, live, t, me));
   const unread = command ? [] : unreadBroadcasts(o);
   const myZone = zoneById(op, live.presence[me]?.zoneId);
   const mine = o.tasks().filter((t) => t.assignee === me && t.column !== o.doneColumn).sort(byStep(o));

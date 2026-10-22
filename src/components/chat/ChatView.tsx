@@ -9,7 +9,7 @@ import { allPeople } from "@/lib/chat/people";
 import { useChat, userById } from "@/lib/chat/store";
 import { TONES } from "@/lib/chat/avatar";
 import {
-  canBroadcast, dayOf, emptyLive, isCommand, onSite, pendingRequests, reaches, staffing, zoneByChannel, zoneById,
+  canBroadcast, dayOf, emptyLive, isCommand, isOnAir, onSite, pendingRequests, reaches, staffing, zoneByChannel, zoneById,
 } from "@/lib/chat/operation";
 import { ensureOpLive } from "@/lib/chat/opstore";
 import type { BoardMessage } from "@/lib/chat/project";
@@ -133,7 +133,11 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   const channels = group ? visibleChannels(group, me) : [];
   const manageChannels = !!gInfo && can(gInfo, me, "manageChannels");
   const showChannels = !!group && !!channel && (channels.length > 1 || manageChannels);
-  const canWrite = !gInfo || !channel || canPost(gInfo, channel, me);
+  // In an Operation's #broadcasts, posting means broadcasting: the Broadcast permission decides, not the channel.
+  const opInfo = gInfo?.operation;
+  const canWrite = !gInfo || !channel
+    ? true
+    : opInfo && channel.id === opInfo.broadcastsChannel ? canBroadcast(gInfo, me) : canPost(gInfo, channel, me);
   const [groupSettings, setGroupSettings] = useState<{ leaving: boolean } | null>(null);
   const [pendingChannel, setPendingChannel] = useState<string | null>(null);
 
@@ -590,7 +594,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
 
   /* ---- an Operation's strips, under the channel chips ---- */
   // A call that reaches me, on air now (not my own: the radio shows that).
-  const onAir = o?.live.radio.tx.find((t) => t.live && t.by !== me && reaches(o.info, o.live, t, me));
+  const onAir = o?.live.radio.tx.find((t) => isOnAir(t, minute) && t.by !== me && reaches(o.info, o.live, t, me));
   const onAirZone = onAir && o ? zoneById(o.op, o.live.presence[onAir.by]?.zoneId) : undefined;
   const onGeneral = !!o && chat.id === o.group.id;
   const unreadNormal = o && onGeneral && !opCommand ? unreadBroadcasts(o) : [];
@@ -761,7 +765,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
       <div ref={composerRef}>
         {!canWrite && gInfo && channel ? (
           <div className={styles.readOnlyBar}>
-            <span className={ps.readOnlyText}><IconMegaphone size={15} />Only {roleNames(gInfo, channel.postRoles)} can post in #{channel.name}</span>
+            <span className={ps.readOnlyText}><IconMegaphone size={15} />{onBroadcasts ? "Only people who can broadcast post here" : `Only ${roleNames(gInfo, channel.postRoles)} can post in #${channel.name}`}</span>
           </div>
         ) : (
         <Composer
@@ -779,7 +783,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
             if (task) { addTask(task); setReplyTo(null); return; }
             // In an Operation's #broadcasts every message is a broadcast (to everyone; + › Broadcast picks who, or Critical).
             if (o && onBroadcasts && !attachments.length && body.trim()) {
-              o.act.sendBroadcast(body.trim(), "normal", { all: true });
+              if (canBroadcast(o.info, me)) o.act.sendBroadcast(body.trim(), "normal", { all: true });
               setReplyTo(null);
               return;
             }

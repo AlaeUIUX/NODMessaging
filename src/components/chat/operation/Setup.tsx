@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { initials, TONES } from "@/lib/chat/avatar";
 import { can, groupInfo, permissionsFor, ROLE_TONES, rolesOf } from "@/lib/chat/groups";
 import {
-  addCrew, addLink, canManageZones, dayOf, DEFAULT_SHIFTS, deleteZone, emptyLive, here, isCommand, joinUrl, newLinkCode, newZone, onSite, opId, pendingRequests, removeLink, templateOf, TEMPLATES, toOperation, updateOperation,
+  addCrew, addLink, canManageZones, dayOf, DEFAULT_SHIFTS, deleteZone, emptyLive, forMembers, isCommand, joinUrl, newLinkCode, newZone, onSite, opId, pendingRequests, removeLink, templateOf, TEMPLATES, toOperation, updateOperation,
   upsertZone, zoneById, zoneChannelName, type OpLive, type OperationSetup,
 } from "@/lib/chat/operation";
 import { ensureOpLive, opDispatch, useOpLive } from "@/lib/chat/opstore";
@@ -516,7 +516,7 @@ function LeadPicker({ info, op, live, members, crews, zoneId, value, onChange }:
 
 /** Adds or edits a zone (and its channel); deleting closes the channel and keeps its history. */
 export function ZoneSheet({ groupId, zoneId, onClose, onToast }: { groupId: string; zoneId?: string; onClose: () => void; onToast: (t: string) => void }) {
-  const { updateGroup, group, info, op, live, act } = useOperation(groupId);
+  const { updateGroup, group, info, op, live, me } = useOperation(groupId);
   const existing = op && zoneId ? zoneById(op, zoneId) : undefined;
   const [code, setCode] = useState(() => existing?.code ?? (op ? nextCode(op) : "A1"));
   const [name, setName] = useState(existing?.name ?? "");
@@ -626,8 +626,8 @@ export function ZoneSheet({ groupId, zoneId, onClose, onToast }: { groupId: stri
               onClick={() => {
                 if (!confirm) { setConfirm(true); return; }
                 close(() => {
-                  // Whoever was checked in there is checked out; the channel closes, its history stays.
-                  for (const u of live ? here(live, existing.id) : []) act.checkIn(null, "tap", u);
+                  // Its open requests close and whoever was there is checked out; the channel closes, its history stays.
+                  opDispatch(groupId, { t: "zone.removed", zoneId: existing.id, by: me, at: Date.now() });
                   updateGroup(groupId, (g) => deleteZone(g, existing.id));
                   onToast(`${existing.code} deleted. #${zoneChannelName(existing)} is closed, its history kept.`);
                 });
@@ -987,7 +987,7 @@ export function OperationRowStrip({ group, me, now }: { group: Chat; me: string;
   if (!op) return null;
   const phase = phaseOf(op, now);
   const shift = phase.on ? op.shifts.find((s) => s.id === live?.shift) : undefined;
-  const there = live ? onSite(live) : 0;
+  const there = live ? onSite(forMembers(live, group.memberIds)) : 0;
   const pending = live ? pendingRequests(live).length : 0;
   const parts = [
     phase.text,

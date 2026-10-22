@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { readMutes, setMute } from "@/lib/chat/mutes";
 import {
-  audienceOf, crewOf, here, isCommand, leadsZone, listeners, radioChannels, staffing, zoneById, zoneStatus,
+  audienceOf, crewOf, DROPPED_MS, here, isCommand, isOnAir, leadsZone, listeners, radioChannels, staffing, zoneById, zoneStatus,
   type OpAction, type OpLive, type Target,
 } from "@/lib/chat/operation";
 import { onOpAction, opLive } from "@/lib/chat/opstore";
@@ -115,7 +115,9 @@ function run(gid: string, get: Get): () => void {
     const a = get();
     return new Set([a.me, ...a.peers.map((p) => p.userId)]);
   };
-  const leader = () => Date.now() - startedAt >= READY_MS && get().peers.every((p) => p.clientId > clientId);
+  // The tab with the smallest id leads, while it is awake. A hidden leader soon stops starting anything, so a
+  // visible tab takes over rather than waiting for its heartbeats to lapse.
+  const leader = () => Date.now() - startedAt >= READY_MS && !asleep() && get().peers.every((p) => p.clientId > clientId);
   // A background tab's timers slow to one a second (fine: words are paced by the clock), and after
   // five minutes to one a minute; long before that it stops starting new calls.
   let hiddenAt = document.visibilityState === "hidden" ? Date.now() : 0;
@@ -130,8 +132,10 @@ function run(gid: string, get: Get): () => void {
 
   /* ---- talking: the words stream in, about 210 ms each, paced by the clock ---- */
 
-  const speak = (by: string, target: Target, text: string) => {
-    const id = get().act.keyUp(target, "sim", by);
+  const speak = (by: string, target: Target, text: string, fixedId?: string) => {
+    // A fixed id (a reply to one call) makes two tabs' copies one call: the reducer keeps the first.
+    if (fixedId && opLive(gid)?.radio.tx.some((t) => t.id === fixedId)) return;
+    const id = get().act.keyUp(target, "sim", by, fixedId);
     const words = text.split(/\s+/).filter(Boolean);
     const start = Date.now();
     const end = 400 + words.length * WORD_MS;
@@ -156,15 +160,22 @@ function run(gid: string, get: Get): () => void {
     later(160, step);
   };
 
-  /** One voice per channel at a time; an All-call holds everyone. */
-  const busy = (l: OpLive, by: string, target: Target) =>
-    l.radio.tx.some((t) => t.live && (t.by === by || t.target.all || (!!target.channel && t.target.channel === target.channel)));
+  /** One voice per channel at a time; an All-call holds everyone. A call left on air too long no longer counts. */
+  const busy = (l: OpLive, by: string, target: Target) => {
+    const now = Date.now();
+    return l.radio.tx.some((t) => isOnAir(t, now) && (t.by === by || t.target.all || (!!target.channel && t.target.channel === target.channel)));
+  };
 
-  /** Calls left on air by a tab that closed mid-sentence go out with what was said. */
+  /**
+   * Calls left on air by a tab that closed mid-sentence go out with what was said: a simulated one after
+   * STALE_MS, anyone's after DROPPED_MS (a live person's real call is released by their own tab long before).
+   */
   const sweep = (l: OpLive, live: Set<string>) => {
     const now = Date.now();
     for (const t of l.radio.tx) {
-      if (t.live && !speaking.has(t.id) && now - t.at > STALE_MS && !live.has(t.by)) get().act.release(t.id, t.text, t.source);
+      if (!t.live || speaking.has(t.id)) continue;
+      const limit = live.has(t.by) ? DROPPED_MS : STALE_MS;
+      if (now - t.at > limit) get().act.release(t.id, t.text, t.source);
     }
   };
 
@@ -189,6 +200,9 @@ function run(gid: string, get: Get): () => void {
       if (said.has(line.text) && pool.length > said.size) continue;
       if (!r.a.members.includes(line.by) || live.has(line.by)) continue;
       if (line.target.channel && !channels.has(line.target.channel)) continue;
+      // A zone's line comes from someone there (or its lead), not from someone who has since moved on.
+      const zone = line.target.channel?.startsWith("zone:") ? line.target.channel.slice(5) : null;
+      if (zone && r.l.presence[line.by]?.zoneId !== zone && zoneById(r.info.operation!, zone)?.leadId !== line.by) continue;
       if (busy(r.l, line.by, line.target)) continue;
       lastLine = i;
       speak(line.by, line.target, line.text);
@@ -213,7 +227,7 @@ function run(gid: string, get: Get): () => void {
         if (tries < 2) later(1500, () => reply(tries + 1));
         return;
       }
-      speak(who, { channel }, COPY[hash(tx.id) % COPY.length]);
+      speak(who, { channel }, COPY[hash(tx.id) % COPY.length], `reply-${tx.id}`);
     };
     later(2200, () => reply(0));
   };
@@ -291,8 +305,16 @@ function run(gid: string, get: Get): () => void {
   later(3000 + Math.random() * 2000, chatter);
   later(45_000 + Math.random() * 25_000, ambient);
 
+  // The tab is going away (React won't clean up): whatever it was saying goes out whole now.
+  const onPageHide = () => {
+    for (const [id, text] of speaking) get().act.release(id, text, "sim");
+    speaking.clear();
+  };
+  window.addEventListener("pagehide", onPageHide);
+
   return () => {
     off();
+    window.removeEventListener("pagehide", onPageHide);
     document.removeEventListener("visibilitychange", onVisibility);
     timers.forEach(clearTimeout);
     timers.clear();

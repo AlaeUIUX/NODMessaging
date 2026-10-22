@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { HugeiconsIcon } from "@hugeicons/react";
 import { PackageIcon } from "@hugeicons/core-free-icons";
 import { initials } from "@/lib/chat/avatar";
+import { can, canSee } from "@/lib/chat/groups";
+import { RequestSheet } from "./OpCards";
 import {
   agoText, ago, audienceOf, canManageZones, clock, crewOf, dayOf, emptyLive, here, isCommand, onSite, openRequestsIn, readRate,
   staffing, suggestions, zoneById, zoneStatus,
@@ -239,16 +241,22 @@ export function ZoneMenu({ groupId, zoneId, onClose }: { groupId: string; zoneId
   const z = o ? zoneById(o.op, zoneId) : undefined;
   if (!o || !z) return null;
   const admin = canManageZones(o.info, o.me);
-  const manage = admin || z.leadId === o.me;
+  const lead = z.leadId === o.me;
+  // Moving people between zones is Command's call; a lead can ask for them, and set their own zone's status.
+  const assign = admin || can(o.info, o.me, "approveRequests");
   const channel = o.info.channels.find((c) => c.id === z.channelId);
   const items: { key: string; label: string; sub?: string; icon: ReactNode; run: () => void }[] = [
     { key: "open", label: "Open zone", icon: <IconChevron size={18} />, run: () => ui.openZone?.(z.id) },
   ];
-  if (manage) {
+  if (assign) {
     items.push({ key: "assign", label: "Assign people", sub: "They get a move request to accept", icon: <IconUserGroup size={18} />, run: () => ui.openSheet(<AssignSheet groupId={groupId} zoneId={z.id} onClose={ui.closeSheet} />) });
+  } else if (lead) {
+    items.push({ key: "ask", label: "Ask for people", sub: "A request Command decides", icon: <IconUserGroup size={18} />, run: () => ui.openSheet(<RequestSheet groupId={groupId} zoneId={z.id} kind="staff" onClose={ui.closeSheet} />) });
+  }
+  if (admin || lead) {
     items.push({ key: "status", label: "Set status", sub: STATUS_LABEL[zoneStatus(o.live, z.id)], icon: <IconFlag size={18} />, run: () => ui.openSheet(<StatusSheet groupId={groupId} zoneId={z.id} onClose={ui.closeSheet} />) });
   }
-  if (channel) items.push({ key: "chat", label: "Open chat", sub: `#${channel.name}`, icon: <b>#</b>, run: () => ui.switchChannel?.(z.channelId) });
+  if (channel && canSee(o.info, channel, o.me)) items.push({ key: "chat", label: "Open chat", sub: `#${channel.name}`, icon: <b>#</b>, run: () => ui.switchChannel?.(z.channelId) });
   if (admin) items.push({ key: "edit", label: "Edit zone", sub: "Name, code, area, target and lead", icon: <IconEdit size={18} />, run: () => ui.openSheet(<ZoneSheet groupId={groupId} zoneId={z.id} onClose={ui.closeSheet} onToast={ui.toast} />) });
   return (
     <Sheet title={`${z.code} · ${z.name}`} onClose={onClose}>

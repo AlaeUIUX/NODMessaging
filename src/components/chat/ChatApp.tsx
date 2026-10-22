@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getForceFailure, setForceFailure } from "@/lib/chat/api";
 import { getPrefs, resetDemoData, THEME_EVENT, useAccounts, type ThemePref } from "@/lib/chat/account";
@@ -25,6 +25,13 @@ import { getPermission } from "./ui";
 import styles from "./chat.module.css";
 
 const LEAVE_MS = 220;
+/** The screens stacked on a chat, each with its own history entry (see useBackLayer). */
+const LAYER_KEYS = ["nodContact", "nodBoard", "nodOp", "nodOpsBoard", "nodZone", "nodRadio"] as const;
+function stripLayers(s: Record<string, unknown>) {
+  const out = { ...s };
+  for (const k of LAYER_KEYS) delete out[k];
+  return out;
+}
 const THEME_KEY = "nod.theme";
 const STAGE_KEY = "nod.stage";
 
@@ -228,6 +235,13 @@ function Device() {
     setShownFor(me);
     if (openChat) setOpenChat(null);
   }
+  // The layers the old identity had open (Operation page, zone, radio, board, contact page) are about to
+  // unmount, and each would step back through history for its own entry. Clear their keys first, before
+  // their cleanups run, so the entry stays the chat's and nothing pops twice.
+  useLayoutEffect(() => {
+    const s = window.history.state;
+    if (s && typeof s === "object" && LAYER_KEYS.some((k) => k in s)) window.history.replaceState(stripLayers(s), "");
+  }, [me]);
   const latestChats = useRef(state.data.chats);
   useEffect(() => { latestChats.current = state.data.chats; }, [state.data.chats]);
 
@@ -261,6 +275,8 @@ function Device() {
 
   // The open chat as it is now: leaving a group (or losing a channel) closes it.
   const openLive = openChat ? state.data.chats.find((c) => c.id === openChat.id) ?? openChat : null;
+  // Whether it can be shown to this person: a zone channel can close under them, or belong to someone else.
+  const showing = !!openLive && openLive.memberIds.includes(me) && !openLive.removedAt;
 
   // Say so once if storage fills up: nothing new would survive a reload.
   const [storageWarned, setStorageWarned] = useState(false);
@@ -320,6 +336,14 @@ function Device() {
       setLeaving(false);
     }, LEAVE_MS);
   }, []);
+  // A chat that can't be shown any more (its channel closed, or it isn't this person's) would leave the
+  // inbox pushed aside and inert behind nothing: let go of it, and of its history entry.
+  useEffect(() => {
+    if (!openChat || showing) return;
+    if (window.history.state?.nodChat) window.history.back();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    else hide(true);
+  }, [openChat, showing, hide]);
 
   // An open chat is a history entry, so the phone's Back (or a browser back
   // swipe) closes the chat instead of leaving the site. Next.js keeps its own
@@ -327,14 +351,32 @@ function Device() {
   const openRef = useRef<Chat | null>(null);
   const popImmediate = useRef(false);
   useEffect(() => { openRef.current = openChat; }, [openChat]);
+  const switching = useRef(false);
+  const meRef = useRef(me);
+  useEffect(() => { meRef.current = me; }, [me]);
   const open = (chat: Chat, messageId?: string) => {
+    const s = window.history.state;
+    const layers = s && typeof s === "object" ? LAYER_KEYS.filter((k) => k in s).length : 0;
+    if (layers && s?.nodChat) {
+      // Switching chats (a banner tap, a move request) while layers are open: each layer has its own
+      // history entry on top of the chat's. Step back over them to the chat's entry, then make that
+      // entry the new chat's, so Back from here leaves the chat and nothing stale is left behind.
+      // The popstate for the chat's entry would reopen the old chat; `switching` makes it a no-op.
+      switching.current = true;
+      const settle = () => {
+        switching.current = false;
+        window.removeEventListener("popstate", settle);
+        window.history.replaceState({ ...stripLayers(window.history.state ?? {}), nodChat: chat.id }, "");
+        show(chat, messageId);
+      };
+      window.addEventListener("popstate", settle);
+      setTimeout(() => { if (switching.current) settle(); }, 500);
+      window.history.go(-layers);
+      return;
+    }
     show(chat, messageId);
-    if (window.history.state?.nodChat) {
-      // Switching chats (a banner tap) while a contact page, board or Operation layer is open:
-      // this entry now belongs to the new chat, so the old layer's cleanup mustn't step back from it.
-      const { nodContact, nodBoard, nodOp, nodOpsBoard, nodZone, nodRadio, ...rest } = window.history.state;
-      void nodContact; void nodBoard; void nodOp; void nodOpsBoard; void nodZone; void nodRadio;
-      window.history.replaceState({ ...rest, nodChat: chat.id }, "");
+    if (s?.nodChat) {
+      window.history.replaceState({ ...stripLayers(s), nodChat: chat.id }, "");
     } else {
       window.history.pushState({ nodChat: chat.id }, "");
     }
@@ -357,12 +399,13 @@ function Device() {
     joined.current = true;
     // Used once: a reload after leaving the group mustn't join it again.
     dropParam("join");
-    // An Operation's crew link also hands out a crew (and maybe a zone): say which.
+    // An Operation's crew link also hands out a crew (and maybe a zone): say which (to someone new to it).
     const crew = findLink(state.data.chats, code);
+    const wasMember = !!crew && crew.group.memberIds.includes(me);
     const group = joinByCode(code);
     if (!group) return;
     let joinedAs: Banner | null = null;
-    if (crew) {
+    if (crew && !wasMember) {
       const info = groupInfo(crew.group);
       const roles = crew.link.roleIds.map((r) => info.roles.find((x) => x.id === r)?.name).filter((n): n is string => !!n);
       const as = roles.length > 1 ? `${roles.slice(0, -1).join(", ")} and ${roles[roles.length - 1]}` : roles[0];
@@ -402,14 +445,17 @@ function Device() {
     const onPop = () => {
       // A same-page #anchor adds an entry with no state; it isn't a Back out of the chat.
       if (window.history.state === null) return;
+      // open() is stepping back over layer entries to switch chats; it handles this one itself.
+      if (switching.current) return;
       const id: string | undefined = window.history.state?.nodChat;
       if (!id && openRef.current) {
         hide(popImmediate.current);
         popImmediate.current = false;
       } else if (id && openRef.current?.id !== id) {
-        // Forward again: reopen the chat this entry belongs to.
+        // Forward again: reopen the chat this entry belongs to, if it's still this person's to see.
         const chat = latestChats.current.find((c) => c.id === id);
-        if (chat) show(chat);
+        if (chat && chat.memberIds.includes(meRef.current) && !chat.removedAt) show(chat);
+        else if (!openRef.current) window.history.replaceState(stripLayers({ ...window.history.state, nodChat: undefined }), "");
       }
     };
     window.addEventListener("popstate", onPop);
@@ -429,8 +475,8 @@ function Device() {
             <Onboarding key="welcome" mode="first" onDone={(id) => setMe(id)} />
           ) : (
             <>
-              <Inbox key={me} onOpen={open} pushed={!!openChat && !leaving} />
-              {openLive && openLive.memberIds.includes(me) && !openLive.removedAt && (
+              <Inbox key={me} onOpen={open} pushed={showing && !leaving} />
+              {showing && openLive && (
                 <ChatView
                   key={openLive.id}
                   chat={openLive}

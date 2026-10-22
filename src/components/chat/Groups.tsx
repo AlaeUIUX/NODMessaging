@@ -9,7 +9,13 @@ import {
   upsertRole,
 } from "@/lib/chat/groups";
 import { describe, isQuiet, ruleFor, useMutes } from "@/lib/chat/mutes";
-import { canManageZones, joinUrl, type OperationSetup } from "@/lib/chat/operation";
+import { canManageZones, joinUrl, opId, type OperationSetup } from "@/lib/chat/operation";
+import { opDispatch } from "@/lib/chat/opstore";
+
+/** Someone leaving an Operation (or removed from it) is no longer on site. */
+function checkOutOf(group: Chat, userId: string) {
+  if (group.group?.operation) opDispatch(group.id, { t: "checkIn", userId, zoneId: null, via: "tap", at: Date.now(), feedId: opId("f") });
+}
 import { allPeople } from "@/lib/chat/people";
 import { useChat, userById } from "@/lib/chat/store";
 import type { AvatarTone, Chat, GroupChannel, GroupPermission, GroupRole } from "@/lib/chat/types";
@@ -304,6 +310,7 @@ export function ChannelSheet({ groupId, channelId, onClose, onCreated, onToast }
   const live = useGroup(groupId);
   const existing = live?.info.channels.find((c) => c.id === channelId);
   const isDefault = channelId === groupId;
+  const opOf = live?.info.operation;
   const [name, setName] = useState(existing?.name ?? "");
   const [topic, setTopic] = useState(existing?.topic ?? "");
   const [seeMode, setSeeMode] = useState<"all" | "roles">(existing?.roles.length ? "roles" : "all");
@@ -361,17 +368,24 @@ export function ChannelSheet({ groupId, channelId, onClose, onCreated, onToast }
       )}
 
       {existing && !isDefault && (
-        <button
-          className={styles.mindDanger}
-          onClick={() => {
-            if (!confirm) { setConfirm(true); return; }
-            updateGroup(groupId, (x) => deleteChannel(x, existing.id));
-            onClose();
-            onToast?.(`#${existing.name} removed`);
-          }}
-        >
-          {confirm ? `Tap again to remove #${existing.name}` : "Remove channel"}
-        </button>
+        // An Operation's #broadcasts and zone channels belong to the Operation: zones go from Settings › Zones.
+        opOf?.broadcastsChannel === existing.id ? (
+          <p className={styles.sheetNote}>#broadcasts is where the Operation’s alerts go; it stays as long as the Operation does.</p>
+        ) : opOf?.zones.some((z) => z.channelId === existing.id) ? (
+          <p className={styles.sheetNote}>This is a zone’s channel. To close it, delete the zone in Settings › Zones.</p>
+        ) : (
+          <button
+            className={styles.mindDanger}
+            onClick={() => {
+              if (!confirm) { setConfirm(true); return; }
+              updateGroup(groupId, (x) => deleteChannel(x, existing.id));
+              onClose();
+              onToast?.(`#${existing.name} removed`);
+            }}
+          >
+            {confirm ? `Tap again to remove #${existing.name}` : "Remove channel"}
+          </button>
+        )
       )}
     </Sheet>
   );
@@ -481,7 +495,7 @@ export function GroupSettings({ groupId, leaving, onBack, onToast, onLeft }: {
           <Avatar glyph={initials(group.name)} tone={look.tone} photo={look.photo} size={56} />
           <b>Leave {group.name}?</b>
           <p>You won’t see its channels any more. Someone will need to invite you to come back.</p>
-          <button className={`${styles.primaryWide} ${a.dangerBtn}`} onClick={() => done(() => { updateGroup(groupId, (x) => removeMember(x, me)); onToast(`You left ${group.name}`); onLeft(); })}>Leave group</button>
+          <button className={`${styles.primaryWide} ${a.dangerBtn}`} onClick={() => done(() => { checkOutOf(group, me); updateGroup(groupId, (x) => removeMember(x, me)); onToast(`You left ${group.name}`); onLeft(); })}>Leave group</button>
         </div>
       )}
     </Sheet>,
@@ -850,6 +864,7 @@ function MemberSheet({ groupId, userId, onClose, onToast }: { groupId: string; u
           className={styles.mindDanger}
           onClick={() => {
             if (!confirm) { setConfirm(true); return; }
+            checkOutOf(group, userId);
             updateGroup(groupId, (x) => removeMember(x, userId));
             onClose();
             onToast(`${p.name} removed from ${group.name}`);

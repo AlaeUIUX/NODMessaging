@@ -1,6 +1,7 @@
 "use client";
 
 import { stripFormatting } from "@/lib/chat/markdown";
+import { can, canSee } from "@/lib/chat/groups";
 import { canManageZones, clock, staffing, zoneById, zoneStatus } from "@/lib/chat/operation";
 import { useChat, userById } from "@/lib/chat/store";
 import { IconAlert, IconChevron, IconLocation, IconPlus, IconQr, IconUserGroup } from "../Icons";
@@ -39,6 +40,8 @@ export function ZonePage({ groupId, zoneId, onClose }: { groupId: string; zoneId
   const presence = live.presence[me];
   const isHere = presence?.zoneId === z.id;
   const manage = canManageZones(info, me) || z.leadId === me;
+  // Sending people here is Command's call; a lead asks for them instead.
+  const assign = canManageZones(info, me) || can(info, me, "approveRequests");
   const tasks = o.tasks(z.id).sort(byStep(o));
   const openCount = tasks.filter((t) => t.column !== o.doneColumn).length;
   const requests = live.requests
@@ -101,9 +104,13 @@ export function ZonePage({ groupId, zoneId, onClose }: { groupId: string; zoneId
       <section className={p.section} aria-label="Who's here">
         <div className={p.secHead}>
           <h3 className={p.h3}>Who’s here<em>{st.n}</em></h3>
-          {manage && (
+          {assign ? (
             <button className={p.pill} onClick={() => ui.openSheet(<AssignSheet groupId={groupId} zoneId={z.id} onClose={ui.closeSheet} />)}>
               <IconPlus size={14} />Assign
+            </button>
+          ) : manage && (
+            <button className={p.pill} onClick={() => ui.openSheet(<RequestSheet groupId={groupId} zoneId={z.id} kind="staff" onClose={ui.closeSheet} />)}>
+              <IconPlus size={14} />Ask for people
             </button>
           )}
         </div>
@@ -138,7 +145,7 @@ export function ZonePage({ groupId, zoneId, onClose }: { groupId: string; zoneId
         )}
       </section>
 
-      {channel && (
+      {channel && canSee(info, channel, me) && (
         <section className={p.section} aria-label="Zone chat">
           <button className={p.chatLink} onClick={() => ui.switchChannel?.(z.channelId)}>
             <span className={p.hash}>#</span>
