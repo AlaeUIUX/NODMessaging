@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Chat, Message, User } from "@/lib/chat/types";
-import { IconBack, IconBell, IconCamera, IconImage, IconLocation, IconUserGroup } from "./Icons";
+import { IconBack, IconBell, IconCamera, IconImage, IconLocation, IconMic, IconUserGroup } from "./Icons";
 import styles from "./chat.module.css";
 
 /* ---------------------------------------------------------------------------
@@ -26,6 +26,14 @@ export interface ChatUi {
   addTask: (fields: { title: string; assignee: string | null; due: number | null; fromMessageId?: string }) => void;
   /** Scrolls the thread to a message and flashes it. */
   jumpTo: (messageId: string) => void;
+  /** Operations only: opens a zone's page. */
+  openZone?: (zoneId: string) => void;
+  /** Operations only: opens the Radio full screen. */
+  openRadio?: () => void;
+  /** Operations only: opens the Operation page. */
+  openOperation?: () => void;
+  /** Moves the chat to another of the group's channels (a zone's, #broadcasts). */
+  switchChannel?: (channelId: string) => void;
 }
 
 const Ctx = createContext<ChatUi | null>(null);
@@ -34,6 +42,10 @@ export function useChatUi() {
   const ui = useContext(Ctx);
   if (!ui) throw new Error("useChatUi must be used inside ChatView");
   return ui;
+}
+/** The same, or null outside a chat (for parts that also render elsewhere). */
+export function useOptionalChatUi() {
+  return useContext(Ctx);
 }
 
 /* ---------------------------------------------------------------------------
@@ -80,7 +92,7 @@ export function useDialog(ref: React.RefObject<HTMLElement | null>, onEscape?: (
    Permissions — remembered per browser, like the OS would.
 --------------------------------------------------------------------------- */
 
-export type PermissionKind = "notifications" | "location" | "camera" | "photos" | "contacts";
+export type PermissionKind = "notifications" | "location" | "camera" | "photos" | "contacts" | "microphone";
 export type PermissionState = "prompt" | "granted" | "denied";
 
 const KEY = (k: PermissionKind) => `nod.perm.${k}`;
@@ -130,6 +142,12 @@ const COPY: Record<PermissionKind, { title: string; body: string; allow: string[
     body: "Pick photos to share. NOD never uploads anything you don’t send.",
     allow: ["Allow Full Access", "Select Photos…"],
     icon: <IconImage size={26} />,
+  },
+  microphone: {
+    title: "“NOD” Would Like to Access the Microphone",
+    body: "Talk on the radio and dictate messages. NOD only listens while you hold the button.",
+    allow: ["OK"],
+    icon: <IconMic size={26} />,
   },
 };
 

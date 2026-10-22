@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { USERS } from "./seed";
+import { OPS_CREW, OPS_RECRUITS } from "./seed-ops";
 import type { AvatarTone, User } from "./types";
 
 /**
@@ -82,9 +83,14 @@ export function usernameProblem(name: string, exceptId?: string): string | null 
   if (name.length > 20) return "20 characters at most";
   if (!/^[a-z0-9_]+$/.test(name)) return "Only letters, numbers and _";
   if (/^_|_$/.test(name)) return "Can’t start or end with _";
-  if (allPeople().some((u) => u.username === name && u.id !== exceptId)) return `@${name} is taken`;
+  // The demo crew arrived after some people had already signed up: a handle someone made here first stays theirs.
+  const mine = exceptId ? personById(exceptId) : null;
+  const yields = (u: User) => DEMO_CREW.has(u.id) && !!mine && !DEMO_CREW.has(mine.id) && mine.username === name;
+  if (allPeople().some((u) => u.username === name && u.id !== exceptId && !yields(u))) return `@${name} is taken`;
   return null;
 }
+
+const DEMO_CREW = new Set([...OPS_CREW, ...OPS_RECRUITS].map((u) => u.id));
 
 /** A username suggestion from a name: "Sam Lee" → "samlee", then samlee2… if taken. */
 export function suggestUsername(fullName: string, exceptId?: string) {

@@ -13,7 +13,7 @@ import type { AvatarTone } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import {
   IconBack, IconBell, IconBellOff, IconCamera, IconCheck, IconChevron, IconContacts, IconGlobe, IconHelp, IconImage,
-  IconInfo, IconKeyboard, IconLocation, IconLogout, IconPalette, IconPlus, IconShare, IconShield, IconStorage,
+  IconInfo, IconKeyboard, IconLocation, IconLogout, IconMic, IconPalette, IconPlus, IconShare, IconShield, IconStorage,
 } from "./Icons";
 import Logo from "./Logo";
 import { AvatarPicker, ProfileFields, profileReady, type ProfileDraft } from "./Profile";
@@ -295,6 +295,7 @@ const PERMS: { kind: PermissionKind; label: string; icon: React.ReactNode; tone:
   { kind: "contacts", label: "Contacts", icon: <IconContacts size={16} />, tone: "sage" },
   { kind: "photos", label: "Photos", icon: <IconImage size={16} />, tone: "ochre" },
   { kind: "camera", label: "Camera", icon: <IconCamera size={16} />, tone: "graphite" },
+  { kind: "microphone", label: "Microphone", icon: <IconMic size={16} />, tone: "plum" },
   { kind: "location", label: "Location", icon: <IconLocation size={16} />, tone: "denim" },
 ];
 

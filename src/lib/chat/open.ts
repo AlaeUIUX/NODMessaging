@@ -132,6 +132,11 @@ export function openState(message: Message, me: string, now = Date.now()): OpenS
         title: c.name,
       };
     }
+    case "opRef":
+      // Operation requests and broadcasts live in the Operation's live state
+      // (lib/chat/opstore.ts), not on the card: the Operation page and the
+      // overlays track them, so a thread doesn't count them as open cards.
+      return null;
     default:
       return null;
   }

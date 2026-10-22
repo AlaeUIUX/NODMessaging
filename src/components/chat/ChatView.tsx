@@ -8,13 +8,25 @@ import { stripFormatting } from "@/lib/chat/markdown";
 import { allPeople } from "@/lib/chat/people";
 import { useChat, userById } from "@/lib/chat/store";
 import { TONES } from "@/lib/chat/avatar";
+import {
+  canBroadcast, dayOf, emptyLive, isCommand, onSite, pendingRequests, reaches, staffing, zoneByChannel, zoneById,
+} from "@/lib/chat/operation";
+import { ensureOpLive } from "@/lib/chat/opstore";
+import type { BoardMessage } from "@/lib/chat/project";
 import type { Card, Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import {
   AddSheet, ChecklistBuilder, EventBuilder, LocationBuilder, PaymentBuilder, PollBuilder, ReminderBuilder, type AddKind,
 } from "./CardBuilders";
 import Composer from "./Composer";
-import { IconBack, IconBellOff, IconBoard, IconCheck, IconChevron, IconPhone } from "./Icons";
+import { IconBack, IconBellOff, IconBoard, IconCheck, IconChevron, IconLocation, IconMegaphone, IconPhone, IconQr } from "./Icons";
+import { Code } from "./operation/kit";
+import { BroadcastSheet, RequestSheet } from "./operation/OpCards";
+import { OperationPage } from "./operation/OperationPage";
+import { RadioButton, RadioScreen } from "./operation/Radio";
+import { ZonePage } from "./operation/ZonePage";
+import { BroadcastBanner, openTasks, ScanSheet, unreadBroadcasts, useOp } from "./operation/zones";
+import ps from "./operation/pages.module.css";
 import MessageList from "./MessageList";
 import MessageOverlay from "./MessageOverlay";
 import MessageRow, { type BubblePos } from "./MessageRow";
@@ -47,6 +59,32 @@ interface MenuState {
 }
 
 const EDGE = 24;
+
+/** History keys of the screens stacked on a chat, each with its own entry (see useBackLayer). */
+const LAYER_KEYS = ["nodContact", "nodBoard", "nodOp", "nodZone", "nodRadio", "nodOpsBoard"];
+
+/**
+ * Closes the stacked screens named by `keys` (the top-most ones), going back
+ * through their history entries in one step, then runs `then` once they've
+ * gone. Switching channel with a screen still open would otherwise leave its
+ * entry behind, and its own cleanup would step back into the old channel.
+ */
+function afterLayers(then: () => void, keys = LAYER_KEYS) {
+  const n = keys.filter((k) => window.history.state?.[k]).length;
+  if (!n) { then(); return; }
+  let done = false;
+  const go = () => {
+    if (done) return;
+    done = true;
+    window.removeEventListener("popstate", go);
+    clearTimeout(fallback);
+    then();
+  };
+  window.addEventListener("popstate", go);
+  // In case the browser never reports the step back.
+  const fallback = setTimeout(go, 500);
+  window.history.go(-n);
+}
 
 export default function ChatView({ chat: opened, leaving, onBack, focusMessageId, onSwitchChannel, instant }: {
   chat: Chat;
@@ -99,6 +137,19 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   const [groupSettings, setGroupSettings] = useState<{ leaving: boolean } | null>(null);
   const [pendingChannel, setPendingChannel] = useState<string | null>(null);
 
+  // An Operation (a group running a live event): its page, a zone's page, the radio and the Ops board stack on the chat.
+  const o = useOp(group?.id);
+  const [opPage, setOpPage] = useState(false);
+  const [zonePage, setZonePage] = useState<string | null>(null);
+  const [radio, setRadio] = useState(false);
+  const [opsBoard, setOpsBoard] = useState<{ zone: string | null } | null>(null);
+  /** The zone whose channel this is. */
+  const chatZone = o ? zoneByChannel(o.op, chat.id) : undefined;
+  const opCommand = !!o && isCommand(o.info, me);
+  const myZone = o ? zoneById(o.op, o.live.presence[me]?.zoneId) : undefined;
+  const opsBoardMessage: BoardMessage | undefined = o?.boardMessage;
+  const showOpsBoard = !!opsBoard && !!opsBoardMessage;
+
   const messages = useMemo(() => state.data.messages[chat.id] ?? [], [state.data.messages, chat.id]);
   const typing = typingUsers(chat.id).filter((id) => id !== me);
   // A channel wears its group's name and picture.
@@ -117,6 +168,17 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   const openBoardMessage = boardId ? boards.find((b) => b.id === boardId) : undefined;
   useBackLayer("nodContact", contact !== null, () => setContact(null));
   useBackLayer("nodBoard", !!openBoardMessage, () => setBoardId(null));
+  useBackLayer("nodOp", opPage, () => setOpPage(false));
+  useBackLayer("nodOpsBoard", showOpsBoard, () => setOpsBoard(null));
+  useBackLayer("nodZone", zonePage !== null, () => setZonePage(null));
+  useBackLayer("nodRadio", radio, () => setRadio(false));
+
+  // A new Operation's live state starts the first time it's opened.
+  const opGroupId = o?.group.id;
+  const firstShift = o?.op.shifts[0]?.id;
+  useEffect(() => {
+    if (opGroupId) ensureOpLive(opGroupId, () => emptyLive(firstShift));
+  }, [opGroupId, firstShift]);
 
   // Unread in the other channels, for the dots on their chips.
   const channelUnread: Record<string, number> = {};
@@ -131,6 +193,15 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     writeLastChannel(me, group.id, id);
     onSwitchChannel?.(target);
   };
+  // From a screen stacked on the chat: those screens close first (their history entries with them), then the switch.
+  const switchRef = useRef(switchChannel);
+  useEffect(() => { switchRef.current = switchChannel; });
+  const switchFromLayer = useCallback((id: string) => afterLayers(() => switchRef.current(id)), []);
+  /** A zone's page; over the radio it replaces it (the radio steps back first). */
+  const openZone = useCallback((zoneId: string) => afterLayers(() => setZonePage(zoneId), ["nodRadio"]), [setZonePage]);
+  const openRadio = useCallback(() => setRadio(true), [setRadio]);
+  /** The Operation's page, under nothing: whatever stacks above it steps back first. */
+  const openOperation = useCallback(() => afterLayers(() => setOpPage(true), ["nodRadio", "nodZone", "nodOpsBoard"]), [setOpPage]);
   const groupId = group?.id;
   const inChannel = !!channel;
   useEffect(() => {
@@ -303,6 +374,18 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
       case "gallery":
         setOverlaySheet(<ArtifactGallery onClose={closeSheet} onPick={(k) => startFlow(k)} />);
         return;
+      case "opRequest": {
+        // For this zone channel's zone, else where I am, else the first zone.
+        if (!o) return;
+        const zoneId = chatZone?.id ?? o.live.presence[me]?.zoneId ?? o.op.zones[0]?.id;
+        if (!zoneId) { flash("Add a zone first, in Settings › Zones"); return; }
+        setOverlaySheet(<RequestSheet groupId={o.group.id} zoneId={zoneId} kind={chatZone ? "staff" : "issue"} onClose={closeSheet} />);
+        return;
+      }
+      case "opBroadcast":
+        if (!o) return;
+        setOverlaySheet(<BroadcastSheet groupId={o.group.id} onClose={closeSheet} />);
+        return;
     }
   };
 
@@ -352,8 +435,9 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   };
   const onEdgeDown = (e: React.PointerEvent) => {
     const el = screenRef.current;
-    // A layer over the chat (contact page, board) handles its own edge swipe.
+    // A layer over the chat (contact page, board, an Operation's screens) handles its own edge swipe.
     if (!el || menu || viewer || overlaySheet || alert || contact || openBoardMessage) return;
+    if (opPage || zonePage !== null || radio || showOpsBoard) return;
     const x = e.clientX - el.getBoundingClientRect().left;
     if (x > EDGE) return;
     // Claim edge drags before a bubble underneath starts its own gesture.
@@ -397,6 +481,19 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   useEffect(() => { boardsRef.current = boards; }, [boards]);
   const openIdRef = useRef(boardId);
   useEffect(() => { openIdRef.current = boardId; }, [boardId]);
+  // An Operation's tasks go on its one Ops board (in the group's own thread), in the zone whose channel this is.
+  // Crew open it on their own zone; Command on every zone.
+  const boardZone = chatZone?.id ?? (o && !opCommand ? myZone?.id ?? null : null);
+  const opsRef = useRef<{ board?: BoardMessage; chatZone: string | null; boardZone: string | null; codes: Record<string, string> }>({ chatZone: null, boardZone: null, codes: {} });
+  const zoneCodes = o?.op.zones;
+  useEffect(() => {
+    opsRef.current = {
+      board: opsBoardMessage,
+      chatZone: chatZone?.id ?? null,
+      boardZone,
+      codes: Object.fromEntries((zoneCodes ?? []).map((z) => [z.id, z.code])),
+    };
+  }, [opsBoardMessage, chatZone?.id, boardZone, zoneCodes]);
   const lastBoardKey = `nod.chat.board.${me}.${chat.id}`;
   const showBoard = useCallback((id: string) => {
     setBoardId(id);
@@ -418,12 +515,25 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     );
   }, [chat.id, closeSheet, sendCard, showBoard]);
   const openBoard = useCallback((messageId?: string) => {
+    // The Ops board is its own screen: it lives in the group's thread, and opens over the Operation's page too.
+    const ops = opsRef.current;
+    if (ops.board && (!messageId || messageId === ops.board.id)) { setOpsBoard({ zone: ops.boardZone }); return; }
     const target = (messageId && boardsRef.current.find((b) => b.id === messageId)) || currentBoard();
     if (target) showBoard(target.id);
     else newBoard();
-  }, [currentBoard, newBoard, showBoard]);
+  }, [currentBoard, newBoard, showBoard, setOpsBoard]);
 
-  const addTask = useCallback((fields: { title: string; assignee: string | null; due: number | null; fromMessageId?: string }) => {
+  const addTask = useCallback((fields: { title: string; assignee: string | null; due: number | null; fromMessageId?: string; zone?: string | null }) => {
+    const ops = opsRef.current;
+    if (ops.board) {
+      const board = ops.board;
+      const zone = fields.zone !== undefined ? fields.zone : ops.chatZone;
+      const task = newTask({ ...fields, zone, column: board.card.columns[0]?.id ?? "todo" }, me);
+      cardOp(board, { kind: "task.add", task });
+      const code = zone ? ops.codes[zone] : undefined;
+      flash(`Added “${task.title}” to ${code ? `${code} · ` : ""}${board.card.name}`, [{ label: "Open board", run: () => setOpsBoard({ zone: zone ?? null }) }]);
+      return;
+    }
     const existing = currentBoard();
     const task = newTask({ ...fields, column: existing?.card.columns[0]?.id ?? "todo" }, me);
     if (existing) {
@@ -436,7 +546,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
       return;
     }
     flash(`Added “${task.title}” to ${existing.card.name}`, [{ label: "Open board", run: () => showBoard(existing.id) }]);
-  }, [cardOp, chat, currentBoard, flash, me, sendCard, showBoard]);
+  }, [cardOp, chat, currentBoard, flash, me, sendCard, showBoard, setOpsBoard]);
 
   const openMenu = useCallback((message: Message, pos: BubblePos, bubble: HTMLElement, armed: boolean) => {
     const host = screenRef.current?.getBoundingClientRect();
@@ -459,16 +569,45 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     [chat, closeSheet],
   );
 
+  const isOp = !!o;
   const ui = useMemo(
-    () => ({ chat, members, openSheet: setOverlaySheet, closeSheet, toast: flash, ask, openMedia, openBoard, addTask, jumpTo }),
-    [chat, members, closeSheet, flash, ask, openMedia, openBoard, addTask, jumpTo],
+    () => ({
+      chat, members, openSheet: setOverlaySheet, closeSheet, toast: flash, ask, openMedia, openBoard, addTask, jumpTo,
+      // Operations only.
+      ...(isOp ? { openZone, openRadio, openOperation, switchChannel: switchFromLayer } : {}),
+    }),
+    [chat, members, closeSheet, flash, ask, openMedia, openBoard, addTask, jumpTo, isOp, openZone, openRadio, openOperation, switchFromLayer],
   );
   const firstName = identity.label.split(" ")[0];
   const presence = typing.length
     ? chat.kind === "group" ? `${userById(typing[0]).name} is typing…` : "typing…"
-    : chat.kind === "group"
-      ? `${chat.memberIds.length} ${chat.memberIds.length === 1 ? "member" : "members"}`
-      : online ? "Active now" : "Active recently";
+    : o
+      // An Operation's chat says how the day is going, numbers first.
+      ? `Day ${dayOf(o.op, minute)} · ${onSite(o.live)} on site · ${pendingRequests(o.live).length} ${pendingRequests(o.live).length === 1 ? "request" : "requests"}`
+      : chat.kind === "group"
+        ? `${chat.memberIds.length} ${chat.memberIds.length === 1 ? "member" : "members"}`
+        : online ? "Active now" : "Active recently";
+
+  /* ---- an Operation's strips, under the channel chips ---- */
+  // A call that reaches me, on air now (not my own: the radio shows that).
+  const onAir = o?.live.radio.tx.find((t) => t.live && t.by !== me && reaches(o.info, o.live, t, me));
+  const onAirZone = onAir && o ? zoneById(o.op, o.live.presence[onAir.by]?.zoneId) : undefined;
+  const onGeneral = !!o && chat.id === o.group.id;
+  const unreadNormal = o && onGeneral && !opCommand ? unreadBroadcasts(o) : [];
+  const stripsRef = useRef<HTMLDivElement>(null);
+  // The thread makes room for whatever the strips hold.
+  useEffect(() => {
+    const el = stripsRef.current;
+    const screen = screenRef.current;
+    if (!el || !screen) return;
+    const ro = new ResizeObserver(() => {
+      const h = el.offsetHeight;
+      screen.style.setProperty("--op-strips-h", h ? `${h + 6}px` : "0px");
+    });
+    ro.observe(el);
+    return () => { ro.disconnect(); screen.style.removeProperty("--op-strips-h"); };
+  }, [isOp, showChannels]);
+  const onBroadcasts = !!o && chat.id === o.op.broadcastsChannel;
 
   const sheetMessage = sheetFor ? messages.find((m) => m.id === sheetFor) : undefined;
   const menuMessage = menu ? messages.find((m) => m.id === menu.message.id) ?? menu.message : null;
@@ -477,7 +616,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     <ChatUiProvider value={ui}>
     <div
       ref={screenRef}
-      className={`${styles.screen} ${styles.chatScreen} ${showChannels ? styles.chatWithChannels : ""} ${instant ? styles.chatInstant : ""} ${leaving ? styles.leaving : ""}`}
+      className={`${styles.screen} ${styles.chatScreen} ${showChannels ? styles.chatWithChannels : ""} ${isOp && showChannels ? ps.opScreen : ""} ${instant ? styles.chatInstant : ""} ${leaving ? styles.leaving : ""}`}
       data-chat-screen
       onPointerDownCapture={onEdgeDown}
       onPointerMove={onEdgeMove}
@@ -486,7 +625,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
       style={{ ["--chat-tone" as string]: TONES[identity.tone] }}
     >
       <StatusBar />
-      <div className={styles.edgeTop} />
+      <div className={styles.edgeTop} data-edge-top />
 
       <header className={styles.chatHeader}>
         <div className={styles.headerSide}>
@@ -494,11 +633,11 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
             <IconBack />
           </button>
         </div>
-        {/* The name opens the contact page; a blue dot means something here is still open. */}
+        {/* The name opens the contact page (an Operation's: its page); a blue dot means something here is still open. */}
         <button
           className={`${styles.titleCapsule} ${styles.titleButton}`}
-          onClick={() => setContact(live.length ? "live" : "media")}
-          aria-label={`${chat.kind === "dm" ? firstName : identity.label}${live.length ? `, ${live.length} open ${live.length === 1 ? "item" : "items"}` : ""}. Open details`}
+          onClick={() => (isOp ? openOperation() : setContact(live.length ? "live" : "media"))}
+          aria-label={`${chat.kind === "dm" ? firstName : identity.label}${live.length ? `, ${live.length} open ${live.length === 1 ? "item" : "items"}` : ""}. Open ${isOp ? "the Operation" : "details"}`}
         >
           <Avatar glyph={identity.glyph} tone={identity.tone} photo={identity.photo} size={40} online={online} />
           <span className={`${styles.tcName} ${styles.glass}`}>
@@ -511,18 +650,21 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
         <div className={`${styles.headerSide} ${styles.headerEnd}`}>
           <button
             className={`${styles.circleBtn} ${styles.glass}`}
-            aria-label={boards.length ? `Open boards (${boards.length})` : "Start a board"}
+            aria-label={opsBoardMessage ? "Open the Ops board" : boards.length ? `Open boards (${boards.length})` : "Start a board"}
             onClick={() => openBoard()}
           >
             <IconBoard />
           </button>
-          <button
-            className={`${styles.circleBtn} ${styles.glass}`}
-            aria-label="Call"
-            onClick={() => flash("Calls are coming soon")}
-          >
-            <IconPhone />
-          </button>
+          {/* An Operation talks on the radio instead. */}
+          {o ? <RadioButton groupId={o.group.id} onOpen={openRadio} /> : (
+            <button
+              className={`${styles.circleBtn} ${styles.glass}`}
+              aria-label="Call"
+              onClick={() => flash("Calls are coming soon")}
+            >
+              <IconPhone />
+            </button>
+          )}
         </div>
       </header>
 
@@ -534,6 +676,44 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
           onSwitch={switchChannel}
           onAdd={manageChannels ? () => setOverlaySheet(<ChannelSheet groupId={group.id} onClose={closeSheet} onCreated={setPendingChannel} onToast={flash} />) : undefined}
         />
+      )}
+
+      {o && showChannels && (
+        // An Operation's chat: a call on air, where I am and what to read (on #general), or the zone this channel is.
+        <div ref={stripsRef} className={ps.strips}>
+          {onAir && (
+            <button className={`${ps.stripPill} ${ps.onAir}`} onClick={openRadio} aria-label={`${userById(onAir.by).name} is on air. Open the radio`}>
+              <i className={ps.liveDot} aria-hidden="true" />
+              <b>{userById(onAir.by).name}{onAirZone ? ` · ${onAirZone.code}` : ""}</b>
+              <span>on air</span>
+              {onAir.text && <span>“{onAir.text.length > 44 ? `…${onAir.text.slice(-44)}` : onAir.text}”</span>}
+            </button>
+          )}
+          {onGeneral && !opCommand && (myZone ? (
+            <button className={ps.stripPill} onClick={() => openZone(myZone.id)}>
+              <IconLocation size={14} />
+              <span>You’re in <b>{myZone.code} · {myZone.name}</b></span>
+              <IconChevron size={12} />
+            </button>
+          ) : (
+            <button className={ps.stripPill} onClick={() => setOverlaySheet(<ScanSheet groupId={o.group.id} onClose={closeSheet} />)}>
+              <IconQr size={14} />
+              <span>Not checked in · <b>Scan</b></span>
+            </button>
+          ))}
+          {unreadNormal.map((b) => <BroadcastBanner key={b.id} o={o} b={b} className={ps.stripBanner} />)}
+          {chatZone && (() => {
+            const st = staffing(o.live, chatZone);
+            const tasks = openTasks(o, chatZone.id).length;
+            return (
+              <button className={ps.stripPill} onClick={() => openZone(chatZone.id)} aria-label={`${chatZone.code} ${chatZone.name}: ${st.n} of ${st.target} here, ${tasks} tasks. Open the zone`}>
+                <Code z={chatZone} />
+                <span>{chatZone.name} · <b>{st.n}/{st.target}</b> here · {tasks} {tasks === 1 ? "task" : "tasks"}</span>
+                <IconChevron size={12} />
+              </button>
+            );
+          })()}
+        </div>
       )}
 
       <MessageList
@@ -581,14 +761,14 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
       <div ref={composerRef}>
         {!canWrite && gInfo && channel ? (
           <div className={styles.readOnlyBar}>
-            <span>📣 Only {roleNames(gInfo, channel.postRoles)} can post in #{channel.name}</span>
+            <span className={ps.readOnlyText}><IconMegaphone size={15} />Only {roleNames(gInfo, channel.postRoles)} can post in #{channel.name}</span>
           </div>
         ) : (
         <Composer
           chatId={chat.id}
           meId={me}
           members={members}
-          placeholder={chat.kind === "group" ? `Message ${showChannels && channel ? `#${channel.name}` : identity.label}` : `Message ${firstName}`}
+          placeholder={onBroadcasts ? "Broadcast to everyone" : chat.kind === "group" ? `Message ${showChannels && channel ? `#${channel.name}` : identity.label}` : `Message ${firstName}`}
           replyTo={replyTo}
           editing={editing}
           onCancelReply={() => setReplyTo(null)}
@@ -597,6 +777,12 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
             // "/task Hero copy @Reema fri" goes to the board instead of the thread.
             const task = attachments.length ? null : parseTaskCommand(body, allPeople().filter((u) => chat.memberIds.includes(u.id)));
             if (task) { addTask(task); setReplyTo(null); return; }
+            // In an Operation's #broadcasts every message is a broadcast (to everyone; + › Broadcast picks who, or Critical).
+            if (o && onBroadcasts && !attachments.length && body.trim()) {
+              o.act.sendBroadcast(body.trim(), "normal", { all: true });
+              setReplyTo(null);
+              return;
+            }
             send(chat.id, body, { replyToId: replyTo?.id ?? null, attachments });
             setReplyTo(null);
           }}
@@ -606,7 +792,9 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
           }}
           onTyping={(isTyping) => setTyping(chat.id, isTyping)}
           onHint={flash}
-          onOpenAdd={() => setOverlaySheet(<AddSheet onClose={closeSheet} onPick={(k) => void startFlow(k)} />)}
+          onOpenAdd={() => setOverlaySheet(
+            <AddSheet onClose={closeSheet} onPick={(k) => void startFlow(k)} operation={o ? { canBroadcast: canBroadcast(o.info, me) } : undefined} />,
+          )}
           onQuick={(k) => void startFlow(k)}
           incoming={incoming}
         />
@@ -697,7 +885,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
           startTab={contact}
           onClose={() => setContact(null)}
           onJump={(id) => { setContact(null); setTimeout(() => jumpTo(id), 260); }}
-          onSwitchChannel={group ? (id) => { setContact(null); switchChannel(id); } : undefined}
+          onSwitchChannel={group ? switchFromLayer : undefined}
           onInvite={group ? () => setOverlaySheet(<InvitePeopleSheet groupId={group.id} onClose={closeSheet} onToast={flash} />) : undefined}
           onSettings={group ? () => setGroupSettings({ leaving: false }) : undefined}
         />
@@ -708,7 +896,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
           leaving={groupSettings.leaving}
           onBack={closeGroupSettings}
           onToast={flash}
-          onLeft={() => { setGroupSettings(null); setContact(null); onBack(); }}
+          onLeft={() => { setGroupSettings(null); setContact(null); setOpPage(false); onBack(); }}
         />
       )}
       {openBoardMessage && (
@@ -720,6 +908,27 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
           onClose={() => setBoardId(null)}
         />
       )}
+      {/* An Operation's screens, bottom to top: its page, the Ops board, a zone, the radio. */}
+      {o && opPage && (
+        <OperationPage
+          groupId={o.group.id}
+          onClose={() => setOpPage(false)}
+          onSettings={() => setGroupSettings({ leaving: false })}
+          onSwitchChannel={switchFromLayer}
+        />
+      )}
+      {showOpsBoard && opsBoardMessage && (
+        <ProjectBoard
+          message={opsBoardMessage}
+          boards={[opsBoardMessage]}
+          onSwitch={() => {}}
+          onNew={() => afterLayers(newBoard)}
+          onClose={() => setOpsBoard(null)}
+          initialZone={opsBoard?.zone ?? null}
+        />
+      )}
+      {o && zonePage !== null && <ZonePage groupId={o.group.id} zoneId={zonePage} onClose={() => setZonePage(null)} />}
+      {o && radio && <RadioScreen groupId={o.group.id} onClose={() => setRadio(false)} />}
       {overlaySheet}
       {viewer && <MediaViewer message={viewer.message} start={viewer.index} onClose={() => setViewer(null)} />}
       {alert && <PermissionAlert kind={alert.kind} onResolve={alert.resolve} />}

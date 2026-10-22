@@ -3,15 +3,18 @@ import { msg } from "./seedkit";
 import { billSeed } from "./seed-bill";
 import { planSeed } from "./seed-plan";
 import { projectSeed } from "./seed-project";
+import { EWC_CHATS, ewcMessages, OPS_CREW, OPS_RECRUITS } from "./seed-ops";
 import type { Chat, ChatState, Message, User } from "./types";
 
-export const USERS: User[] = [
+const CORE_USERS: User[] = [
   { id: "me", name: "Alae", fullName: "Alae", tone: "graphite", username: "alae", phone: "+43123456789", bio: "Designing NOD." },
   { id: "charles", name: "Charles", fullName: "Charles", tone: "denim", username: "charles", phone: "+436601112233", bio: "Engineering · coffee first." },
   { id: "jamshad", name: "Jamshad", fullName: "Jamshad", tone: "sage", username: "jamshad", phone: "+436602223344" },
   { id: "reema", name: "Reema", fullName: "Reema", tone: "clay", username: "reema", phone: "+436603334455", bio: "Product, and plants." },
   { id: "salman", name: "Salman", fullName: "Salman", tone: "plum", username: "salman", phone: "+436604445566" },
 ];
+/** Everyone in the demo: the five above, and the crew working the EWC Operation (seed-ops.ts). */
+export const USERS: User[] = [...CORE_USERS, ...OPS_CREW, ...OPS_RECRUITS];
 
 const DAY = 24 * 60 * 60 * 1000;
 /** A square group picture from Unsplash. */
@@ -94,6 +97,7 @@ export const CHATS: Chat[] = [
   { id: "reema", name: "Reema", kind: "dm", memberIds: ["me", "reema"] },
   { id: "jamshad", name: "Jamshad", kind: "dm", memberIds: ["me", "jamshad"] },
   { id: "salman", name: "Salman", kind: "dm", memberIds: ["me", "salman"] },
+  ...EWC_CHATS,
 ];
 
 const HOUR = 60 * 60 * 1000;
@@ -357,7 +361,7 @@ export function buildSeedState(now = Date.now()): ChatState {
   const messages: Record<string, Message[]> = {
     dm, general, reema, jamshad, salman, "general--announcements": announcements, "general--design": design, vienna, ...publicThreads,
   };
-  for (const m of [...planSeed(now), ...billSeed(now), ...projectSeed(now)]) {
+  for (const m of [...planSeed(now), ...billSeed(now), ...projectSeed(now), ...ewcMessages(now)]) {
     (messages[m.chatId] ??= []).push(m);
   }
   for (const list of Object.values(messages)) list.sort((a, b) => a.createdAt - b.createdAt);
@@ -374,4 +378,5 @@ export function buildSeedState(now = Date.now()): ChatState {
 // v7/v8 added the plan, bill and board demos; existing threads keep theirs and gain these
 // (v8 again, for anyone who loaded v7 before the demos were filled in). v9 adds the Analytics demos,
 // v10 groups: NOD Team's roles and channels, and the Vienna invitation. v11 public groups for Explore.
-export const CURRENT_VERSION = 11;
+// v12 the EWC Operation and its crew (added on top of what's there; see storage.ts migrate).
+export const CURRENT_VERSION = 12;

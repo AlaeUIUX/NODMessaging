@@ -1,0 +1,193 @@
+/* ==========================================================================
+   Operations: setting one up (New group › Operation, Turn into an Operation),
+   its settings pages, and its live strip in the inbox. Tokens only, so dark
+   mode follows the .theme root.
+   ========================================================================== */
+
+/* ---- fields ---- */
+
+.hint { margin: 0 2px; font: var(--t-footnote); color: var(--ink-3); text-wrap: pretty; }
+.hint b { font-weight: var(--w-emph); color: var(--ink-2); }
+
+/* A field whose value is a stepper: the label left, − n + right. */
+.stepField.stepField { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding-block: 8px; }
+.stepper { display: inline-flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.stepper button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--fill);
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out), background var(--t-fast);
+}
+.stepper button:hover { background: var(--fill-2); }
+.stepper button:active { transform: scale(.92); }
+.stepper button:disabled { opacity: .35; cursor: default; transform: none; }
+.stepper b { min-width: 24px; text-align: center; font: var(--t-headline); font-variant-numeric: tabular-nums; color: var(--ink); }
+
+/* The native date control draws its own icon: give it the theme's scheme. */
+.date.date { min-height: 24px; color-scheme: light; }
+:global([data-theme="dark"]) .date.date { color-scheme: dark; }
+
+.summary { display: flex; align-items: center; gap: 6px; margin: 0 4px; font: var(--t-footnote); font-weight: var(--w-control); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.summary svg { flex-shrink: 0; color: var(--ink-3); }
+
+.codeInput.codeInput { font: var(--t-headline); letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+
+/* ---- the zone template ---- */
+
+.tplList { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.tpl {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 12px 10px 11px;
+  border: none;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), var(--e1);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast);
+}
+.tpl:active { transform: scale(.97); }
+.tpl > svg { margin-bottom: 6px; color: var(--ink-3); }
+.tpl b { font: var(--t-footnote); font-weight: var(--w-emph); }
+.tpl small { font: var(--t-caption2); color: var(--ink-3); }
+.tplOn { box-shadow: 0 0 0 2px var(--ink), var(--e1); }
+.tplOn > svg { color: var(--ink); }
+
+.tplZones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.tplZone { min-width: 0; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--r-md); background: var(--fill); }
+.tplZone > span:last-child { min-width: 0; display: flex; flex-direction: column; }
+.tplZone b, .tplZone small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tplZone b { font: var(--t-caption1); font-weight: var(--w-emph); color: var(--ink); }
+.tplZone small { font: var(--t-caption2); color: var(--ink-3); }
+
+.crews { display: flex; flex-wrap: wrap; gap: 6px; }
+.crew { display: inline-flex; align-items: center; height: 28px; padding: 0 11px; border-radius: var(--r-pill); background: var(--fill); font: var(--t-caption1); font-weight: var(--w-control); color: var(--ink-2); }
+
+/* ---- settings pages ---- */
+
+/* A zone's code where a row has its icon tile: how zones are said on the radio. */
+.codeTile {
+  min-width: 34px;
+  height: 30px;
+  padding: 0 6px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--ink);
+  color: var(--page);
+  font: var(--t-footnote);
+  font-weight: var(--w-emph);
+  letter-spacing: .02em;
+  font-variant-numeric: tabular-nums;
+}
+.trail { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; color: var(--ink-3); }
+.noLead { font: var(--t-footnote); color: var(--ink-3); }
+.shifts { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 0 4px; font: var(--t-footnote); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* the lead picker */
+.ghost { width: 36px; height: 36px; flex-shrink: 0; display: grid; place-items: center; border-radius: var(--r-pill); background: var(--fill-2); color: var(--ink-3); }
+.change { flex-shrink: 0; font: var(--t-subhead); font-weight: var(--w-control); color: var(--accent); }
+
+/* ---- invite links ---- */
+
+.linkCard { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; }
+.linkTop { min-width: 0; display: flex; align-items: center; gap: 12px; }
+.linkIcon { width: 30px; height: 30px; flex-shrink: 0; display: grid; place-items: center; border-radius: 9px; background: var(--fill); color: var(--ink-2); }
+.linkUrl {
+  display: block;
+  padding: 8px 12px;
+  border-radius: var(--r-md);
+  background: var(--fill);
+  font: var(--t-footnote);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: all;
+}
+.linkActions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.linkBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--fill);
+  color: var(--ink);
+  font: var(--t-footnote);
+  font-weight: var(--w-emph);
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out), background var(--t-fast), color var(--t-fast);
+}
+.linkBtn:hover { background: var(--fill-2); }
+.linkBtn:active { transform: scale(.95); }
+.linkBtn svg { flex-shrink: 0; }
+.linkDelete.linkDelete { margin-left: auto; padding: 0 9px; background: transparent; color: var(--ink-3); }
+.linkDelete.linkDelete:hover { background: var(--bad-soft); color: var(--bad); }
+.linkConfirm.linkConfirm { margin-left: auto; background: var(--bad-soft); color: var(--bad); }
+.tryLink {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: var(--t-footnote);
+  font-weight: var(--w-control);
+  cursor: pointer;
+}
+.tryLink:hover { text-decoration: underline; }
+
+/* ---- the inbox: an Operation's live strip ---- */
+
+.strip {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font: var(--t-caption1);
+  font-weight: var(--w-control);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.strip > span, .where > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--ink-3); }
+.dotLive {
+  background: var(--ok-mark);
+  animation-name: livePulse;
+  animation-duration: 2s;
+  animation-timing-function: var(--ease-out);
+  animation-iteration-count: infinite;
+}
+@keyframes livePulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok-mark) 55%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--ok-mark) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dotLive { animation-name: none; }
+}
+.where { min-width: 0; display: flex; align-items: center; gap: 4px; font: var(--t-caption1); font-weight: var(--w-emph); color: var(--accent); }
+.where svg { flex-shrink: 0; }
+/* The preview gives up its second line to the strip. */
+.opPreview.opPreview { -webkit-line-clamp: 1; }
+
+/* The inbox list is a grid sized by its rows: a one-line strip must not widen it, only fill it. */
+.strip, .where { width: 0; min-width: 100%; }

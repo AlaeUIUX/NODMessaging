@@ -61,12 +61,14 @@ const CATEGORY: Record<Card["type"], Category> = {
   plan: "together", project: "together", location: "together", mind: "together",
   payment: "money", bill: "money",
   sketch: "artifacts", tictactoe: "artifacts", wheel: "artifacts",
+  opRef: "together",
 };
 
 export const KIND_LABEL: Record<Card["type"], string> = {
   poll: "Poll", checklist: "Checklist", reminder: "Reminder", event: "Event", location: "Location",
   plan: "Plan", project: "Board", bill: "Bill", payment: "Payment", mind: "From Mind",
   sketch: "Doodle", tictactoe: "Tic-tac-toe", wheel: "Wheel",
+  opRef: "Operation",
 };
 
 /** One icon per kind — the same glyph wherever a row needs to identify what it is. */
@@ -105,6 +107,9 @@ function summarize(message: Message, me: string, now: number): Omit<ActivityItem
   const category = CATEGORY[c.type];
 
   switch (c.type) {
+    // Operation requests and broadcasts have their own views (the Operation page).
+    case "opRef":
+      return null;
     case "checklist": {
       const done = c.items.filter((i) => i.doneBy).length;
       const left = c.items.length - done;

@@ -5,10 +5,11 @@ import { initials, TONES } from "@/lib/chat/avatar";
 import { getPrefs } from "@/lib/chat/account";
 import {
   ADMIN, can, canManage, cancelInvite, channelName, deleteChannel, deleteRole, groupInfo, isAdmin, MEMBER, moveChannel,
-  newChannelId, newRoleId, PERMISSIONS, removeMember, ROLE_TONES, roleNames, rolesOf, setMemberRoles, upsertChannel,
+  newChannelId, newRoleId, PERMISSIONS, permissionsFor, removeMember, ROLE_TONES, roleNames, rolesOf, setMemberRoles, upsertChannel,
   upsertRole,
 } from "@/lib/chat/groups";
 import { describe, isQuiet, ruleFor, useMutes } from "@/lib/chat/mutes";
+import { canManageZones, joinUrl, type OperationSetup } from "@/lib/chat/operation";
 import { allPeople } from "@/lib/chat/people";
 import { useChat, userById } from "@/lib/chat/store";
 import type { AvatarTone, Chat, GroupChannel, GroupPermission, GroupRole } from "@/lib/chat/types";
@@ -16,10 +17,14 @@ import Avatar from "./Avatar";
 import { DragScroll } from "./Composer";
 import { MuteSheet } from "./Mute";
 import {
-  IconBack, IconBell, IconCamera, IconCheck, IconChevron, IconCopy, IconLock, IconLogout, IconPlus, IconSearch, IconTrash, IconUserAdd,
-  IconUserGroup,
+  IconBack, IconBell, IconCamera, IconCheck, IconChevron, IconCopy, IconLocation, IconLock, IconLogout, IconMegaphone, IconPlus, IconSearch,
+  IconTrash, IconUserAdd, IconUserGroup,
 } from "./Icons";
 import { QrPattern } from "./Invite";
+import {
+  copyLink, displayUrl, forgetCrew, isCommandRole, isOperationPage, newOperationDraft, NewOperationFields, OPERATION_HINT,
+  OperationSettingsPages, OperationSettingsRows, TemplatePicker, TurnIntoOperationSheet, useStartOperation, type OperationPageId,
+} from "./operation/Setup";
 import { squarePhoto } from "./Profile";
 import { Group, Row, SubPage, Tile } from "./Settings";
 import StatusBar from "./StatusBar";
@@ -64,7 +69,7 @@ export function GroupBanner({ look, compact, children }: { look: Look; compact?:
   );
 }
 
-function LookFields({ look, onChange }: { look: Look; onChange: (patch: Partial<Look>) => void }) {
+function LookFields({ look, onChange, operation }: { look: Look; onChange: (patch: Partial<Look>) => void; operation?: boolean }) {
   const photoRef = useRef<HTMLInputElement>(null);
   return (
     <div className={g.look}>
@@ -84,11 +89,11 @@ function LookFields({ look, onChange }: { look: Look; onChange: (patch: Partial<
       <div className={a.fields}>
         <label className={a.field}>
           <span>Name</span>
-          <input value={look.name} onChange={(e) => onChange({ name: e.target.value.slice(0, 40) })} placeholder="e.g. Launch crew" data-autofocus />
+          <input value={look.name} onChange={(e) => onChange({ name: e.target.value.slice(0, 40) })} placeholder={operation ? "e.g. EWC 2026 · Riyadh" : "e.g. Launch crew"} data-autofocus />
         </label>
         <label className={a.field}>
           <span>Description</span>
-          <textarea value={look.description} onChange={(e) => onChange({ description: e.target.value.slice(0, 140) })} placeholder="What's this group for?" rows={2} />
+          <textarea value={look.description} onChange={(e) => onChange({ description: e.target.value.slice(0, 140) })} placeholder={operation ? "What's the event?" : "What's this group for?"} rows={2} />
           <em className={a.counter}>{140 - look.description.length}</em>
         </label>
       </div>
@@ -144,36 +149,78 @@ function PeoplePicker({ exclude, invited = [], selected, onToggle }: { exclude: 
 }
 
 /* ===========================================================================
-   New group: the look, then who to invite
+   New group: the look, then who to invite. An Operation also asks for its
+   venue and days, then a zone template (see operation/Setup.tsx).
    =========================================================================== */
 
-export function NewGroupSheet({ onClose, onCreated }: { onClose: () => void; onCreated: (chat: Chat) => void }) {
+type NewStep = "look" | "template" | "people";
+
+export function NewGroupSheet({ onClose, onCreated, startAs = "group" }: {
+  onClose: () => void;
+  onCreated: (chat: Chat) => void;
+  /** Which kind the Kind switch starts on ("New Operation" in New chat starts on Operation). */
+  startAs?: "group" | "operation";
+}) {
   const { me, createGroup } = useChat();
-  const [step, setStep] = useState<"look" | "people">("look");
+  const startOperation = useStartOperation();
+  const [kind, setKind] = useState<"group" | "operation">(startAs);
+  const [step, setStep] = useState<NewStep>("look");
   const [look, setLook] = useState<Look>({ name: "", description: "", tone: "denim" });
+  const [setup, setSetup] = useState<OperationSetup>(() => newOperationDraft(Date.now()));
   const [selected, setSelected] = useState<string[]>([]);
+  // Back closes a step's sheet and opens the step before as a fresh sheet (a new key); Next moves on in place.
+  const [sheetKey, setSheetKey] = useState(0);
+  const backing = useRef(false);
+  const op = kind === "operation";
   const ready = !!look.name.trim();
-  const create = () => onCreated(createGroup({ ...look, invite: selected }));
+  const create = () => {
+    const chat = createGroup({ ...look, invite: selected });
+    if (op) startOperation(chat.id, setup);
+    onCreated(chat);
+  };
+  // The sheet calls onClose and then onBack in the same tick: a Back must not close the whole flow.
+  const leave = () => setTimeout(() => {
+    if (backing.current) backing.current = false;
+    else onClose();
+  }, 0);
+  const backTo = (s: NewStep) => { backing.current = true; setStep(s); setSheetKey((k) => k + 1); };
+  const title = step === "look" ? (op ? "New Operation" : "New group") : step === "template" ? "Zone template" : "Invite people";
   return (
     <Sheet
-      title={step === "look" ? "New group" : "Invite people"}
-      onClose={onClose}
+      key={sheetKey}
+      title={title}
+      onClose={op ? leave : onClose}
+      onBack={op && step === "template" ? () => backTo("look") : op && step === "people" ? () => backTo("template") : undefined}
       action={step === "look"
-        ? { label: "Next", disabled: !ready, onClick: () => setStep("people"), keepOpen: true }
-        : { label: "Create", onClick: create }}
+        ? { label: "Next", disabled: !ready, onClick: () => setStep(op ? "template" : "people"), keepOpen: true }
+        : step === "template"
+          ? { label: "Next", onClick: () => setStep("people"), keepOpen: true }
+          : { label: "Create", onClick: create }}
     >
       {step === "look" ? (
         <>
-          <LookFields look={look} onChange={(p) => setLook((l) => ({ ...l, ...p }))} />
-          <p className={styles.sheetNote}>Every group starts with #general. Add channels and roles any time from its settings.</p>
+          <p className={styles.sheetLabel}>Kind</p>
+          <Segmented value={kind} options={[{ id: "group", label: "Group" }, { id: "operation", label: "Operation" }]} onChange={setKind} />
+          {op && <p className={styles.sheetNote}>{OPERATION_HINT}</p>}
+          <LookFields look={look} onChange={(p) => setLook((l) => ({ ...l, ...p }))} operation={op} />
+          {op
+            ? <NewOperationFields value={setup} onChange={(p) => setSetup((x) => ({ ...x, ...p }))} hint={false} />
+            : <p className={styles.sheetNote}>Every group starts with #general. Add channels and roles any time from its settings.</p>}
+        </>
+      ) : step === "template" ? (
+        <>
+          <p className={styles.sheetNote}>Creates zones, crews and a channel per zone in one go. Everything can be edited later.</p>
+          <TemplatePicker value={setup.template} onChange={(template) => setSetup((x) => ({ ...x, template }))} />
         </>
       ) : (
         <>
-          <button className={g.stepBack} onClick={() => setStep("look")}>‹ {look.name.trim()}</button>
+          {!op && <button className={g.stepBack} onClick={() => setStep("look")}>‹ {look.name.trim()}</button>}
           <p className={styles.sheetNote}>
             {selected.length
               ? `${selected.length} ${selected.length === 1 ? "person gets" : "people get"} an invitation to join.`
-              : "Pick people to invite, or create the group and invite them later."}
+              : op
+                ? "Invite people now, or share a crew link later: it gives people their crew, and their zone, as they join."
+                : "Pick people to invite, or create the group and invite them later."}
           </p>
           <PeoplePicker exclude={[me]} selected={selected} onToggle={(id) => setSelected((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]))} />
         </>
@@ -216,7 +263,7 @@ export function ChannelBar({ group, current, unread, onSwitch, onAdd }: {
           <button key={c.id} className={`${g.chip} ${c.id === current ? g.chipOn : ""}`} onClick={() => onSwitch(c.id)} aria-current={c.id === current ? "page" : undefined}>
             <span className={g.hash}>#</span>{c.name}
             {c.roles.length > 0 && <IconLock size={11} />}
-            {c.postRoles.length > 0 && <span className={g.chipNote} aria-label="Read-only">📣</span>}
+            {c.postRoles.length > 0 && <span className={g.chipNote} role="img" aria-label="Read-only"><IconMegaphone size={12} /></span>}
             {c.id !== current && (unread[c.id] ?? 0) > 0 && <i className={g.chipDot} aria-label={`${unread[c.id]} unread`} />}
           </button>
         ))}
@@ -334,18 +381,16 @@ export function ChannelSheet({ groupId, channelId, onClose, onCreated, onToast }
    Invitations: inviting people, and answering one
    =========================================================================== */
 
-const linkOf = (code: string) => `nod.app/g/${code}`;
-
 export function InvitePeopleSheet({ groupId, onClose, onToast }: { groupId: string; onClose: () => void; onToast: (t: string) => void }) {
   const { inviteToGroup } = useChat();
   const live = useGroup(groupId);
   const [selected, setSelected] = useState<string[]>([]);
   if (!live) return null;
   const { group, info } = live;
-  const link = linkOf(info.inviteCode);
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(`https://${link}`); onToast("Invite link copied"); } catch { onToast(link); }
-  };
+  // A real link: it opens the app here and joins (?join=<code>).
+  const url = joinUrl(info.inviteCode);
+  const link = displayUrl(url);
+  const copy = () => copyLink(url, onToast, "Invite link copied");
   return (
     <Sheet
       title={`Invite to ${group.name}`}
@@ -398,7 +443,7 @@ export function InvitationRow({ group, onJoin }: { group: Chat; onJoin: () => vo
    Group settings (people who can manage something)
    =========================================================================== */
 
-type SettingsPage = "overview" | "channels" | "roles" | "members" | "invites";
+type SettingsPage = "overview" | "channels" | "roles" | "members" | "invites" | OperationPageId;
 
 export function GroupSettings({ groupId, leaving, onBack, onToast, onLeft }: {
   groupId: string;
@@ -425,6 +470,9 @@ export function GroupSettings({ groupId, leaving, onBack, onToast, onLeft }: {
   const look: Look = { name: group.name, description: info.description, tone: group.tone ?? "graphite", photo: group.photo };
   const admin = isAdmin(info, me);
   const customRoles = info.roles.filter((r) => r.id !== ADMIN && r.id !== MEMBER).length;
+  const operation = !!info.operation;
+  const convert = () => setSheet(<TurnIntoOperationSheet groupId={groupId} onClose={closeSheet} onToast={onToast} />);
+  const editRole = (roleId?: string) => setSheet(<RoleSheet groupId={groupId} roleId={roleId} onClose={closeSheet} onToast={onToast} />);
 
   const leave = () => setSheet(
     <Sheet title={`Leave ${group.name}`} onClose={closeSheet}>
@@ -456,7 +504,7 @@ export function GroupSettings({ groupId, leaving, onBack, onToast, onLeft }: {
       <StatusBar />
       <header className={a.bar}>
         <button className={`${styles.circleBtn} ${styles.glass}`} onClick={onBack} aria-label="Back"><IconBack /></button>
-        <h2>{canManage(info, me) ? "Group settings" : "Group"}</h2>
+        <h2>{operation ? (canManage(info, me) ? "Operation settings" : "Operation") : canManage(info, me) ? "Group settings" : "Group"}</h2>
         <span className={a.barAction} />
       </header>
       <div className={a.scroll}>
@@ -492,11 +540,24 @@ export function GroupSettings({ groupId, leaving, onBack, onToast, onLeft }: {
           );
         })()}
 
+        {operation && <OperationSettingsRows group={group} now={now} onOpen={open} />}
+
         <Group label={canManage(info, me) ? "Organise" : "People"}>
           {can(info, me, "manageChannels") && <Row icon={<Tile tone="denim"><b className={g.tileHash}>#</b></Tile>} title="Channels" value={String(info.channels.length)} onClick={() => open("channels")} />}
           {can(info, me, "manageRoles") && <Row icon={<Tile tone="plum"><IconLock size={15} /></Tile>} title="Roles & permissions" value={customRoles ? `${customRoles + 2}` : "2"} onClick={() => open("roles")} />}
           <Row icon={<Tile tone="sage"><IconUserGroup size={16} /></Tile>} title="Members" value={String(group.memberIds.length)} onClick={() => open("members")} />
           {can(info, me, "invite") && <Row icon={<Tile tone="accent"><IconUserAdd size={16} /></Tile>} title="Invitations" value={info.invites.length ? `${info.invites.length} waiting` : undefined} onClick={() => open("invites")} />}
+          {admin && !operation && (
+            // Not a Row: its line says what changes, in full.
+            <button className={`${a.row} ${g.rowWrap}`} onClick={convert}>
+              <Tile tone="graphite"><IconLocation size={16} /></Tile>
+              <span className={a.rowText}>
+                <b>Turn into an Operation</b>
+                <small>Adds zones, crews, requests, broadcasts and a radio. Members and channels stay.</small>
+              </span>
+              <IconChevron size={14} />
+            </button>
+          )}
         </Group>
 
         <Group note={admin ? "Admins can see every channel and change everything here." : undefined}>
@@ -510,6 +571,9 @@ export function GroupSettings({ groupId, leaving, onBack, onToast, onLeft }: {
       {page?.id === "roles" && <RolesPage group={group} leaving={page.leaving} onBack={close} onSheet={setSheet} closeSheet={closeSheet} onToast={onToast} />}
       {page?.id === "members" && <MembersPage group={group} leaving={page.leaving} onBack={close} onSheet={setSheet} closeSheet={closeSheet} onToast={onToast} />}
       {page?.id === "invites" && <InvitesPage group={group} leaving={page.leaving} onBack={close} onSheet={setSheet} closeSheet={closeSheet} onToast={onToast} />}
+      {page && isOperationPage(page.id) && (
+        <OperationSettingsPages page={page.id} group={group} leaving={page.leaving} onBack={close} onSheet={setSheet} closeSheet={closeSheet} onToast={onToast} onEditRole={editRole} />
+      )}
       {sheet}
     </div>
   );
@@ -649,7 +713,8 @@ function RoleSheet({ groupId, roleId, onClose, onToast }: { groupId: string; rol
         <p className={styles.sheetNote}>Admins can do everything, and see every channel.</p>
       ) : (
         <div className={styles.listGroup}>
-          {PERMISSIONS.map((p) => (
+          {/* Operation powers (Approve requests, Broadcast, Manage zones) only show on Operations. */}
+          {permissionsFor(info).map((p) => (
             <div key={p.id} className={g.permRow}>
               <span className={styles.contactText}><b>{p.label}</b><small>{p.sub}</small></span>
               <Toggle on={perms.includes(p.id)} onChange={(v) => setPerms((x) => (v ? [...x, p.id] : x.filter((y) => y !== p.id)))} label={p.label} />
@@ -678,17 +743,21 @@ function RoleSheet({ groupId, roleId, onClose, onToast }: { groupId: string; rol
         </div>
       )}
 
-      {existing && !builtIn && (
+      {isCommandRole(info, roleId) && (
+        <p className={styles.sheetNote}>The Operation runs on Command: it approves requests, broadcasts and can All-call. It can’t be deleted.</p>
+      )}
+      {existing && !builtIn && !isCommandRole(info, existing.id) && (
         <button
           className={styles.mindDanger}
           onClick={() => {
             if (!confirm) { setConfirm(true); return; }
-            updateGroup(groupId, (x) => deleteRole(x, existing.id));
+            // A crew also leaves the Operation's zones and crew links.
+            updateGroup(groupId, (x) => forgetCrew(deleteRole(x, existing.id), existing.id));
             onClose();
             onToast(`${existing.name} deleted`);
           }}
         >
-          {confirm ? `Tap again to delete ${existing.name}` : "Delete role"}
+          {confirm ? `Tap again to delete ${existing.name}` : info.operation?.crews.includes(existing.id) ? "Delete crew" : "Delete role"}
         </button>
       )}
     </Sheet>
@@ -796,10 +865,9 @@ function MemberSheet({ groupId, userId, onClose, onToast }: { groupId: string; u
 function InvitesPage({ group, leaving, onBack, onSheet, closeSheet, onToast }: PageProps) {
   const { me, updateGroup } = useChat();
   const info = groupInfo(group);
-  const link = linkOf(info.inviteCode);
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(`https://${link}`); onToast("Invite link copied"); } catch { onToast(link); }
-  };
+  const url = joinUrl(info.inviteCode);
+  const link = displayUrl(url);
+  const copy = () => copyLink(url, onToast, "Invite link copied");
   return (
     <SubPage title="Invitations" onBack={onBack} leaving={leaving}>
       <div className={a.invite}>
@@ -837,8 +905,9 @@ function InvitesPage({ group, leaving, onBack, onSheet, closeSheet, onToast }: P
   );
 }
 
-/** For the group page's actions: whether to show Settings at all. */
+/** For the group page's actions: whether to show Settings at all. On an Operation, Command manages zones there too. */
 export function showsSettings(group: Chat, userId: string) {
-  return canManage(groupInfo(group), userId);
+  const info = groupInfo(group);
+  return canManage(info, userId) || (!!info.operation && canManageZones(info, userId));
 }
 

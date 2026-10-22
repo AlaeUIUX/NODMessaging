@@ -8,7 +8,7 @@ import { useChat, userById } from "@/lib/chat/store";
 import type { Chat, User } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { InvitationRow } from "./Groups";
-import { IconCheck, IconChevron, IconContacts, IconSearch, IconShare, IconUserGroup } from "./Icons";
+import { IconCheck, IconChevron, IconContacts, IconLocation, IconSearch, IconShare, IconUserGroup } from "./Icons";
 import { getPermission, PermissionAlert, setPermission, Sheet } from "./ui";
 import styles from "./chat.module.css";
 import s from "./account.module.css";
@@ -17,16 +17,19 @@ import s from "./account.module.css";
  * WhatsApp-style "New chat": quick actions first, then frequently contacted,
  * then the people you know A–Z, and the contacts you could invite. With
  * contacts allowed, NOD matches your address book; search reaches anyone on
- * NOD by name, @username or number. "New group" opens the group maker.
+ * NOD by name, @username or number. "New group" opens the group maker;
+ * "New Operation" opens it set to Operation (a group for a live event).
  */
 
 const digits = (v: string) => v.replace(/\D/g, "");
 
-export default function NewChat({ onOpen, onClose, onInvite, onNewGroup, onToast, invitations = [], onJoined }: {
+export default function NewChat({ onOpen, onClose, onInvite, onNewGroup, onNewOperation, onToast, invitations = [], onJoined }: {
   onOpen: (chat: Chat) => void;
   onClose: () => void;
   onInvite: () => void;
   onNewGroup: () => void;
+  /** Opens the group maker set to Operation. */
+  onNewOperation?: () => void;
   onToast: (text: string) => void;
   /** Groups waiting for an answer: listed first, under Invitations. */
   invitations?: Chat[];
@@ -149,6 +152,13 @@ export default function NewChat({ onOpen, onClose, onInvite, onNewGroup, onToast
                   <span className={styles.contactText}><b>New group</b><small>Chat with several people at once</small></span>
                   <IconChevron size={16} />
                 </button>
+                {onNewOperation && (
+                  <button className={styles.actionRow} onClick={() => close(onNewOperation)}>
+                    <span className={styles.actionIcon}><IconLocation size={20} /></span>
+                    <span className={styles.contactText}><b>New Operation</b><small>Run a live event: zones, crews and a radio</small></span>
+                    <IconChevron size={16} />
+                  </button>
+                )}
                 <button className={styles.actionRow} onClick={() => close(onInvite)}>
                   <span className={styles.actionIcon}><IconShare size={20} /></span>
                   <span className={styles.contactText}><b>Invite friends</b><small>Share your link or QR code</small></span>

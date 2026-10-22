@@ -6,16 +6,20 @@ import { Emoji } from "@/lib/chat/emoji";
 import {
   ADDRESS_BOOK, allPeople, COUNTRIES, createPerson, findByPhone, formatPhone, suggestUsername, toE164, type Country,
 } from "@/lib/chat/people";
+import { groupInfo } from "@/lib/chat/groups";
+import { crewOf } from "@/lib/chat/operation";
 import { USERS } from "@/lib/chat/seed";
+import { EWC_GROUP, OPS_CREW, OPS_RECRUITS } from "@/lib/chat/seed-ops";
 import type { AvatarTone, User } from "@/lib/chat/types";
 import Avatar from "./Avatar";
-import { IconBack, IconCheck, IconChevron, IconMessage, IconSmartphone, IconUserGroup } from "./Icons";
+import { IconBack, IconCheck, IconChevron, IconChevronDown, IconMessage, IconSmartphone, IconUserGroup } from "./Icons";
 import Logo from "./Logo";
 import { AvatarPicker, ProfileFields, profileReady, type ProfileDraft } from "./Profile";
 import StatusBar from "./StatusBar";
 import { getPermission, PermissionAlert, setPermission, Sheet } from "./ui";
 import styles from "./chat.module.css";
 import s from "./account.module.css";
+import pp from "./operation/personas.module.css";
 
 /**
  * Getting into NOD: a short welcome that says what the app is for, then a
@@ -32,6 +36,32 @@ const SLIDES = [
   { title: "Keep what matters", body: "Save anything from a chat into Mind: your own collections of notes, links and to-dos, tagged so you find them again.", art: <ArtMind /> },
   { title: "See what needs you", body: "Your dashboard gathers your spending, votes, tasks and what’s coming up this week.", art: <ArtDash /> },
 ];
+
+/** The five people the demo started with; the EWC crew sits behind "More people…". */
+const CORE_PEOPLE = USERS.filter((u) => ![...OPS_CREW, ...OPS_RECRUITS].some((c) => c.id === u.id));
+/** The crew by their EWC role (AV & Broadcast, Security, Hospitality, Runners), from the seed. */
+const CREW_GROUPS = (() => {
+  const info = groupInfo(EWC_GROUP);
+  const groups = (info.operation?.crews ?? []).map((id) => ({
+    id,
+    name: info.roles.find((r) => r.id === id)?.name ?? "Crew",
+    people: OPS_CREW.filter((u) => crewOf(info, u.id)?.id === id),
+  }));
+  const placed = new Set(groups.flatMap((g) => g.people.map((u) => u.id)));
+  const rest = OPS_CREW.filter((u) => !placed.has(u.id));
+  return [...groups, ...(rest.length ? [{ id: "rest", name: "Crew", people: rest }] : [])].filter((g) => g.people.length);
+})();
+
+/** A demo person's chip: tap to fill in their number. */
+function DemoPerson({ user, size, onPick }: { user: User; size: number; onPick: (localNumber: string) => void }) {
+  const p = allPeople().find((x) => x.id === user.id) ?? user;
+  return (
+    <button onClick={() => onPick((user.phone ?? "").replace("+43", ""))}>
+      <Avatar glyph={initials(p.fullName)} tone={p.tone} photo={p.photo} size={size} shape="circle" />
+      {p.name}
+    </button>
+  );
+}
 
 const newCode = () => String(Math.floor(100000 + Math.random() * 900000));
 const TONE_ORDER: AvatarTone[] = ["denim", "sage", "clay", "ochre", "plum", "graphite"];
@@ -173,16 +203,24 @@ export default function Onboarding({ mode, onDone, onCancel }: {
               <div className={s.demo}>
                 <p>Trying the demo? These numbers sign you in as the people in it. Any other number makes a new account.</p>
                 <div className={s.demoPeople}>
-                  {USERS.map((u) => {
-                    const p = allPeople().find((x) => x.id === u.id) ?? u;
-                    return (
-                      <button key={u.id} onClick={() => { setCountry(COUNTRIES[0]); setLocal((u.phone ?? "").replace("+43", "")); }}>
-                        <Avatar glyph={initials(p.fullName)} tone={p.tone} photo={p.photo} size={22} shape="circle" />
-                        {p.name}
-                      </button>
-                    );
-                  })}
+                  {CORE_PEOPLE.map((u) => (
+                    <DemoPerson key={u.id} user={u} size={22} onPick={(phone) => { setCountry(COUNTRIES[0]); setLocal(phone); }} />
+                  ))}
                 </div>
+                {/* The EWC crew: 24 more people, tucked away so the welcome stays short. */}
+                <details className={pp.obMore}>
+                  <summary>More people… <small>{OPS_CREW.length} on the EWC crew</small><IconChevronDown size={13} /></summary>
+                  {CREW_GROUPS.map((g) => (
+                    <div key={g.id} className={pp.obGroup} role="group" aria-label={g.name}>
+                      <p className={pp.obLabel}>{g.name}</p>
+                      <div className={`${s.demoPeople} ${pp.obChips}`}>
+                        {g.people.map((u) => (
+                          <DemoPerson key={u.id} user={u} size={20} onPick={(phone) => { setCountry(COUNTRIES[0]); setLocal(phone); }} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </details>
               </div>
             </div>
             <footer className={s.foot}>

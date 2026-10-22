@@ -89,6 +89,17 @@ export function migrate(stored: unknown): ChatState {
 
   let raw = stored as Partial<ChatState> & { version?: number };
   if ((raw.version ?? 0) < 5) raw = renameCast(raw);
+  // v11 -> v12 only adds the EWC Operation: keep everything as it is (edits to
+  // seeded groups, read receipts) and add the chats and threads that are new.
+  if (
+    raw.version === 11 && Array.isArray(raw.chats) && isRecord(raw.messages) && isRecord(raw.archive) && isRecord(raw.lastReadAt)
+  ) {
+    const chats = raw.chats as ChatState["chats"];
+    const messages = raw.messages as ChatState["messages"];
+    const added = seed.chats.filter((c) => !chats.some((x) => x.id === c.id));
+    const threads = Object.fromEntries(added.map((c) => [c.id, seed.messages[c.id] ?? []]));
+    return { ...(raw as ChatState), version: CURRENT_VERSION, chats: [...chats, ...added], messages: { ...threads, ...messages } };
+  }
   // Current-version data is trusted only if it has the right shape; anything
   // else (a hand-edited or half-written record) goes through the backfill.
   if (

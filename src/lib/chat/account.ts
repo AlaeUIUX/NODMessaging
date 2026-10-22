@@ -161,9 +161,12 @@ export function requestTheme(t: ThemePref) {
 /** Everything NOD keeps in this browser (chats, Mind, people, accounts, settings, answers to permission prompts), then a reload. */
 export async function resetDemoData() {
   const { clearMedia } = await import("./media");
+  // Operations keep saving live state (every radio word); stop that first, here and in other tabs.
+  const { clearOps } = await import("./opstore");
+  clearOps();
   try {
     Object.keys(localStorage)
-      .filter((k) => /^nod\.(chat|perm|mind|people|accounts|settings)/.test(k))
+      .filter((k) => /^nod\.(chat|perm|mind|people|accounts|settings|ops|mutes|channel)/.test(k))
       .forEach((k) => localStorage.removeItem(k));
     sessionStorage.removeItem("nod.chat.me");
   } catch { /* private mode */ }

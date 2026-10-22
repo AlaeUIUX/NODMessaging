@@ -5219,3 +5219,10 @@ img.spaceAvatar { object-fit: cover; }
 .searchItem { display: flex; flex-direction: column; gap: 6px; }
 .searchItemTop { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px; }
 mark.searchMark { padding: 0 1px; border-radius: 3px; background: color-mix(in srgb, var(--accent) 20%, transparent); color: inherit; }
+
+/* ==========================================================================
+   Operation demo: the Developer drawer's people, by crew (29 of them)
+   ========================================================================== */
+
+.devGroups { display: grid; gap: 8px; max-height: 236px; overflow-y: auto; overscroll-behavior: contain; margin-right: -8px; padding-right: 8px; }
+.devGroupLabel { display: block; margin: 0 0 4px; font: var(--t-caption2); font-weight: var(--w-control); color: var(--ink-3); }

@@ -70,7 +70,7 @@ const CARD_ICON: Partial<Record<Card["type"], ReactNode>> = {
    Links: markdown [text](url) first, then bare URLs in what's left.
 --------------------------------------------------------------------------- */
 
-interface FoundLink { id: string; message: Message; url: string; domain: string; label: string; context: string }
+export interface FoundLink { id: string; message: Message; url: string; domain: string; label: string; context: string }
 
 const MD_LINK = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
 const BARE_URL = /https?:\/\/[^\s<>()[\]]+/g;
@@ -80,7 +80,8 @@ function readablePath(path: string) {
   try { return decodeURIComponent(path); } catch { return path; }
 }
 
-function linksIn(message: Message): FoundLink[] {
+/** The links in a message (also the Operation page's Mind tab). */
+export function linksIn(message: Message): FoundLink[] {
   const out: FoundLink[] = [];
   const body = message.body;
   const plain = stripFormatting(body);

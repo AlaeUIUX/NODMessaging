@@ -14,6 +14,7 @@ import { InvoiceCardView } from "./Invoice";
 import { IconBell, IconCheck, IconChecklist, IconLock, IconMoneyReceive, IconPlus, IconPoll } from "./Icons";
 import MiniMap from "./MiniMap";
 import { MindShareCard } from "./Share";
+import { OpRefCard } from "./operation/OpCards";
 import { getPermission, relative, Sheet, Toggle, uid, useChatUi, useNow } from "./ui";
 import styles from "./chat.module.css";
 
@@ -56,6 +57,7 @@ export default function CardView({ message, interactive }: Props) {
     case "bill": return <BillCardView message={message} card={card} interactive={interactive} />;
     case "project": return <ProjectCardView message={message} card={card} interactive={interactive} />;
     case "mind": return <MindShareCard message={message} card={card} interactive={interactive} />;
+    case "opRef": return <OpRefCard message={message} card={card} interactive={interactive} />;
   }
 }
 

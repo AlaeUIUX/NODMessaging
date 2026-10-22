@@ -36,7 +36,7 @@ export function newProject(name: string): ProjectCard {
 const rid = () => Math.random().toString(36).slice(2, 9);
 
 export function newTask(
-  fields: { title: string; column: string; order?: number; assignee?: string | null; due?: number | null; fromMessageId?: string },
+  fields: { title: string; column: string; order?: number; assignee?: string | null; due?: number | null; fromMessageId?: string; zone?: string | null; priority?: Task["priority"] },
   createdBy: string,
 ): Task {
   const now = Date.now();
@@ -48,6 +48,8 @@ export function newTask(
     assignee: fields.assignee ?? null,
     due: fields.due ?? null,
     fromMessageId: fields.fromMessageId,
+    ...(fields.zone ? { zone: fields.zone } : {}),
+    ...(fields.priority ? { priority: fields.priority } : {}),
     createdBy,
     createdAt: now,
     updatedAt: {},

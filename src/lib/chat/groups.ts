@@ -12,13 +12,18 @@ import type { AvatarTone, Chat, GroupChannel, GroupInfo, GroupPermission, GroupR
 export const ADMIN = "admin";
 export const MEMBER = "member";
 
-export const PERMISSIONS: { id: GroupPermission; label: string; sub: string }[] = [
+export const PERMISSIONS: { id: GroupPermission; label: string; sub: string; /** Only shown for Operations. */ op?: true }[] = [
   { id: "manageGroup", label: "Edit the group", sub: "Name, pictures, description and colour" },
   { id: "manageChannels", label: "Manage channels", sub: "Add channels, rename them, choose who sees them" },
   { id: "manageRoles", label: "Manage roles & members", sub: "Create roles, give them to people, remove members" },
   { id: "invite", label: "Invite people", sub: "Send invitations and share the invite link" },
   { id: "editMind", label: "Edit the group’s Mind", sub: "Add files and links, sort shelves, remove things" },
+  { id: "approveRequests", label: "Approve requests", sub: "Send people where they’re short, approve supplies, close issues", op: true },
+  { id: "broadcast", label: "Broadcast", sub: "Post in #broadcasts, send Critical alerts, All-call on the radio", op: true },
+  { id: "manageZones", label: "Manage zones", sub: "Add and edit zones, set their status, assign people", op: true },
 ];
+/** The permissions that apply to a group: Operation ones only on Operations. */
+export const permissionsFor = (info: GroupInfo) => PERMISSIONS.filter((p) => !p.op || !!info.operation);
 const ALL: GroupPermission[] = PERMISSIONS.map((p) => p.id);
 
 export const ROLE_TONES: AvatarTone[] = ["plum", "denim", "sage", "ochre", "clay", "graphite"];

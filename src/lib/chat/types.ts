@@ -49,6 +49,11 @@ export type Card =
    * (lib/chat/share.ts). The title and icon are kept for when it's gone.
    */
   | { type: "mind"; owner: string; collectionId: string; blockId?: string; title: string; emoji: string }
+  /**
+   * From an Operation: a request or a broadcast, posted in a zone channel or
+   * #broadcasts. Only a pointer; its live state is in lib/chat/opstore.ts.
+   */
+  | { type: "opRef"; groupId: string; ref: "request" | "broadcast"; id: string }
   /* Shared work: synced as operations (see lib/chat/ops.ts), not whole-card replaces. */
   | PlanCard
   | BillCard
@@ -127,10 +132,12 @@ export interface Task {
   priority?: Priority;
   /** The message this task was made from, if any. */
   fromMessageId?: string;
+  /** Operations: the zone it belongs to (OperationZone.id). */
+  zone?: string | null;
   createdBy: string;
   createdAt: number;
   /** When each field last changed: concurrent edits merge per field, newest wins. */
-  updatedAt: Partial<Record<"title" | "column" | "order" | "assignee" | "due" | "priority", number>>;
+  updatedAt: Partial<Record<"title" | "column" | "order" | "assignee" | "due" | "priority" | "zone", number>>;
   deleted?: boolean;
 }
 export interface ProjectCard {
@@ -152,7 +159,7 @@ export type CardOp =
   | { kind: "bill.claimAll"; userIds: string[] }
   | { kind: "bill.pay"; userId: string }
   | { kind: "task.add"; task: Task }
-  | { kind: "task.update"; id: string; patch: Partial<Pick<Task, "title" | "column" | "order" | "assignee" | "due" | "priority">>; at: number }
+  | { kind: "task.update"; id: string; patch: Partial<Pick<Task, "title" | "column" | "order" | "assignee" | "due" | "priority" | "zone">>; at: number }
   | { kind: "task.remove"; id: string }
   | { kind: "column.rename"; id: string; name: string }
   | { kind: "column.add"; column: { id: string; name: string } }
@@ -253,7 +260,10 @@ export interface Chat {
    Groups: channels, roles and invitations (see lib/chat/groups.ts)
 --------------------------------------------------------------------------- */
 
-export type GroupPermission = "manageGroup" | "manageChannels" | "manageRoles" | "invite" | "editMind";
+export type GroupPermission =
+  | "manageGroup" | "manageChannels" | "manageRoles" | "invite" | "editMind"
+  // Operations only (see lib/chat/operation.ts): Command's powers.
+  | "approveRequests" | "broadcast" | "manageZones";
 
 export interface GroupRole {
   id: string;
@@ -291,6 +301,66 @@ export interface GroupInfo {
   createdAt: number;
   /** Listed on Explore: anyone can find it and join. `members` is the total shown there. */
   discover?: { topics: string[]; members: number };
+  /** An Operation: a group running a live event, with zones, crews and Command (see lib/chat/operation.ts). */
+  operation?: OperationInfo;
+}
+
+/* ---------------------------------------------------------------------------
+   Operations: the setup lives on the group; what happens live (who is where,
+   requests, broadcasts, the radio) lives in lib/chat/opstore.ts.
+--------------------------------------------------------------------------- */
+
+/** A physical place. Every zone is also a channel of the group (#a1-main-arena). */
+export interface OperationZone {
+  id: string;
+  /** Short code for radio and signs: "A1". */
+  code: string;
+  name: string;
+  /** "Hall A", "Outdoor". */
+  area: string;
+  /** People needed there now. */
+  target: number;
+  leadId?: string;
+  /** Crew role ids that work here. */
+  crews: string[];
+  /** The zone's channel id. */
+  channelId: string;
+  /** 0..1 on the venue map, when there is one. */
+  pin?: { x: number; y: number };
+}
+
+/** A join link that also gives roles (a crew) and, optionally, a zone to check in to. */
+export interface OperationLink {
+  code: string;
+  label: string;
+  roleIds: string[];
+  zoneId?: string;
+  createdBy: string;
+  createdAt: number;
+}
+
+export interface OperationShift { id: string; name: string; from: string; to: string }
+
+export interface OperationInfo {
+  venue: string;
+  /** Local midnight of day 1. */
+  startsAt: number;
+  days: number;
+  shifts: OperationShift[];
+  template: "esports" | "conference" | "blank";
+  zones: OperationZone[];
+  /** Role ids that are crews, in order. */
+  crews: string[];
+  /** The Command role: approves requests, broadcasts, keys up to anyone on the radio. */
+  commandRole: string;
+  /** The read-only #broadcasts channel. */
+  broadcastsChannel: string;
+  /** The Ops board: a project card in the group's own thread. */
+  boardMessageId?: string;
+  /** Crew invite links. The group's own invite code still works and joins as a plain member. */
+  links: OperationLink[];
+  /** The drawn venue map (only the demo venue has one). */
+  map?: "ewc";
 }
 
 export interface ChatState {

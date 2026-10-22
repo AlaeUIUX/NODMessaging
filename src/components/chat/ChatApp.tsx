@@ -4,10 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getForceFailure, setForceFailure } from "@/lib/chat/api";
 import { getPrefs, resetDemoData, THEME_EVENT, useAccounts, type ThemePref } from "@/lib/chat/account";
+import { groupInfo } from "@/lib/chat/groups";
 import { mindOf } from "@/lib/chat/mind";
 import { effectiveRule, isQuiet, readMutes } from "@/lib/chat/mutes";
+import { findLink, zoneById } from "@/lib/chat/operation";
 import { parseShareToken, shareToken, type ShareRef } from "@/lib/chat/share";
-import { USERS } from "@/lib/chat/seed";
 import { ChatProvider, useChat, userById } from "@/lib/chat/store";
 import type { Chat } from "@/lib/chat/types";
 import ChatView from "./ChatView";
@@ -15,6 +16,9 @@ import { IconArrowRight, IconChecklist, IconMoneyReceive, IconMoon, IconPin, Ico
 import Inbox from "./Inbox";
 import Logo from "./Logo";
 import Onboarding from "./Onboarding";
+import { OperationOverlays } from "./operation/Overlays";
+import { CompanionLink, PersonaSwitcher, personGroups, SecondWindowMenu } from "./operation/Personas";
+import { OperationSimulator } from "./operation/Simulator";
 import { SharedLink } from "./Share";
 import StageField from "./StageField";
 import { getPermission } from "./ui";
@@ -62,8 +66,10 @@ const MIND_PERSONAS: Record<string, string> = {
 };
 
 function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => void }) {
-  const { me, setMe, peers } = useChat();
+  const { state, me, setMe, peers } = useChat();
   const [failing, setFailing] = useState(getForceFailure());
+  // Everyone in the demo (29 people), by their crew at EWC.
+  const people = personGroups(state.data.chats);
 
   return (
     <details className={styles.dev}>
@@ -75,15 +81,22 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
         <p>
           {peers.length === 0
             ? "No other tab connected. Replies are simulated."
-            : `${peers.length} tab${peers.length > 1 ? "s" : ""} live: ${peers.map((p) => p.userId).join(", ")}`}
+            : `${peers.length} tab${peers.length > 1 ? "s" : ""} live: ${peers.map((p) => userById(p.userId).name).join(", ")}`}
         </p>
         <div>
           <span className={styles.devLabel}>Signed in as</span>
-          <div className={styles.devIds}>
-            {USERS.map((u) => (
-              <button key={u.id} className={me === u.id ? styles.devOn : undefined} onClick={() => setMe(u.id)}>
-                {u.name}
-              </button>
+          <div className={styles.devGroups}>
+            {people.map((g) => (
+              <div key={g.id} role="group" aria-label={g.label}>
+                <span className={styles.devGroupLabel}>{g.label}</span>
+                <div className={styles.devIds}>
+                  {g.ids.map((id) => (
+                    <button key={id} className={me === id ? styles.devOn : undefined} aria-pressed={me === id} onClick={() => setMe(id)}>
+                      {userById(id).name}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
           <p className={styles.devPersona}>
@@ -256,13 +269,26 @@ function Device() {
     setBanner({ id: -1, chatId: "", title: "Storage is full", body: "New messages stay in this tab, but they won't be there after a reload." });
   }
 
+  /** Drops a banner in for five seconds, whatever the mutes say (see showBanner). */
+  const flash = useCallback((b: Banner) => {
+    setBanner(b);
+    setTimeout(() => setBanner((cur) => (cur?.id === b.id ? null : cur)), 5000);
+  }, []);
+
   const showBanner = useCallback((b: Banner) => {
     // A chat you've quietened (or its group) doesn't banner; storage warnings always do.
     const chat = latestChats.current.find((c) => c.id === b.chatId);
     if (chat && isQuiet(effectiveRule(readMutes(me), chat, Date.now()))) return;
-    setBanner(b);
-    setTimeout(() => setBanner((cur) => (cur?.id === b.id ? null : cur)), 5000);
-  }, [me]);
+    flash(b);
+  }, [me, flash]);
+
+  // Operation banners (a normal broadcast, an All-call on the radio). Critical
+  // broadcasts don't come through here: they take over the screen, mute or not.
+  const bannerSeq = useRef(0);
+  const opBanner = useCallback((b: Omit<Banner, "id">) => {
+    bannerSeq.current += 1;
+    showBanner({ ...b, id: Date.now() + bannerSeq.current });
+  }, [showBanner]);
 
   const show = useCallback((chat: Chat, messageId?: string) => {
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
@@ -304,15 +330,24 @@ function Device() {
   const open = (chat: Chat, messageId?: string) => {
     show(chat, messageId);
     if (window.history.state?.nodChat) {
-      // Switching chats (a banner tap) while a contact page or board is open: this entry now
-      // belongs to the new chat, so the old layer's cleanup mustn't step back from it.
-      const { nodContact, nodBoard, ...rest } = window.history.state;
-      void nodContact; void nodBoard;
+      // Switching chats (a banner tap) while a contact page, board or Operation layer is open:
+      // this entry now belongs to the new chat, so the old layer's cleanup mustn't step back from it.
+      const { nodContact, nodBoard, nodOp, nodOpsBoard, nodZone, nodRadio, ...rest } = window.history.state;
+      void nodContact; void nodBoard; void nodOp; void nodOpsBoard; void nodZone; void nodRadio;
       window.history.replaceState({ ...rest, nodChat: chat.id }, "");
     } else {
       window.history.pushState({ nodChat: chat.id }, "");
     }
   };
+  // For the Operation overlays (a move prompt's "open the chat"): a stable callback that opens by id.
+  const openById = useRef<(chatId: string) => void>(() => {});
+  useEffect(() => {
+    openById.current = (chatId) => {
+      const chat = latestChats.current.find((c) => c.id === chatId);
+      if (chat && chat.id !== openRef.current?.id) open(chat);
+    };
+  });
+  const openChatById = useCallback((chatId: string) => openById.current(chatId), []);
   // An invite link (nod.app/g/<code>, here ?join=<code>) joins the group and opens it, once loaded and signed in.
   const joined = useRef(false);
   useEffect(() => {
@@ -322,8 +357,27 @@ function Device() {
     joined.current = true;
     // Used once: a reload after leaving the group mustn't join it again.
     dropParam("join");
+    // An Operation's crew link also hands out a crew (and maybe a zone): say which.
+    const crew = findLink(state.data.chats, code);
     const group = joinByCode(code);
-    if (group) setTimeout(() => open(group), 300);
+    if (!group) return;
+    let joinedAs: Banner | null = null;
+    if (crew) {
+      const info = groupInfo(crew.group);
+      const roles = crew.link.roleIds.map((r) => info.roles.find((x) => x.id === r)?.name).filter((n): n is string => !!n);
+      const as = roles.length > 1 ? `${roles.slice(0, -1).join(", ")} and ${roles[roles.length - 1]}` : roles[0];
+      const zone = info.operation && crew.link.zoneId ? zoneById(info.operation, crew.link.zoneId) : undefined;
+      joinedAs = {
+        id: Date.now(),
+        chatId: group.id,
+        title: `Joined ${crew.group.name}${as ? ` as ${as}` : ""}`,
+        body: zone ? `You’re checked in to ${zone.code} · ${zone.name}.` : `From the crew link “${crew.link.label}”.`,
+      };
+    }
+    setTimeout(() => {
+      open(group);
+      if (joinedAs) flash(joinedAs);
+    }, 300);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.hydrated, signedIn, joinByCode]);
 
@@ -389,6 +443,9 @@ function Device() {
               )}
               {linkShare && <SharedLink key={shareToken(linkShare)} share={linkShare} onClose={() => setLinkShare(null)} />}
               <ReminderWatcher onBanner={showBanner} />
+              {/* Live Operations: the critical takeover and move prompts for this person, and the venue's own life. */}
+              <OperationOverlays key={`op-${me}`} onBanner={opBanner} onOpenChat={openChatById} />
+              <OperationSimulator />
             </>
           )}
           {banner && (
@@ -480,10 +537,8 @@ export default function ChatApp() {
             >
               <span className={styles.themeKnob}>{theme === "light" ? <IconSun size={14} /> : <IconMoon size={14} />}</span>
             </button>
-            {/* The second window signs in as Charles, so the two can talk. */}
-            <a className={styles.cta} href="/?as=charles" target="_blank" rel="noopener">
-              Open a second window
-            </a>
+            {/* A second window signs in as someone else, so the two can talk (or run an Operation together). */}
+            <SecondWindowMenu className={styles.cta} />
           </div>
         </header>
 
@@ -495,7 +550,7 @@ export default function ChatApp() {
           </p>
           <div className={styles.heroCtas}>
             <a className={styles.cta} href="#demo">Try the live demo <IconArrowRight size={16} /></a>
-            <a className={styles.ctaGhost} href="/?as=charles" target="_blank" rel="noopener">Open a second tab to chat with yourself</a>
+            <CompanionLink className={styles.ctaGhost}>Open a second tab to chat with yourself</CompanionLink>
           </div>
         </section>
 
@@ -518,6 +573,8 @@ export default function ChatApp() {
             <div><b>Collect from everyone</b><span>Payments, files, places and events, sent straight into the chat.</span></div>
           </div>
 
+          {/* Whose phone this is: switch to anyone at EWC, or open them in a window of their own. */}
+          <PersonaSwitcher />
           <Device />
         </section>
 

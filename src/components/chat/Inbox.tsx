@@ -20,6 +20,7 @@ import Settings from "./Settings";
 import { formatPhone } from "@/lib/chat/people";
 import NewChat from "./NewChat";
 import { NewGroupSheet } from "./Groups";
+import { OperationRowStrip } from "./operation/Setup";
 import { MuteSheet } from "./Mute";
 import { useNow } from "./ui";
 import AnalyticsTab from "./Analytics";
@@ -27,6 +28,7 @@ import ExploreTab from "./Explore";
 import StatusBar from "./StatusBar";
 import styles from "./chat.module.css";
 import nav from "./nav.module.css";
+import ops from "./operation/setup.module.css";
 
 type Filter = "all" | "unread" | "dms" | "groups";
 type Tab = "chats" | "mind" | "analytics" | "explore";
@@ -232,7 +234,8 @@ export default function Inbox({ onOpen, pushed }: {
   const [filter, setFilter] = useState<Filter>("all");
   const [tab, setTab] = useState<Tab>("chats");
   const [newChat, setNewChat] = useState(false);
-  const [newGroup, setNewGroup] = useState(false);
+  // The group maker, and which kind it starts on.
+  const [newGroup, setNewGroup] = useState<"group" | "operation" | null>(null);
   const [pinned, setPinned] = useState<Set<string>>(() => new Set(["dm"]));
   // Mutes are rules per chat (what notifies, for how long); a channel follows its group.
   const { rules, set: setRule } = useMutes(me);
@@ -421,6 +424,8 @@ export default function Inbox({ onOpen, pushed }: {
                 const typing = typingUsers(chat.id).filter((u) => u !== me);
                 const isMuted = quiet;
                 const showBadge = alert > 0;
+                // An Operation's row carries its live strip (its own component: only it follows the live state).
+                const operation = chat.kind === "group" && !!chat.group?.operation;
                 return (
                   <div key={chat.id} className={styles.rowEnter} style={{ ["--i" as string]: i }}>
                     <SwipeRow
@@ -441,7 +446,7 @@ export default function Inbox({ onOpen, pushed }: {
                       <div className={styles.rowMain}>
                         <div className={styles.rowText}>
                           <span className={styles.rowName}>{id.label}</span>
-                          <span className={styles.rowPreview}>
+                          <span className={`${styles.rowPreview} ${operation ? ops.opPreview : ""}`}>
                             {typing.length > 0 ? (
                               <span className={styles.typingText}>
                                 {chat.kind === "group" ? `${userById(typing[0]).name} is typing` : "typing"}
@@ -449,6 +454,7 @@ export default function Inbox({ onOpen, pushed }: {
                               </span>
                             ) : emojify(`${channel ? `#${channel} · ` : ""}${preview(last, me)}`)}
                           </span>
+                          {operation && <OperationRowStrip group={chat} me={me} now={now} />}
                         </div>
                         <div className={styles.rowSide}>
                           <span className={`${styles.rowTime} ${showBadge ? styles.rowTimeUnread : ""}`}>
@@ -502,7 +508,8 @@ export default function Inbox({ onOpen, pushed }: {
           onClose={() => setNewChat(false)}
           onOpen={onOpen}
           onInvite={() => setInviting(true)}
-          onNewGroup={() => setNewGroup(true)}
+          onNewGroup={() => setNewGroup("group")}
+          onNewOperation={() => setNewGroup("operation")}
           onToast={flash}
           invitations={invites}
           onJoined={(g) => { flash(`Welcome to ${g.name}`); openRow(g); }}
@@ -510,8 +517,9 @@ export default function Inbox({ onOpen, pushed }: {
       )}
       {newGroup && (
         <NewGroupSheet
-          onClose={() => setNewGroup(false)}
-          onCreated={(chat) => { setNewGroup(false); setFilter("all"); onOpen(chat); }}
+          startAs={newGroup}
+          onClose={() => setNewGroup(null)}
+          onCreated={(chat) => { setNewGroup(null); setFilter("all"); onOpen(chat); }}
         />
       )}
       {settings && (

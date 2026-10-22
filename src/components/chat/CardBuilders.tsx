@@ -9,7 +9,7 @@ import Avatar from "./Avatar";
 import {
   IconAttachment, IconBell, IconCalendar, IconCamera, IconCheck, IconChecklist, IconClose, IconImage, IconLocation,
   IconMoneyReceive, IconMoneySend, IconPlus, IconPoll, IconSmile,
-  IconBrush, IconGame, IconSparkles, IconWheel, IconBoard, IconReceipt, IconRoute,
+  IconBrush, IconGame, IconSparkles, IconWheel, IconBoard, IconReceipt, IconRoute, IconFlag, IconMegaphone,
 } from "./Icons";
 import MiniMap from "./MiniMap";
 import { Segmented, Sheet, Toggle, uid } from "./ui";
@@ -20,7 +20,8 @@ export type AddKind =
   | "photos" | "camera" | "file"
   | "checklist" | "poll" | "reminder" | "location" | "event" | "plan" | "board"
   | "pay" | "request" | "bill"
-  | "sketch" | "tictactoe" | "wheel" | "gallery";
+  | "sketch" | "tictactoe" | "wheel" | "gallery"
+  | "opRequest" | "opBroadcast";
 
 type Send = (card: Card, summary: string) => void;
 
@@ -77,10 +78,26 @@ const ALL_GROUPS: { title: string; tone: AvatarTone; items: { kind: AddKind; lab
 
 const GROUPS = ALL_GROUPS.filter((g) => SHOW_ARTIFACTS || g.title !== "Artifacts");
 
-export function AddSheet({ onPick, onClose }: { onPick: (k: AddKind) => void; onClose: () => void }) {
+/** In an Operation's chats: raise a request (anyone), or broadcast (only with the broadcast permission). */
+const operationGroup = (canBroadcast: boolean): (typeof ALL_GROUPS)[number] => ({
+  title: "Operation",
+  tone: "clay",
+  items: [
+    { kind: "opRequest", label: "Request", icon: <IconFlag size={24} /> },
+    ...(canBroadcast ? [{ kind: "opBroadcast" as const, label: "Broadcast", icon: <IconMegaphone size={24} /> }] : []),
+  ],
+});
+
+export function AddSheet({ onPick, onClose, operation }: {
+  onPick: (k: AddKind) => void;
+  onClose: () => void;
+  /** Only for an Operation's chats: adds the Operation group (Request, and Broadcast for those who may). */
+  operation?: { canBroadcast: boolean };
+}) {
+  const groups = operation ? [operationGroup(operation.canBroadcast), ...GROUPS] : GROUPS;
   return (
     <Sheet title="Add to message" onClose={onClose}>
-      {(close) => GROUPS.map((g, gi) => (
+      {(close) => groups.map((g, gi) => (
         <div key={g.title} className={styles.addGroup}>
           <p className={styles.sheetLabel}>{g.title}</p>
           <div className={styles.addGrid}>

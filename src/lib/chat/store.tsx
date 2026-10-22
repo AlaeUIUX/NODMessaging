@@ -17,7 +17,9 @@ import { releaseMedia } from "./media";
 import { reduceCardOp, tasksIn, unclaimedItems } from "./ops";
 import { accountIds, addAccount, getPrefs, initAccounts } from "./account";
 import { allPeople, enablePeople, personById, usePeopleVersion } from "./people";
-import { addMember, canPost, cancelInvite, groupInfo, groupOf, invite, newGroupInfo, syncChannels } from "./groups";
+import { addMember, canPost, cancelInvite, groupInfo, groupOf, invite, newGroupInfo, setMemberRoles, syncChannels } from "./groups";
+import { findLink } from "./operation";
+import { opDispatch } from "./opstore";
 import { buildSeedState, CHATS } from "./seed";
 import { localStorageAdapter, readKey } from "./storage";
 import {
@@ -31,6 +33,8 @@ import type { Attachment, AvatarTone, Card, CardOp, Chat, ChatState, ChatTranspo
  * impure; a ref would be read during render.
  */
 const CLIENT_ID = typeof window === "undefined" ? "" : Math.random().toString(36).slice(2);
+/** This tab's id (peers carry theirs): the tab with the smallest id drives shared simulations. */
+export const clientId = CLIENT_ID;
 
 const ME_KEY = "nod.chat.me";
 const TYPING_TIMEOUT_MS = 5000;
@@ -246,6 +250,8 @@ interface ChatContextValue {
   send: (chatId: string, body: string, opts?: { replyToId?: string | null; attachments?: Attachment[] }) => void;
   /** Sends a structured message; `summary` is what previews and quotes show. Returns its id. */
   sendCard: (chatId: string, card: Card, summary: string) => string;
+  /** A message from a simulated person (someone with no tab of their own): text, or a card with `body` as its summary. */
+  postAs: (chatId: string, authorId: string, body: string, card?: Card) => string;
   /** Creates a group (with #general) run by the current user, invites people to it, and returns it. */
   createGroup: (input: NewGroup) => Chat;
   /** Applies an edit to a group (see lib/chat/groups.ts) and brings its channels in line, here and in every tab. */
@@ -853,9 +859,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const joinByCode = useCallback<ChatContextValue["joinByCode"]>(
     (code) => {
+      const who = meRef.current;
+      // An Operation's crew link: join, take its crew, and check in to its zone.
+      const crew = findLink(latest.current.chats, code);
+      if (crew) {
+        const { group, link } = crew;
+        // Already in it (Command trying their own link, a member opening it again): just open it.
+        if (group.memberIds.includes(who)) return chatOf(group.id) ?? group;
+        updateGroup(group.id, (g) => {
+          const joined = addMember(g, who);
+          const had = groupInfo(joined).memberRoles[who] ?? [];
+          return setMemberRoles(joined, who, [...new Set([...had, ...link.roleIds])]);
+        });
+        if (link.zoneId) opDispatch(group.id, { t: "checkIn", userId: who, zoneId: link.zoneId, via: "link", at: Date.now(), feedId: newId() });
+        return chatOf(group.id) ?? group;
+      }
       const group = latest.current.chats.find((c) => c.kind === "group" && !c.groupId && !c.removedAt && c.group?.inviteCode === code);
       if (!group) return null;
-      if (!group.memberIds.includes(meRef.current)) updateGroup(group.id, (g) => addMember(g, meRef.current));
+      if (!group.memberIds.includes(who)) updateGroup(group.id, (g) => addMember(g, who));
       return chatOf(group.id) ?? group;
     },
     [chatOf, updateGroup],
@@ -916,6 +937,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       return id;
     },
     [chatOf, later, memberOnline, publish, receipt, simulateCard],
+  );
+
+  const postAs = useCallback<ChatContextValue["postAs"]>(
+    (chatId, authorId, body, card) => {
+      const message: Message = card ? { ...textFrom(chatId, authorId, body), kind: "card", card } : textFrom(chatId, authorId, body);
+      latest.current = { ...latest.current, messages: { ...latest.current.messages, [chatId]: [...(latest.current.messages[chatId] ?? []), message] } };
+      dispatch({ type: "append", message });
+      publish({ type: "message", message });
+      signal("in");
+      return message.id;
+    },
+    [publish],
   );
 
   const toggleReaction = useCallback<ChatContextValue["toggleReaction"]>(
@@ -1012,11 +1045,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ChatContextValue>(
     () => ({
-      state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, updateGroup, inviteToGroup, respondInvite, joinByCode, openDm, retry,
+      state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, postAs, updateCard, cardOp, createGroup, updateGroup, inviteToGroup, respondInvite, joinByCode, openDm, retry,
       toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead,
       peopleVersion: `${peopleReady ? 1 : 0}:${peopleVersion}`,
     }),
-    [state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, updateCard, cardOp, createGroup, updateGroup, inviteToGroup, respondInvite, joinByCode, openDm, retry,
+    [state, me, setMe, peers, isOnline, lastReadAt, saveFailed, send, sendCard, postAs, updateCard, cardOp, createGroup, updateGroup, inviteToGroup, respondInvite, joinByCode, openDm, retry,
       toggleReaction, editMessage, deleteMessage, togglePin, loadEarlier, hasEarlier, setTyping, typingUsers, markRead, peopleReady, peopleVersion],
   );
 

@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { chatIdentity, initials } from "@/lib/chat/avatar";
+import { groupOf } from "@/lib/chat/groups";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { openState } from "@/lib/chat/open";
+import { operationOf, zoneByChannel } from "@/lib/chat/operation";
 import { doneColumn, tasksIn } from "@/lib/chat/ops";
 import { newProject, newTask, parseDue, parseTaskCommand, PRIORITIES, projectsOf, type BoardMessage } from "@/lib/chat/project";
 import { useChat, userById } from "@/lib/chat/store";
@@ -111,6 +113,27 @@ function useLiveBoard(chatId: string, messageId: string) {
 
 /** Where a task lands at the end of a column: after everything, including tasks added later with `Date.now()`. */
 const endOrder = (list: Task[]) => Math.max(Date.now(), (list[list.length - 1]?.order ?? 0) + GAP);
+
+/** The Operation a board's chat belongs to (its own thread or one of its channels), if any: its tasks then have zones. */
+function useBoardOperation(chatId: string) {
+  const { state } = useChat();
+  const chat = state.data.chats.find((c) => c.id === chatId);
+  return chat ? operationOf(groupOf(state.data.chats, chat)) : undefined;
+}
+
+/** A zone picker for a task: the Operation's zone codes, and None. */
+function ZonePicker({ zones, value, onChange }: { zones: { id: string; code: string; name: string }[]; value: string | null; onChange: (id: string | null) => void }) {
+  return (
+    <div className={styles.chipGrid} role="radiogroup" aria-label="Zone">
+      {zones.map((z) => (
+        <button key={z.id} role="radio" aria-checked={value === z.id} title={z.name} className={`${styles.choice} ${value === z.id ? styles.choiceOn : ""}`} onClick={() => onChange(z.id)}>
+          {z.code}
+        </button>
+      ))}
+      <button role="radio" aria-checked={value === null} className={`${styles.choice} ${value === null ? styles.choiceOn : ""}`} onClick={() => onChange(null)}>None</button>
+    </div>
+  );
+}
 
 /* ---------------------------------------------------------------------------
    New board
@@ -277,8 +300,9 @@ function TaskSheet({ chatId, messageId, taskId, onClose, onShowInChat }: {
   const chat = state.data.chats.find((c) => c.id === chatId);
   const people = peopleOf(chat?.memberIds ?? [me], me);
   const gone = !board || !task || task.deleted;
+  const operation = useBoardOperation(chatId);
 
-  const update = (patch: Partial<Pick<Task, "title" | "column" | "order" | "assignee" | "due" | "priority">>) => {
+  const update = (patch: Partial<Pick<Task, "title" | "column" | "order" | "assignee" | "due" | "priority" | "zone">>) => {
     if (!board || gone) return;
     cardOp(board, { kind: "task.update", id: taskId, patch, at: stamp() });
   };
@@ -333,6 +357,11 @@ function TaskSheet({ chatId, messageId, taskId, onClose, onShowInChat }: {
             ))}
           </div>
 
+          {operation && operation.zones.length > 0 && <>
+            <p className={styles.sheetLabel}>Zone</p>
+            <ZonePicker zones={operation.zones} value={task.zone ?? null} onChange={(zone) => update({ zone })} />
+          </>}
+
           <p className={styles.sheetLabel}>Move to</p>
           <div className={styles.chipGrid} role="radiogroup" aria-label="Column">
             {board.card.columns.map((c) => (
@@ -374,7 +403,14 @@ function TaskSheet({ chatId, messageId, taskId, onClose, onShowInChat }: {
    The board
 --------------------------------------------------------------------------- */
 
-function TaskBody({ task, now, done, onShow }: { task: Task; now: number; done: boolean; onShow?: (id: string) => void }) {
+function TaskBody({ task, now, done, onShow, zoneCode }: {
+  task: Task;
+  now: number;
+  done: boolean;
+  onShow?: (id: string) => void;
+  /** Operations: the zone it belongs to ("B2"), when the board isn't already showing one zone. */
+  zoneCode?: string;
+}) {
   const who = task.assignee ? userById(task.assignee) : null;
   return (
     <>
@@ -382,8 +418,9 @@ function TaskBody({ task, now, done, onShow }: { task: Task; now: number; done: 
         {done && <span className={s.doneMark} aria-hidden="true"><IconCheck size={10} /></span>}
         {task.title}
       </p>
-      {(task.due !== null || task.fromMessageId || who || (task.priority && !done)) && (
+      {(task.due !== null || task.fromMessageId || who || zoneCode || (task.priority && !done)) && (
         <div className={s.taskMeta}>
+          {zoneCode && <span className={s.zoneChip}><span className={s.srOnly}>Zone </span>{zoneCode}</span>}
           {task.priority && !done && (
             <span className={`${s.prio} ${s[`prio_${task.priority}`]}`}>
               <span className={s.prioDot} aria-hidden="true" />
@@ -630,13 +667,15 @@ function foldedShares(counts: number[]) {
  * opens just that group. Every task has arrows to step it to the group above
  * or below, as well as hold-and-drag.
  */
-export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
+export function ProjectBoard({ message, boards, onSwitch, onNew, onClose, initialZone }: {
   message: BoardMessage;
   /** Every board in this chat, oldest first. */
   boards: BoardMessage[];
   onSwitch: (messageId: string) => void;
   onNew: () => void;
   onClose: () => void;
+  /** Operations: open showing only this zone's tasks. */
+  initialZone?: string | null;
 }) {
   const { me, cardOp } = useChat();
   const ui = useChatUi();
@@ -644,7 +683,17 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
   const card = message.card;
   const done = doneColumn(card);
   const people = useMemo(() => peopleOf(ui.chat.memberIds, me), [ui.chat.memberIds, me]);
-  const live = Object.values(card.tasks).filter((t) => !t.deleted);
+  // An Operation's board: every task can belong to a zone, and a row of zone codes filters the board.
+  const operation = useBoardOperation(message.chatId);
+  const zones = operation?.zones ?? [];
+  const [zone, setZone] = useState<string | null>(initialZone ?? null);
+  const zoneOn = zone && zones.some((z) => z.id === zone) ? zone : null;
+  const inZone = (t: Task) => !zoneOn || t.zone === zoneOn;
+  /** A column's tasks, in order, only the chosen zone's. */
+  const tasksOf = (column: string) => tasksIn(card, column).filter(inZone);
+  const codeOf = (id?: string | null) => (zoneOn ? undefined : zones.find((z) => z.id === id)?.code);
+  const all = Object.values(card.tasks).filter((t) => !t.deleted);
+  const live = all.filter(inZone);
   const openCount = live.filter((t) => t.column !== done).length;
 
   const rootRef = useRef<HTMLDivElement>(null);
@@ -722,7 +771,8 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
   const addTo = (column: string, text: string) => {
     const parsed = parseTaskCommand(`/task ${text}`, people);
     if (!parsed) return false;
-    const task = newTask({ ...parsed, column, order: endOrder(tasksIn(card, column)) }, me);
+    // Added while one zone is showing: it belongs to that zone.
+    const task = newTask({ ...parsed, column, order: endOrder(tasksIn(card, column)), zone: zoneOn }, me);
     cardOp(message, { kind: "task.add", task });
     return true;
   };
@@ -765,7 +815,7 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
     const colEl = hit?.closest<HTMLElement>("[data-col]");
     if (!colEl) return null;
     const col = colEl.dataset.col!;
-    const list = tasksIn(card, col).filter((t) => t.id !== d.id);
+    const list = tasksOf(col).filter((t) => t.id !== d.id);
     // The first task whose middle is below the finger goes after it.
     for (const t of list) {
       const el = colEl.querySelector<HTMLElement>(`[data-task="${t.id}"]`);
@@ -857,13 +907,14 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
     if (!t) return;
     const task = card.tasks[t.id];
     if (!task || task.deleted) return;
-    const list = tasksIn(card, t.col).filter((x) => x.id !== t.id);
+    // Only what's showing (one zone's tasks, on an Operation's board) is in the way.
+    const list = tasksOf(t.col).filter((x) => x.id !== t.id);
     const at = t.before ? list.findIndex((x) => x.id === t.before) : list.length;
     const prev = list[at - 1];
     const next = list[at];
     if (task.column === t.col) {
       // Dropped back where it was: nothing to send.
-      const original = tasksIn(card, t.col);
+      const original = tasksOf(t.col);
       const i = original.findIndex((x) => x.id === t.id);
       if (original[i - 1]?.id === prev?.id && original[i + 1]?.id === next?.id) return;
     }
@@ -873,7 +924,8 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
   };
 
   const draggingTask = dragging ? card.tasks[dragging.id] : null;
-  const shares = foldedShares(card.columns.map((c) => tasksIn(card, c.id).length));
+  const shares = foldedShares(card.columns.map((c) => tasksOf(c.id).length));
+  const zoneCode = zones.find((z) => z.id === zoneOn)?.code;
 
   return (
     <div
@@ -903,13 +955,27 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
             <IconBoard size={15} /><span>{card.name}</span><IconChevronDown size={14} />
           </button>
           <span className={s.headSub}>
-            {openCount} open · {live.length - openCount} done{boards.length > 1 ? ` · ${boards.length} boards` : ""}
+            {zoneCode ? `${zoneCode} · ` : ""}{openCount} open · {live.length - openCount} done{boards.length > 1 ? ` · ${boards.length} boards` : ""}
           </span>
         </div>
         <button className={`${styles.circleBtn} ${styles.glass}`} onClick={addGroup} aria-label="New group">
           <IconPlus />
         </button>
       </header>
+
+      {zones.length > 0 && (
+        <div className={s.zoneBar} role="radiogroup" aria-label="Show tasks in">
+          {[{ id: null, code: "All", name: "Every zone" }, ...zones].map((z) => {
+            const on = zoneOn === z.id;
+            const open = all.filter((t) => t.column !== done && (z.id === null || t.zone === z.id)).length;
+            return (
+              <button key={z.id ?? "all"} role="radio" aria-checked={on} title={z.name} className={`${s.zoneFilter} ${on ? s.zoneFilterOn : ""}`} onClick={() => setZone(z.id)}>
+                {z.code}<em>{open}</em>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* One tap-away layer for whichever menu is open, over the whole board. */}
       {menu && <div className={s.pickScrim} onClick={() => setMenu(null)} aria-hidden="true" />}
@@ -951,7 +1017,7 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
       {/* Groups stack top to bottom (To do, then Doing, then Done) and the board scrolls as one. */}
       <div className={`${s.columns} ${s.compact}`} ref={scrollRef}>
         {card.columns.map((col, ci) => {
-          const list = tasksIn(card, col.id);
+          const list = tasksOf(col.id);
           const isDone = col.id === done;
           const target = drop?.col === col.id ? drop : null;
           const prevCol = card.columns[ci - 1];
@@ -1004,7 +1070,7 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
                         openTask(t);
                       }}
                     >
-                      <TaskBody task={t} now={now} done={isDone} />
+                      <TaskBody task={t} now={now} done={isDone} zoneCode={codeOf(t.zone)} />
                     </div>
                     {/* A step up or down, without dragging. */}
                     <span className={s.steps}>
@@ -1023,7 +1089,10 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
                 ))}
                 {target && target.before === null && <div className={s.dropEnd} aria-hidden="true" />}
                 {!list.length && !target && (
-                  <p className={s.empty}>{isDone ? "Finished tasks land here." : ci === 0 ? "Nothing here yet. Add the first task below." : "Hold a task and drag it here, or use its arrows."}</p>
+                  <p className={s.empty}>
+                    {zoneCode ? `No ${zoneCode} tasks here.`
+                      : isDone ? "Finished tasks land here." : ci === 0 ? "Nothing here yet. Add the first task below." : "Hold a task and drag it here, or use its arrows."}
+                  </p>
                 )}
               </div>
               <AddTask
@@ -1040,7 +1109,7 @@ export function ProjectBoard({ message, boards, onSwitch, onNew, onClose }: {
 
       {dragging && draggingTask && (
         <div ref={ghostRef} className={`${s.task} ${s.ghost}`} style={{ width: dragging.w, minHeight: dragging.h }} aria-hidden="true">
-          <TaskBody task={draggingTask} now={now} done={draggingTask.column === done} />
+          <TaskBody task={draggingTask} now={now} done={draggingTask.column === done} zoneCode={codeOf(draggingTask.zone)} />
         </div>
       )}
     </div>
@@ -1067,10 +1136,17 @@ export function TaskFromMessage({ message, chat, onClose }: { message: Message; 
   const [title, setTitle] = useState(() => titleFrom(message, me));
   const [assignee, setAssignee] = useState<string | null>(null);
   const [due, setDue] = useState<number | null>(null);
+  // In an Operation the task goes on the Ops board, in the zone whose channel this is (or none).
+  const operation = useBoardOperation(chat.id);
+  const [zone, setZone] = useState<string | null>(() => (operation ? zoneByChannel(operation, chat.id)?.id ?? null : null));
   const people = peopleOf(chat.memberIds, me);
   const author = message.authorId === me ? "You" : userById(message.authorId).name;
   const quote = stripFormatting(message.body).replace(/\s+/g, " ").trim();
-  const add = () => ui.addTask({ title: title.trim(), assignee, due, fromMessageId: message.id });
+  const add = () => {
+    // `zone` rides along to ChatView's addTask, which files Operation tasks on the Ops board.
+    const fields = { title: title.trim(), assignee, due, fromMessageId: message.id, ...(operation ? { zone } : {}) };
+    ui.addTask(fields);
+  };
 
   return (
     <Sheet title="Make a task" onClose={onClose} action={{ label: "Add task", disabled: !title.trim(), onClick: add }}>
@@ -1092,7 +1168,13 @@ export function TaskFromMessage({ message, chat, onClose }: { message: Message; 
           <AssigneePicker people={people} me={me} value={assignee} onChange={setAssignee} />
           <p className={styles.sheetLabel}>Due</p>
           <DuePicker value={due} onChange={setDue} />
-          <p className={styles.sheetNote}>It goes on this chat’s board, linked back to the message.</p>
+          {operation && operation.zones.length > 0 && <>
+            <p className={styles.sheetLabel}>Zone</p>
+            <ZonePicker zones={operation.zones} value={zone} onChange={setZone} />
+          </>}
+          <p className={styles.sheetNote}>
+            {operation ? "It goes on the Ops board, linked back to the message." : "It goes on this chat’s board, linked back to the message."}
+          </p>
         </>
       )}
     </Sheet>

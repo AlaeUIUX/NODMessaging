@@ -6,6 +6,7 @@ import { initials } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { htmlToMarkdown, markdownToHtml } from "@/lib/chat/richText";
 import { releaseMedia, toAttachment, useMediaUrl } from "@/lib/chat/media";
+import { dictationSupported, useDictation } from "@/lib/chat/dictation";
 import { localStorageAdapter } from "@/lib/chat/storage";
 import { userById } from "@/lib/chat/store";
 import type { Attachment, Message, User } from "@/lib/chat/types";
@@ -16,7 +17,9 @@ import {
   IconArrowUp, IconAt, IconBell, IconBold, IconBullets, IconCheck, IconChecklist, IconClose, IconCode, IconHeading,
   IconItalic, IconLink, IconMic, IconNumbers, IconPlus, IconPoll, IconQuote, IconStrike, IconUnderline,
 } from "./Icons";
+import { getPermission, useOptionalChatUi } from "./ui";
 import styles from "./chat.module.css";
+import r from "./operation/radio.module.css";
 
 const TYPING_IDLE_MS = 3000;
 
@@ -197,6 +200,13 @@ export default function Composer({
   const [mention, setMention] = useState<{ query: string; node: Text; offset: number } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const [linkUrl, setLinkUrl] = useState<string | null>(null);
+  // Dictation into the draft: the text run being filled, and the space that goes before it.
+  const ui = useOptionalChatUi();
+  const dict = useDictation();
+  const [listening, setListening] = useState(false);
+  const listeningRef = useRef(false);
+  const dictNode = useRef<Text | null>(null);
+  const dictLead = useRef("");
 
   const placeCaretAtEnd = () => {
     const el = editorRef.current;
@@ -431,6 +441,13 @@ export default function Composer({
   };
 
   const clear = () => {
+    // Sent or cancelled: dictation stops, and nothing it hears afterwards comes back.
+    if (listeningRef.current) {
+      listeningRef.current = false;
+      dictNode.current = null;
+      setListening(false);
+      void dict.stop("");
+    }
     const el = editorRef.current;
     if (el) el.innerHTML = "";
     setHasText(false);
@@ -495,6 +512,56 @@ export default function Composer({
       else if (editing) onCancelEdit();
       else if (replyTo) onCancelReply();
     }
+  };
+
+  /* ---- dictation: what's said is appended to the draft, word by word ---- */
+
+  const stopDictation = async () => {
+    if (!listeningRef.current) return;
+    listeningRef.current = false;
+    setListening(false);
+    const { text } = await dict.stop("");
+    const node = dictNode.current;
+    dictNode.current = null;
+    const el = editorRef.current;
+    if (!el || !node) return;
+    if (text) {
+      if (!el.contains(node)) el.appendChild(node);
+      node.data = dictLead.current + text;
+    }
+    afterEdit();
+    if (text) placeCaretAtEnd();
+  };
+
+  const dictate = async () => {
+    if (listeningRef.current) return;
+    if (!dictationSupported()) { onHint("Dictation isn’t available in this browser"); return; }
+    const granted = ui ? await ui.ask("microphone") : getPermission("microphone") !== "denied";
+    const el = editorRef.current;
+    if (!granted || !el || listeningRef.current) return;
+    // The words go in after whatever is already typed, as one text run that grows as they're heard.
+    const node = document.createTextNode("");
+    dictLead.current = el.textContent?.replace(/\u200B/g, "").trim() ? " " : "";
+    el.appendChild(node);
+    dictNode.current = node;
+    listeningRef.current = true;
+    setListening(true);
+    dict.start("", (text) => {
+      const box = editorRef.current;
+      if (!box || dictNode.current !== node) return;
+      if (!box.contains(node)) box.appendChild(node);
+      node.data = text ? dictLead.current + text : "";
+      afterEdit();
+      signalTyping();
+    }, {
+      simulate: false,
+      // Silence or an error ended it: keep what was heard, stop listening.
+      onEnd: () => { void stopDictation(); },
+      onError: (code) => {
+        if (code === "not-allowed" || code === "service-not-allowed") onHint("The browser blocked the microphone");
+        else if (code === "network") onHint("Dictation needs a connection");
+      },
+    });
   };
 
   const hasContent = hasText || (attachments.length > 0 && !editing);
@@ -612,7 +679,7 @@ export default function Composer({
               role="textbox"
               aria-multiline="true"
               aria-label={placeholder}
-              data-placeholder={placeholder}
+              data-placeholder={listening ? "Listening…" : placeholder}
               onFocus={() => { setFocused(true); syncCaret(); }}
               onBlur={() => { setFocused(false); setMention(null); }}
               onInput={() => { afterEdit(); signalTyping(); }}
@@ -625,8 +692,14 @@ export default function Composer({
                 afterEdit();
               }}
             />
-            {!expanded && (
-              <button className={styles.micInline} onClick={() => onHint("Hold to record — voice notes are coming soon")} aria-label="Record voice note">
+            {(!expanded || listening) && (
+              <button
+                className={`${styles.micInline} ${listening ? r.micListening : ""}`}
+                onClick={() => void (listening ? stopDictation() : dictate())}
+                aria-label={listening ? "Stop dictation" : "Dictate"}
+                aria-pressed={listening}
+                title={listening ? "Listening… tap to stop" : "Dictate"}
+              >
                 <IconMic size={19} />
               </button>
             )}
