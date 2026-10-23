@@ -11,7 +11,7 @@ import {
   Shield01Icon, PaintBoardIcon, Database01Icon, InformationCircleIcon, HelpCircleIcon, SmartPhone01Icon, KeyboardIcon, ComputerIcon, Contact01Icon,
   MinusSignIcon, SlidersHorizontalIcon, ChartLineData01Icon, Wallet01Icon, ArrowDown02Icon,
   ClipboardPasteIcon, SquareLock01Icon, SquareUnlock01Icon, Redo02Icon, ShuffleIcon, ImageAdd01Icon, FileAddIcon, Book02Icon, Video01Icon,
-  FilterHorizontalIcon, Megaphone02Icon,
+  FilterHorizontalIcon, Megaphone02Icon, Menu01Icon,
 } from "@hugeicons/core-free-icons";
 
 /**
@@ -135,6 +135,7 @@ export const IconBook = make(Book02Icon);
 export const IconVideo = make(Video01Icon);
 export const IconFilter = make(FilterHorizontalIcon);
 export const IconMegaphone = make(Megaphone02Icon);
+export const IconMenu = make(Menu01Icon, 1.8);
 
 /** Hugeicons' free set has no walkie-talkie; this one is drawn on the same 24px grid and stroke. */
 const WalkieTalkieIcon: IconSvgElement = [

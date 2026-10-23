@@ -1,4 +1,5 @@
 import { buildSeedState, CURRENT_VERSION } from "./seed";
+import { EWC_ID } from "./seed-ops";
 import type { ChatState, ChatStorage, Message } from "./types";
 
 const STATE_KEY = "nod.chat.state";
@@ -89,16 +90,25 @@ export function migrate(stored: unknown): ChatState {
 
   let raw = stored as Partial<ChatState> & { version?: number };
   if ((raw.version ?? 0) < 5) raw = renameCast(raw);
-  // v11 -> v12 only adds the EWC Operation: keep everything as it is (edits to
-  // seeded groups, read receipts) and add the chats and threads that are new.
+  // v11 -> v12 only adds the EWC Operation, and v13 a day of talk in its
+  // channels: keep everything as it is (edits to seeded groups, read
+  // receipts), add the chats that are new, and merge in the EWC messages
+  // that aren't there yet, read up to where the seed has them read.
   if (
-    raw.version === 11 && Array.isArray(raw.chats) && isRecord(raw.messages) && isRecord(raw.archive) && isRecord(raw.lastReadAt)
+    (raw.version === 11 || raw.version === 12)
+    && Array.isArray(raw.chats) && isRecord(raw.messages) && isRecord(raw.archive) && isRecord(raw.lastReadAt)
   ) {
     const chats = raw.chats as ChatState["chats"];
-    const messages = raw.messages as ChatState["messages"];
     const added = seed.chats.filter((c) => !chats.some((x) => x.id === c.id));
-    const threads = Object.fromEntries(added.map((c) => [c.id, seed.messages[c.id] ?? []]));
-    return { ...(raw as ChatState), version: CURRENT_VERSION, chats: [...chats, ...added], messages: { ...threads, ...messages } };
+    const messages = { ...Object.fromEntries(added.map((c) => [c.id, seed.messages[c.id] ?? []])), ...(raw.messages as ChatState["messages"]) };
+    for (const c of seed.chats.filter((x) => x.id === EWC_ID || x.groupId === EWC_ID)) {
+      const have = messages[c.id] ?? [];
+      const extra = (seed.messages[c.id] ?? []).filter((m) => !have.some((x) => x.id === m.id));
+      if (extra.length) messages[c.id] = [...have, ...extra].sort((a, b) => a.createdAt - b.createdAt);
+    }
+    const read = raw.lastReadAt as Record<string, number>;
+    const marks = Object.fromEntries(Object.entries(seed.lastReadAt).map(([k, at]) => [k, Math.max(read[k] ?? 0, at)]));
+    return { ...(raw as ChatState), version: CURRENT_VERSION, chats: [...chats, ...added], messages, lastReadAt: { ...read, ...marks } };
   }
   // Current-version data is trusted only if it has the right shape; anything
   // else (a hand-edited or half-written record) goes through the backfill.

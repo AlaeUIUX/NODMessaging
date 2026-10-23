@@ -1,0 +1,67 @@
+/* A call on air: a voice wave, and the island that carries it at the top of a chat. */
+
+.wave { display: inline-flex; align-items: center; gap: 2.5px; height: 26px; flex-shrink: 0; color: var(--ok-mark); }
+.wave i {
+  display: block; width: 3px; height: 100%; border-radius: 2px;
+  background: currentColor; transform: scaleY(.1); transform-origin: center; will-change: transform;
+}
+
+/*
+ * Near-black in both themes, like the island it's named after; it grows
+ * from a pill to a card with a spring, and the words sit on their own layer.
+ */
+.island {
+  width: 100%;
+  max-width: 290px;
+  display: flex; flex-direction: column;
+  padding: 8px 10px 10px;
+  border-radius: 26px;
+  background: #0C0A09;
+  color: #FAFAF9;
+  box-shadow: 0 4px 12px rgba(12, 10, 9, .16), 0 0 0 .5px rgba(255, 255, 255, .08) inset;
+  transition: max-width var(--t-slow) var(--ease-spring), border-radius var(--t-slow) var(--ease-spring), padding var(--t-slow) var(--ease-spring);
+  animation-name: islandIn; animation-duration: var(--t-slow); animation-timing-function: var(--ease-spring); animation-fill-mode: both;
+}
+@keyframes islandIn { from { opacity: 0; transform: scale(.7, .5); } }
+.open { max-width: 100%; border-radius: 30px; padding: 12px 14px 14px; }
+
+.top {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 0; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.top:focus-visible { outline: 2px solid var(--ok-mark); outline-offset: 4px; border-radius: 20px; }
+.av { position: relative; flex-shrink: 0; display: inline-flex; border-radius: 50%; box-shadow: 0 0 0 2px var(--ok-mark); }
+.who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0; }
+.who b { font: var(--t-subhead); font-weight: var(--w-emph); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.who small { font: var(--t-caption1); color: rgba(250, 250, 249, .6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/*
+ * The words: the newest lines stay in view. The box is a whole number of
+ * lines tall and the text sits at its bottom, so older lines leave cleanly
+ * over the top; nothing fades or shades the words that are showing.
+ */
+.words {
+  margin: 8px 2px 0;
+  max-height: calc(2 * 20px);
+  display: flex; flex-direction: column; justify-content: flex-end;
+  overflow: hidden;
+  font: var(--t-subhead); line-height: 20px; color: #FAFAF9;
+  transition: max-height var(--t-slow) var(--ease-spring);
+}
+.open .words { max-height: calc(5 * 22px); font: var(--t-body); line-height: 22px; margin-top: 12px; }
+.words em { font-style: italic; color: rgba(250, 250, 249, .5); }
+
+.radio {
+  align-self: stretch; margin-top: 12px; height: 40px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: none; border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, .12); color: #FAFAF9;
+  font: var(--t-subhead); font-weight: var(--w-emph); cursor: pointer;
+  animation-name: islandIn; animation-duration: var(--t-mid); animation-fill-mode: both;
+}
+.radio:active { background: rgba(255, 255, 255, .2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .island, .radio { animation-name: none; transition: none; }
+}

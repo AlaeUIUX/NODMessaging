@@ -3,8 +3,8 @@
 import { groupInfo } from "@/lib/chat/groups";
 import { useMemo } from "react";
 import {
-  forMembers, opId, readRate, staffing, zoneById, zoneStatus,
-  type Audience, type ChannelId, type OpBroadcast, type OpRequest, type Presence, type RequestKind, type Target, type Transmission, type ZoneStatus,
+  currentDay, forMembers, opId, readRate, staffing, stepDay, zoneById, zoneStatus,
+  type Audience, type ChannelId, type DayStep, type OpBroadcast, type OpRequest, type Presence, type RequestKind, type Target, type Transmission, type ZoneStatus,
 } from "@/lib/chat/operation";
 import { opDispatch, opLive, useOpLive } from "@/lib/chat/opstore";
 import { newTask } from "@/lib/chat/project";
@@ -135,6 +135,11 @@ export function useOperation(groupId: string | null | undefined) {
     words(txId: string, text: string) { opDispatch(gid, { t: "radio.words", id: txId, text }); },
     release(txId: string, text: string, source?: Transmission["source"]) { opDispatch(gid, { t: "radio.release", id: txId, text, at: now(), source }); },
     setShift(shift: string) { opDispatch(gid, { t: "shift", shift }); },
+    /** Finishes, pauses, resumes or rewinds the day, for everyone. */
+    runDay(step: DayStep) {
+      if (!op || !live) return;
+      opDispatch(gid, { t: "day", step, day: stepDay(op, currentDay(op, live, now()), step, me, now()), feedId: opId("f") });
+    },
 
     /** A task on the Ops board, in a zone. */
     addTask(t: { title: string; zoneId: string; priority?: Priority; assignee?: string | null; dueMins?: number }, as = me) {

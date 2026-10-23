@@ -3,7 +3,7 @@ import { msg } from "./seedkit";
 import { billSeed } from "./seed-bill";
 import { planSeed } from "./seed-plan";
 import { projectSeed } from "./seed-project";
-import { EWC_CHATS, ewcMessages, OPS_CREW, OPS_RECRUITS } from "./seed-ops";
+import { EWC_CHATS, ewcMessages, ewcReadMarks, OPS_CREW, OPS_RECRUITS } from "./seed-ops";
 import type { Chat, ChatState, Message, User } from "./types";
 
 const CORE_USERS: User[] = [
@@ -371,7 +371,7 @@ export function buildSeedState(now = Date.now()): ChatState {
     chats: CHATS,
     messages,
     archive,
-    lastReadAt: {},
+    lastReadAt: ewcReadMarks(now, CHATS),
   };
 }
 
@@ -379,4 +379,5 @@ export function buildSeedState(now = Date.now()): ChatState {
 // (v8 again, for anyone who loaded v7 before the demos were filled in). v9 adds the Analytics demos,
 // v10 groups: NOD Team's roles and channels, and the Vienna invitation. v11 public groups for Explore.
 // v12 the EWC Operation and its crew (added on top of what's there; see storage.ts migrate).
-export const CURRENT_VERSION = 12;
+// v13 fills the EWC channels with a day of talk (merged into what is there; see storage.ts migrate).
+export const CURRENT_VERSION = 13;

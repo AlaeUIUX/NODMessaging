@@ -83,7 +83,7 @@ export function ScopeSearch({ value, placeholder, onChange, onCancel }: { value:
 }
 
 /** A menu hanging from a button at the top right, the way iOS pulls one down. A tap outside closes it. */
-function AnchorMenu({ anchor, label, onClose, children }: {
+export function AnchorMenu({ anchor, label, onClose, children }: {
   anchor: HTMLElement;
   label: string;
   onClose: () => void;

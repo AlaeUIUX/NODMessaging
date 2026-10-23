@@ -117,7 +117,9 @@ function run(gid: string, get: Get): () => void {
   };
   // The tab with the smallest id leads, while it is awake. A hidden leader soon stops starting anything, so a
   // visible tab takes over rather than waiting for its heartbeats to lapse.
-  const leader = () => Date.now() - startedAt >= READY_MS && !asleep() && get().peers.every((p) => p.clientId > clientId);
+  // A paused or finished day is quiet: nobody simulated says or does anything until it's back on.
+  const dayOn = () => (opLive(gid)?.day?.state ?? "on") === "on";
+  const leader = () => Date.now() - startedAt >= READY_MS && !asleep() && dayOn() && get().peers.every((p) => p.clientId > clientId);
   // A background tab's timers slow to one a second (fine: words are paced by the clock), and after
   // five minutes to one a minute; long before that it stops starting new calls.
   let hiddenAt = document.visibilityState === "hidden" ? Date.now() : 0;

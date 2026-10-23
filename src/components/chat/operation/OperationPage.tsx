@@ -6,25 +6,30 @@ import { canSee } from "@/lib/chat/groups";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { isQuiet, ruleFor, useMutes } from "@/lib/chat/mutes";
 import {
-  agoText, canDecide, dayOf, isCommand, isOnAir, leadsZone, missedCalls, onSite, pendingRequests, reaches, readRate, titleOf, zoneById,
+  agoText, canDecide, currentDay, isCommand, isOnAir, leadsZone, missedCalls, onSite, pendingRequests, reaches, readRate, titleOf, zoneById,
   type OpRequest,
 } from "@/lib/chat/operation";
 import { useChat, userById } from "@/lib/chat/store";
 import Avatar from "../Avatar";
 import { linksIn } from "../ContactPage";
 import GroupMind from "../GroupMind";
-import { IconAlert, IconBellOff, IconBoard, IconChart, IconChevron, IconMegaphone, IconSettings, IconWalkie } from "../Icons";
+import { IconAlert, IconBellOff, IconBoard, IconChart, IconChevron, IconClock, IconMegaphone, IconPause, IconSettings, IconWalkie } from "../Icons";
 import { Segmented, useChatUi, useNow } from "../ui";
 import styles from "../chat.module.css";
 import { Av, Code, CrewDot } from "./kit";
+import { DaySheet } from "./DaySheet";
 import { RequestSheet, RequestView } from "./OpCards";
+import {
+  ALL_ZONES, FilterButton, isNarrowingLog, isNarrowingZones, LogChips, LogFilterMenu, WHOLE_LOG, ZoneChips, ZoneFilterMenu, zonesFor,
+  type LogFilter, type ZoneFilter,
+} from "./OpFilters";
 import {
   badgeText, BroadcastBanner, byStep, crewGroups, DayReport, FeedList, FloorMap, MapLegend, nameOf, openTasks, PageLayer, TaskRow,
   unreadBroadcasts, useOp, WhereCard, ZoneTile, type Op,
 } from "./zones";
 import p from "./pages.module.css";
 
-type Tab = "zones" | "live" | "mind" | "members";
+type Tab = "zones" | "log" | "mind" | "members";
 type View = "list" | "grid" | "map";
 
 /** Urgent first, then the ones waiting longest. */
@@ -35,7 +40,7 @@ const byUrgency = (a: OpRequest, b: OpRequest) => Number(b.urgency === "urgent")
  * the inbox opens). The live strip and a slim shelf (Radio, Broadcasts, the
  * Ops board), then what this person needs: where they are and their tasks
  * (crew), or what waits on them (Command and leads). Then #broadcasts, the
- * channels, and Zones · Live · Mind · Members.
+ * channels, and Zones · Log · Mind · Members.
  */
 export function OperationPage({ groupId, onClose, onSettings, onSwitchChannel }: {
   groupId: string;
@@ -53,6 +58,8 @@ export function OperationPage({ groupId, onClose, onSettings, onSwitchChannel }:
   const [tab, setTab] = useState<Tab>("zones");
   const [view, setView] = useState<View>("list");
   const [pin, setPin] = useState<string | null>(null);
+  const [zoneFilter, setZoneFilter] = useState<ZoneFilter>(ALL_ZONES);
+  const [logFilter, setLogFilter] = useState<LogFilter>(WHOLE_LOG);
 
   // Mind's "From the chat": the files and links of the channel that's open, as on any group's page.
   const messages = useMemo(() => (state.data.messages[ui.chat.id] ?? []).filter((m) => !m.deletedAt), [state.data.messages, ui.chat.id]);
@@ -65,7 +72,8 @@ export function OperationPage({ groupId, onClose, onSettings, onSwitchChannel }:
   const command = isCommand(info, me);
   const decides = command || !!leadsZone(op, me);
   const muted = isQuiet(ruleFor(rules, group.id, now));
-  const day = dayOf(op, now);
+  const dayState = currentDay(op, live, now);
+  const day = dayState.n;
   const shift = op.shifts.find((s) => s.id === live.shift);
   const pending = pendingRequests(live);
   const needs = pending.filter((r) => canDecide(info, me, r)).sort(byUrgency);
@@ -82,6 +90,7 @@ export function OperationPage({ groupId, onClose, onSettings, onSwitchChannel }:
   const lastRead = lastBroadcast ? readRate(info, live, o.members, lastBroadcast) : null;
   const boardOpen = openTasks(o).length;
   const reportZone = myZone ?? op.zones[0];
+  const shown = zonesFor(live, op.zones, zoneFilter);
 
   const channels = [info.channels[0], ...op.zones.map((z) => info.channels.find((c) => c.id === z.channelId))]
     .filter((c): c is NonNullable<typeof c> => !!c && canSee(info, c, me));
@@ -110,14 +119,23 @@ export function OperationPage({ groupId, onClose, onSettings, onSwitchChannel }:
         {identity.photo
           ? <Avatar glyph={identity.glyph} tone={identity.tone} photo={identity.photo} size={84} />
           : <span className={p.badge} aria-hidden="true">{badgeText(group.name)}</span>}
-        <h2 className={p.heroName}>{group.name}</h2>
+        <div className={p.heroTitle}>
+          <h2 className={p.heroName}>{group.name}</h2>
+          <button
+            className={`${p.dayPill} ${dayState.state === "paused" ? p.dayPillPaused : ""}`}
+            onClick={() => ui.openSheet(<DaySheet groupId={groupId} onClose={ui.closeSheet} />)}
+            aria-label={`Day ${day} of ${op.days}${dayState.state === "on" ? "" : dayState.state === "paused" ? ", paused" : ", finished"}. Open the day`}
+          >
+            {dayState.state === "paused" && <IconPause size={12} />}
+            {dayState.state === "done" ? "Finished" : `Day ${day}/${op.days}`}
+          </button>
+        </div>
         <p className={p.heroMeta}>
           {[op.venue, "Operation"].filter(Boolean).join(" · ")}
           {muted && <> · <IconBellOff size={13} /> Muted</>}
         </p>
         <div className={p.strip}>
-          <span><i className={p.liveDot} aria-hidden="true" />Day {day} of {op.days}</span>
-          {shift && <span>{shift.name} shift</span>}
+          {shift && <span><IconClock size={14} />{shift.name} shift</span>}
           <span><b>{onSite(live)}</b> on site</span>
           <span className={pending.length ? p.stripWarn : undefined}><b>{pending.length}</b> {pending.length === 1 ? "request" : "requests"}</span>
         </div>
@@ -234,16 +252,27 @@ export function OperationPage({ groupId, onClose, onSettings, onSwitchChannel }:
         <Segmented
           value={tab}
           onChange={setTab}
-          options={[{ id: "zones", label: "Zones" }, { id: "live", label: "Live" }, { id: "mind", label: "Mind" }, { id: "members", label: "Members" }]}
+          options={[{ id: "zones", label: "Zones" }, { id: "log", label: "Log" }, { id: "mind", label: "Mind" }, { id: "members", label: "Members" }]}
         />
       </div>
 
       <div key={tab} className={p.panel} role="tabpanel" aria-label={tab}>
         {tab === "zones" && <>
-          <Segmented value={view} onChange={setView} options={[{ id: "list", label: "List" }, { id: "grid", label: "Grid" }, { id: "map", label: "Map" }]} />
+          <div className={p.toolRow}>
+            <Segmented value={view} onChange={setView} options={[{ id: "list", label: "List" }, { id: "grid", label: "Grid" }, { id: "map", label: "Map" }]} />
+            {view !== "map" && op.zones.length > 0 && (
+              <FilterButton
+                on={isNarrowingZones(zoneFilter)}
+                label="Sort and filter zones"
+                onOpen={(el) => ui.openSheet(<ZoneFilterMenu anchor={el} filter={zoneFilter} onChange={setZoneFilter} onClose={ui.closeSheet} />)}
+              />
+            )}
+          </div>
+          {view !== "map" && <ZoneChips filter={zoneFilter} onChange={setZoneFilter} />}
           {!op.zones.length && <p className={p.emptyBox}>No zones yet. Add them in Settings › Zones.</p>}
-          {view === "list" && op.zones.length > 0 && <div className={p.zoneList}>{op.zones.map((z) => <ZoneTile key={z.id} o={o} zone={z} />)}</div>}
-          {view === "grid" && op.zones.length > 0 && <div className={p.zoneGrid}>{op.zones.map((z) => <ZoneTile key={z.id} o={o} zone={z} variant="tile" />)}</div>}
+          {view !== "map" && op.zones.length > 0 && !shown.length && <p className={p.emptyBox}>No zones match. Clear the filter to see them all.</p>}
+          {view === "list" && shown.length > 0 && <div className={p.zoneList}>{shown.map((z) => <ZoneTile key={z.id} o={o} zone={z} />)}</div>}
+          {view === "grid" && shown.length > 0 && <div className={p.zoneGrid}>{shown.map((z) => <ZoneTile key={z.id} o={o} zone={z} variant="tile" />)}</div>}
           {view === "map" && op.zones.length > 0 && <>
             <FloorMap o={o} onPick={(id) => setPin((x) => (x === id ? null : id))} picked={pin} />
             <MapLegend />
@@ -251,7 +280,18 @@ export function OperationPage({ groupId, onClose, onSettings, onSwitchChannel }:
           </>}
           {op.zones.length > 0 && <p className={p.hint}>Hold a zone for Assign, Set status and Open chat.</p>}
         </>}
-        {tab === "live" && <FeedList o={o} limit={40} />}
+        {tab === "log" && <>
+          <div className={p.toolRow}>
+            <p className={p.toolNote}>Newest first</p>
+            <FilterButton
+              on={isNarrowingLog(logFilter)}
+              label="Filter the log"
+              onOpen={(el) => ui.openSheet(<LogFilterMenu anchor={el} filter={logFilter} onChange={setLogFilter} onClose={ui.closeSheet} />)}
+            />
+          </div>
+          <LogChips filter={logFilter} onChange={setLogFilter} />
+          <FeedList o={o} filter={logFilter} />
+        </>}
         {tab === "mind" && (
           <GroupMind
             group={group}

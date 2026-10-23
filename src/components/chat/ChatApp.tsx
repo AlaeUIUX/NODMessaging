@@ -378,6 +378,8 @@ function Device() {
     if (s?.nodChat) {
       window.history.replaceState({ ...stripLayers(s), nodChat: chat.id }, "");
     } else {
+      // A chat is a screen inside the phone: Back shouldn't scroll the page around it.
+      window.history.scrollRestoration = "manual";
       window.history.pushState({ nodChat: chat.id }, "");
     }
   };
@@ -449,6 +451,17 @@ function Device() {
       if (switching.current) return;
       const id: string | undefined = window.history.state?.nodChat;
       if (!id && openRef.current) {
+        // In an Operation, Back from a zone's or a crew's channel goes to its lobby (#general), not out of
+        // the Operation; Back again leaves. A swipe from the edge has already slid out to the inbox: it leaves.
+        const open = openRef.current;
+        const lobby = !popImmediate.current && open.groupId
+          ? latestChats.current.find((c) => c.id === open.groupId && !c.removedAt && c.memberIds.includes(meRef.current))
+          : undefined;
+        if (lobby && groupInfo(lobby).operation) {
+          window.history.pushState({ nodChat: lobby.id }, "");
+          switchChannel(lobby);
+          return;
+        }
         hide(popImmediate.current);
         popImmediate.current = false;
       } else if (id && openRef.current?.id !== id) {
@@ -460,7 +473,7 @@ function Device() {
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [hide, show]);
+  }, [hide, show, switchChannel]);
 
   return (
     <div ref={deviceRef} className={styles.device} data-device>

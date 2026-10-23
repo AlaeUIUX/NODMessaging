@@ -7,7 +7,7 @@ import { initials } from "@/lib/chat/avatar";
 import { can, canSee } from "@/lib/chat/groups";
 import { RequestSheet } from "./OpCards";
 import {
-  agoText, ago, audienceOf, canManageZones, clock, crewOf, dayOf, emptyLive, here, isCommand, onSite, openRequestsIn, readRate,
+  agoText, ago, audienceOf, canManageZones, clock, crewOf, currentDay, emptyLive, here, isCommand, onSite, openRequestsIn, readRate,
   staffing, suggestions, zoneById, zoneStatus,
   type FeedEvent, type OpBroadcast, type OpLive, type OpRequest, type RequestKind, type ZoneStatus,
 } from "@/lib/chat/operation";
@@ -15,13 +15,14 @@ import { userById } from "@/lib/chat/store";
 import type { AvatarTone, Chat, GroupInfo, OperationInfo, OperationZone, Priority, Task } from "@/lib/chat/types";
 import { DonutChart, PartBars, StackedBar, TrendChart, type Part, type Point } from "../Charts";
 import {
-  IconAlert, IconArrowDown, IconArrowUp, IconBack, IconBell, IconCheck, IconChevron, IconClose, IconEdit, IconFlag, IconLocation,
+  IconAlert, IconArrowDown, IconArrowUp, IconBack, IconBell, IconCheck, IconChevron, IconClock, IconClose, IconEdit, IconFlag, IconLocation,
   IconMegaphone, IconQr, IconRoute, IconTask, IconUserGroup,
 } from "../Icons";
 import StatusBar from "../StatusBar";
 import { reducedMotion, Segmented, Sheet, useChatUi, useDialog, useNow } from "../ui";
 import styles from "../chat.module.css";
-import { Av, Code, CrewDot, PrioDot, Ring, StatusChip, STATUS_LABEL, useHold } from "./kit";
+import { Av, Code, CrewDot, PrioDot, StatusChip, STATUS_LABEL, useHold } from "./kit";
+import { logSections, passesLog, WHOLE_LOG, type LogFilter } from "./OpFilters";
 import { ZoneSheet } from "./Setup";
 import { useOperation, type OperationApi } from "./useOperation";
 import p from "./pages.module.css";
@@ -75,12 +76,10 @@ export function unreadBroadcasts(o: Op): OpBroadcast[] {
 }
 
 export type Tone = "ok" | "warn" | "bad" | "off";
-/** A zone's colour: red when it's short or has an issue, amber when it's tight or busy. */
+/** A zone's pin: ink like every other zone, red only for an issue, grey when closed. */
 export function zoneTone(live: OpLive, z: OperationZone): Tone {
-  const st = staffing(live, z);
   const status = zoneStatus(live, z.id);
-  if (status === "issue" || st.level === "critical") return "bad";
-  if (st.level === "short" || status === "busy") return "warn";
+  if (status === "issue") return "bad";
   if (status === "closed") return "off";
   return "ok";
 }
@@ -195,18 +194,25 @@ export function PageLayer({ label, back = "Back", title, end, onClose, children 
    Zones: a row or a tile; hold for its menu
 --------------------------------------------------------------------------- */
 
+/**
+ * A zone, as a card: its code and name, how many are there out of how many
+ * it needs (the count in ink, the target greyed), a bar of how full it is,
+ * and a line of what's going on. Every zone looks the same; only an issue
+ * says so in colour, and that's enough to make someone open it.
+ */
 export function ZoneTile({ o, zone: z, variant = "row" }: { o: Op; zone: OperationZone; variant?: "row" | "tile" }) {
   const ui = useChatUi();
   const st = staffing(o.live, z);
   const status = zoneStatus(o.live, z.id);
   const tasks = openTasks(o, z.id).length;
   const reqs = openRequestsIn(o.live, z.id).filter((r) => r.status === "pending");
-  const urgent = reqs.some((r) => r.urgency === "urgent");
   const hold = useHold(() => ui.openSheet(<ZoneMenu groupId={o.group.id} zoneId={z.id} onClose={ui.closeSheet} />));
-  const dot = variant === "row" ? "· " : "";
+  const fill = Math.min(1, st.n / Math.max(1, st.target));
+  const gap = st.target - st.n;
+  const staffed = gap > 0 ? `${gap} short` : gap < 0 ? `${-gap} spare` : "Full";
   return (
     <button
-      className={`${variant === "tile" ? p.zoneTile : p.zoneRow} ${status === "issue" ? p.isIssue : st.level === "critical" ? p.isShort : ""}`}
+      className={`${p.zone} ${variant === "tile" ? p.zoneCompact : ""}`}
       onClick={() => { if (!hold.wasHold()) ui.openZone?.(z.id); }}
       onPointerDown={hold.onPointerDown}
       onPointerMove={hold.onPointerMove}
@@ -215,20 +221,23 @@ export function ZoneTile({ o, zone: z, variant = "row" }: { o: Op; zone: Operati
       // The page took the touch to scroll: that's not a hold.
       onPointerCancel={hold.onPointerCancel}
       onContextMenu={hold.onContextMenu}
-      aria-label={`${z.code} ${z.name}, ${st.n} of ${st.target} here, ${STATUS_LABEL[status]}. Hold for more`}
+      aria-label={`${z.code} ${z.name}, ${st.n} of ${st.target} here${status !== "ok" ? `, ${STATUS_LABEL[status]}` : ""}${reqs.length ? `, ${reqs.length} waiting` : ""}. Hold for more`}
     >
-      <Ring n={st.n} target={st.target} level={st.level} size={variant === "tile" ? 48 : 44} />
-      <span className={p.zoneMain}>
-        <span className={p.zoneName}><Code z={z} /><span>{z.name}</span></span>
-        <span className={p.zoneMeta}>
-          {z.area && <span>{z.area}</span>}
-          <span>{z.area ? dot : ""}{tasks} {tasks === 1 ? "task" : "tasks"}</span>
-          {reqs.length > 0 && <span className={urgent ? p.metaUrgent : p.metaReq}>{dot}{reqs.length} {reqs.length === 1 ? "request" : "requests"}</span>}
+      <span className={p.zoneTop}>
+        <span className={p.zoneCode}>{z.code}</span>
+        <span className={p.zoneTitle}>
+          <b>{z.name}</b>
+          {z.area && <small>{z.area}</small>}
         </span>
+        <span className={p.count}><b>{st.n}</b><span>/{st.target}</span></span>
       </span>
-      <span className={p.zoneEnd}>
-        <StatusChip status={status} />
-        {z.leadId && <Av id={z.leadId} size={22} />}
+      <span className={p.zoneBar} aria-hidden="true"><i style={{ width: `${fill * 100}%` }} /></span>
+      <span className={p.zoneFoot}>
+        <span>{staffed}</span>
+        <span>{tasks} {tasks === 1 ? "task" : "tasks"}</span>
+        {reqs.length > 0 && <span>{reqs.length} waiting</span>}
+        {status === "issue" && <span className={p.zoneIssue}><IconAlert size={12} />Issue</span>}
+        {(status === "busy" || status === "closed") && <span className={p.zoneState}>{STATUS_LABEL[status]}</span>}
       </span>
     </button>
   );
@@ -276,7 +285,7 @@ export function ZoneMenu({ groupId, zoneId, onClose }: { groupId: string; zoneId
 
 const STATUS_OPTIONS: { id: ZoneStatus; text: string }[] = [
   { id: "ok", text: "Running as planned" },
-  { id: "busy", text: "Under pressure, watch it" },
+  { id: "busy", text: "Coping, but stretched: keep an eye on it" },
   { id: "issue", text: "Something is wrong here" },
   { id: "closed", text: "Not in use right now" },
 ];
@@ -540,10 +549,10 @@ export function FloorMap({ o, onPick, picked }: { o: Op; onPick: (zoneId: string
 export function MapLegend() {
   return (
     <div className={p.legend}>
-      <span><i style={{ background: "var(--ok-mark)" }} />Staffed</span>
-      <span><i style={{ background: "var(--warn-mark)" }} />Short or busy</span>
-      <span><i style={{ background: "var(--bad-mark)" }} />Issue or critical</span>
-      <span>Size = headcount</span>
+      <span><i style={{ background: "var(--ink)" }} />Zone</span>
+      <span><i style={{ background: "var(--bad-mark)" }} />Issue</span>
+      <span><i style={{ background: "var(--ink-3)" }} />Closed</span>
+      <span>Size = people there</span>
     </div>
   );
 }
@@ -690,17 +699,32 @@ export function NewTaskSheet({ groupId, zoneId, onClose }: { groupId: string; zo
 }
 
 /* ---------------------------------------------------------------------------
-   The ops feed: what happened, newest first; zone codes open the zone
+   The log: what happened, newest first, in stretches of time that fold
+   away (the newest one open); zone codes open the zone
 --------------------------------------------------------------------------- */
 
-export function FeedList({ o, limit = 30 }: { o: Op; limit?: number }) {
+export function FeedList({ o, filter = WHOLE_LOG }: { o: Op; filter?: LogFilter }) {
   const now = useNow(30_000);
-  const items = [...o.live.feed].reverse().slice(0, limit);
-  if (!items.length) return <p className={p.emptyBox}>Nothing yet. Check-ins, requests, broadcasts and finished tasks show up here.</p>;
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const items = [...o.live.feed].reverse().filter((e) => passesLog(filter, e, now));
+  if (!o.live.feed.length) return <p className={p.emptyBox}>Nothing yet. Check-ins, requests, broadcasts and finished tasks show up here.</p>;
+  if (!items.length) return <p className={p.emptyBox}>Nothing in the log matches these filters.</p>;
   return (
-    <ol className={p.feed}>
-      {items.map((e) => <FeedRow key={e.id} o={o} e={e} now={now} />)}
-    </ol>
+    <div className={p.log}>
+      {logSections(items, now).map((sec, i) => {
+        const on = open[sec.key] ?? i === 0;
+        return (
+          <section key={sec.key} className={p.logSection} aria-label={sec.label}>
+            <button className={`${p.logHead} ${on ? p.logOpen : ""}`} onClick={() => setOpen((x) => ({ ...x, [sec.key]: !on }))} aria-expanded={on}>
+              <IconChevron size={14} />
+              {sec.label}
+              <em>{sec.items.length}</em>
+            </button>
+            {on && <ol className={p.logItems}>{sec.items.map((e) => <FeedRow key={e.id} o={o} e={e} now={now} />)}</ol>}
+          </section>
+        );
+      })}
+    </div>
   );
 }
 
@@ -711,47 +735,66 @@ function FeedRow({ o, e, now }: { o: Op; e: FeedEvent; now: number }) {
     const z = zoneById(o.op, id);
     return z ? <button className={p.codeLink} onClick={() => ui.openZone?.(z.id)} aria-label={`Open ${z.code} · ${z.name}`}>{z.code}</button> : <span>—</span>;
   };
-  let icon: ReactNode = <IconChevron size={14} />;
+  // Who did it leads the row (their picture); a small mark on it says what kind of thing happened.
+  let actor: string | null = null;
+  let icon: ReactNode = <IconChevron size={11} />;
   let bad = false;
   let body: ReactNode = null;
+  const name = (id: string) => <b>{who(id)}</b>;
   switch (e.kind) {
-    case "checkin": icon = <IconLocation size={14} />; body = <>{who(e.userId)} checked in to {zl(e.zoneId)}{e.via === "qr" ? " by QR" : e.via === "link" ? " from a crew link" : ""}</>; break;
-    case "checkout": icon = <IconBack size={14} />; body = <>{who(e.userId)} left {zl(e.zoneId)}</>; break;
-    case "move": icon = <IconRoute size={14} />; body = <>{who(e.userId)} moved {e.fromZoneId ? <>{zl(e.fromZoneId)} → </> : "to "}{zl(e.zoneId)}</>; break;
+    case "checkin": actor = e.userId; icon = <IconLocation size={11} />; body = <>{name(e.userId)} checked in to {zl(e.zoneId)}{e.via === "qr" ? " by QR" : e.via === "link" ? " from a crew link" : ""}</>; break;
+    case "checkout": actor = e.userId; icon = <IconBack size={11} />; body = <>{name(e.userId)} left {zl(e.zoneId)}</>; break;
+    case "move": actor = e.userId; icon = <IconRoute size={11} />; body = <>{name(e.userId)} moved {e.fromZoneId ? <>{zl(e.fromZoneId)}<span className={p.feedArrow}>→</span></> : "to "}{zl(e.zoneId)}</>; break;
     case "request": {
       const r = o.live.requests.find((x) => x.id === e.requestId);
       if (!r) break;
-      icon = r.kind === "issue" ? <IconAlert size={14} /> : r.kind === "supplies" ? <IconPackage size={14} /> : <IconUserGroup size={14} />;
+      actor = e.by;
+      icon = r.kind === "issue" ? <IconAlert size={11} /> : r.kind === "supplies" ? <IconPackage size={11} /> : <IconUserGroup size={11} />;
       bad = r.kind === "issue";
-      body = <>{who(e.by)} raised <b>{requestTitle(o.op, r, o.me)}</b>{r.urgency === "urgent" ? <span className={p.feedBad}> · urgent</span> : null}</>;
+      body = <>{name(e.by)} raised {requestTitle(o.op, r, o.me)}{r.urgency === "urgent" ? <span className={p.feedBad}> · urgent</span> : null}</>;
       break;
     }
     case "decision": {
       const r = o.live.requests.find((x) => x.id === e.requestId);
       if (!r) break;
-      icon = e.approved ? <IconCheck size={14} /> : <IconClose size={14} />;
-      body = <>{who(e.by)} {e.approved ? "approved" : "declined"} <b>{requestTitle(o.op, r, o.me)}</b> <span className={p.feedMeta}>in {ago(e.at - r.at)}</span></>;
+      actor = e.by;
+      icon = e.approved ? <IconCheck size={11} /> : <IconClose size={11} />;
+      body = <>{name(e.by)} {e.approved ? "approved" : "declined"} {requestTitle(o.op, r, o.me)} <span className={p.feedMeta}>in {ago(e.at - r.at)}</span></>;
       break;
     }
     case "broadcast": {
       const b = o.live.broadcasts.find((x) => x.id === e.broadcastId);
       if (!b) break;
       const rr = readRate(o.info, o.live, o.members, b);
-      icon = <IconMegaphone size={14} />;
+      actor = b.by;
+      icon = <IconMegaphone size={11} />;
       bad = b.level === "critical";
-      body = <>{b.level === "critical" ? <span className={p.feedBad}>Critical · </span> : null}“{b.text}” <span className={p.feedMeta}>{rr.read}/{rr.aud} read</span></>;
+      body = <>{name(b.by)} {b.level === "critical" ? <span className={p.feedBad}>sent a critical alert</span> : "broadcast"} “{b.text}” <span className={p.feedMeta}>{rr.read}/{rr.aud} read</span></>;
       break;
     }
-    case "remind": icon = <IconBell size={14} />; body = <>{who(e.by)} reminded {e.count} who hadn’t read</>; break;
-    case "task": icon = <IconTask size={14} />; body = <>{who(e.by)} finished <b>{e.title}</b>{e.zoneId ? <> in {zl(e.zoneId)}</> : null}</>; break;
-    case "zone": icon = <IconFlag size={14} />; bad = e.status === "issue"; body = <>{who(e.by)} set {zl(e.zoneId)} to <span className={p[`fs_${e.status}`]}>{STATUS_LABEL[e.status]}</span></>; break;
+    case "remind": actor = e.by; icon = <IconBell size={11} />; body = <>{name(e.by)} reminded {e.count} who hadn’t read</>; break;
+    case "task": actor = e.by; icon = <IconTask size={11} />; body = <>{name(e.by)} finished {e.title}{e.zoneId ? <> in {zl(e.zoneId)}</> : null}</>; break;
+    case "day": {
+      actor = e.by;
+      icon = <IconClock size={11} />;
+      const what = e.step === "finish" ? (e.to > e.day ? `finished Day ${e.day}` : `finished Day ${e.day}, the last day`)
+        : e.step === "pause" ? `paused Day ${e.day}` : e.step === "resume" ? `resumed Day ${e.day}`
+          : e.to < e.day ? `went back to Day ${e.to}` : `reopened Day ${e.to}`;
+      body = <>{name(e.by)} {what}</>;
+      break;
+    }
+    case "zone": actor = e.by; icon = <IconFlag size={11} />; bad = e.status === "issue"; body = <>{name(e.by)} set {zl(e.zoneId)} to <span className={p[`fs_${e.status}`]}>{STATUS_LABEL[e.status]}</span></>; break;
   }
   if (!body) return null;
   return (
     <li className={p.feedRow}>
-      <span className={`${p.feedIcon} ${bad ? p.feedIconBad : ""}`} aria-hidden="true">{icon}</span>
+      <span className={p.feedWho} aria-hidden="true">
+        {actor ? <Av id={actor} size={32} /> : <span className={p.feedIcon}>{icon}</span>}
+        {actor && <span className={`${p.feedKind} ${bad ? p.feedKindBad : ""}`}>{icon}</span>}
+      </span>
       <span className={p.feedBody}>{body}</span>
-      <time className={p.feedTime} title={clock(e.at)}>{ago(now - e.at)}</time>
+      {/* "25h 30m" reads badly: past a few hours, the time of day says it better. */}
+      <time className={p.feedTime} title={clock(e.at)}>{now - e.at > 6 * 3_600_000 ? clock(e.at) : ago(now - e.at)}</time>
     </li>
   );
 }
@@ -773,7 +816,7 @@ export function DayReport({ groupId, onClose }: { groupId: string; onClose: () =
   const [picked, setPicked] = useState<string | null>(null);
   if (!o) return null;
   const { op, live } = o;
-  const day = dayOf(op, now);
+  const day = currentDay(op, live, now).n;
   const shiftId = picked ?? live.shift;
   const shift = op.shifts.find((s) => s.id === shiftId) ?? op.shifts[0];
   const liveIndex = op.shifts.findIndex((s) => s.id === live.shift);

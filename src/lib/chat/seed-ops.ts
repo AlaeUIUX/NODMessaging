@@ -190,8 +190,178 @@ export function ewcMessages(now: number): Message[] {
     opRef("ewc-bc-gates", BROADCASTS, "reema", "broadcast", "b-gates", "Critical: Gates open at 16:00. All crews to positions.", now - 122 * MINUTE),
     opRef("ewc-bc-water", BROADCASTS, "reema", "broadcast", "b-water", "Broadcast: Water stations restocked in Hall A and B.", now - 20 * MINUTE),
     msg({ id: "ewc-board", chatId: EWC_ID, authorId: "me", kind: "card", body: "Board: Ops board", createdAt: now - 26 * HOUR, card: ewcBoard(now) }),
+    ...Object.entries(DAY_TALK).flatMap(([where, lines]) =>
+      lines.map(([by, minsAgo, body], i) => t(`ewc-x-${where}-${i + 1}`, where === "general" ? EWC_ID : ch(where), by, minsAgo, body))),
   ];
 }
+
+/**
+ * Everyone in the Operation has read the day so far, up to 20 minutes ago:
+ * what's unread is what came in since, not the whole day. The keys are
+ * storage's readKey ("chatId" for me, "user:chatId" for anyone else).
+ */
+export function ewcReadMarks(now: number, chats: Chat[]): Record<string, number> {
+  const at = now - 20 * MINUTE;
+  return Object.fromEntries(chats.filter((c) => c.id === EWC_ID || c.groupId === EWC_ID).flatMap((c) => ["me", ...EWC_MEMBERS].map((u) => [u === "me" ? c.id : `${u}:${c.id}`, at])));
+}
+
+/**
+ * A day's worth of talk in every channel (minutes ago), so a channel opens
+ * deep in the conversation the way it would at a real event, not on its
+ * first message.
+ */
+const DAY_TALK: Record<string, [by: string, minsAgo: number, body: string][]> = {
+  general: [
+    ["reema", 410, "Morning all. Doors for crew at 10:00, briefing in the Media Room at 10:30."],
+    ["charles", 402, "Broadcast crew is on site, coffee is in B1 if anyone needs it."],
+    ["jamshad", 395, "Security briefing moved to 10:45, same room."],
+    ["noura", 380, "Main Arena lights are on, we're walking the rows now."],
+    ["salman", 371, "Parking B is open for crew. Use the side entrance, not Gate 1."],
+    ["rahaf", 360, "Player Lounge is set. Teams arrive from 12:00."],
+    ["reema", 348, "Run sheet v3 is pinned in Mind. Please read it before your shift."],
+    ["dana", 333, "Merch store is stocked. Card machines are being charged."],
+    ["waleed", 318, "Media accreditation desk opens at 11:30."],
+    ["huda", 296, "Anyone have spare HDMI adapters? Lounge TV needs one."],
+    ["yousef", 291, "Two in the B1 cupboard, I'll bring one over."],
+    ["nasser", 270, "VIP guest list is final. 140 names, 12 plus-ones."],
+    ["reema", 244, "Lunch for crew is in the Hall B break room from 13:00 to 14:30, in turns please."],
+    ["khalid", 230, "Gate 3 queue barriers are up."],
+    ["sara", 211, "Info desk is open. Lost and found starts there too."],
+    ["faisal", 186, "Stage B soundcheck done, sounds great."],
+    ["jamshad", 160, "Wristband colours today: green for crew, blue for media, gold for VIP."],
+    ["reema", 140, "Gates open in 20 minutes. Positions please."],
+    ["lina", 120, "Stream is live on all platforms."],
+    ["omar", 96, "Casters are happy with the desk now, thanks B1."],
+    ["mona", 75, "Stage B queue is building early, heads up."],
+    ["reema", 58, "We're at 9,200 through the gates. Busiest hour is next, stay sharp."],
+    ["bandar", 33, "Size M jerseys almost gone. Restock coming from storage."],
+    ["amal", 24, "Post-match press conference at 18:15 in D1."],
+    ["charles", 11, "Replay server failover test passed."],
+  ],
+  a1: [
+    ["noura", 400, "Main Arena crew, check in when you're here please."],
+    ["omar", 392, "Here. Starting with the casters' desk."],
+    ["salman", 388, "Here. Taking the floor section."],
+    ["abdullah", 380, "On my way, five minutes."],
+    ["noura", 362, "Row numbers on the lower bowl are wrong from row K. Can someone fix the signs?"],
+    ["sara", 355, "On it, I have the spare signs."],
+    ["fahad", 330, "LED wall test at 12:00, please keep the stage clear."],
+    ["omar", 301, "Desk mic 3 crackles, swapping it."],
+    ["noura", 276, "Thanks Omar. Lunch in turns, two at a time."],
+    ["abdullah", 240, "Aisle 4 has boxes from the vendors, moving them now."],
+    ["salman", 205, "Fire exits all clear and checked."],
+    ["noura", 150, "Doors in 10. Everyone to your section."],
+    ["sara", 132, "First fans are in. Lower bowl filling fast."],
+    ["fahad", 104, "LED wall flickered for a second, it's fine now. Watching it."],
+    ["ziyad", 70, "Press pit is short on water, grabbing a case."],
+    ["omar", 52, "Casters on air in 5."],
+    ["abdullah", 31, "Someone dropped a phone in row M, handed to the info desk."],
+    ["salman", 19, "Crowd is loud, earbuds in everyone."],
+  ],
+  a2: [
+    ["rahaf", 398, "Lounge crew, morning! Teams start arriving at 12:00."],
+    ["huda", 391, "Morning. I'll set up the warm-up room."],
+    ["majed", 384, "Fridges are stocked. Halal snacks in the left one, the rest on the right."],
+    ["rahaf", 350, "Team Falcons asked for an extra monitor in their room."],
+    ["huda", 342, "Asked B1 for an HDMI adapter."],
+    ["majed", 317, "Team Liquid's manager is here early, showing them around."],
+    ["rahaf", 288, "Lunch boxes came. 6 teams × 8, one tray short."],
+    ["huda", 280, "I'll call catering."],
+    ["huda", 262, "Catering says 20 minutes for the last tray."],
+    ["majed", 230, "Warm-up PCs updated and tested."],
+    ["rahaf", 196, "Quiet hour 14:00–15:00, no visitors in the lounge please."],
+    ["huda", 158, "Team Falcons on their way to Main Arena."],
+    ["majed", 121, "Lounge TV is showing the stream now."],
+    ["rahaf", 84, "Running low on water and towels."],
+    ["huda", 46, "Thanks Command, supplies arrived."],
+    ["majed", 27, "Next match teams are warming up."],
+  ],
+  b1: [
+    ["charles", 405, "Studio crew, we start at 10:15. Coffee's on."],
+    ["lina", 399, "Here. Replay servers booting."],
+    ["yousef", 392, "Here. Labelling the return feeds."],
+    ["hessa", 386, "Graphics laptop up, templates loaded."],
+    ["charles", 350, "Stream test in 10 minutes."],
+    ["lina", 338, "Stream test fine, 1080p60 on all outputs."],
+    ["yousef", 300, "Return feed 4 has no audio, checking the patch."],
+    ["yousef", 290, "Fixed, wrong patch point."],
+    ["hessa", 262, "Lower thirds for the casters are approved."],
+    ["charles", 220, "Everyone have earbuds? Radio is the fastest way to me."],
+    ["lina", 180, "Replay B on standby."],
+    ["hessa", 141, "Scoreboard graphic ready for the first match."],
+    ["charles", 118, "We're live. Good job everyone."],
+    ["yousef", 63, "Feeds labelled, crossed off on the board."],
+    ["lina", 29, "Failover test at 17:30 if it's quiet."],
+  ],
+  b2: [
+    ["faisal", 397, "Stage B: morning. We're short today, only Mona and me so far."],
+    ["mona", 390, "Here. Starting with the cable runs."],
+    ["faisal", 360, "Lighting rig is being hung, need a hand at 11:00."],
+    ["mona", 344, "I'll be there."],
+    ["faisal", 302, "Rig is up. Testing the cues."],
+    ["mona", 266, "Downstage cables need tape before doors."],
+    ["faisal", 238, "Sound check at 13:30."],
+    ["mona", 205, "Sound check done, levels are good."],
+    ["faisal", 170, "Asked Command for more hands for the queue tonight."],
+    ["mona", 92, "Queue is already past the merch stand."],
+    ["faisal", 61, "We need barriers, people are pushing at the front."],
+    ["mona", 35, "Two security from C1 helping for now."],
+  ],
+  c1: [
+    ["jamshad", 402, "Gate 3 crew, briefing at 10:45 in D1."],
+    ["khalid", 394, "Here. Setting up the bag check tables."],
+    ["turki", 388, "Here. Cones and signs out."],
+    ["jamshad", 336, "Lanes 1–3 for bag check, lane 4 for crew and media."],
+    ["khalid", 310, "Scanners charged and tested."],
+    ["turki", 290, "Wheelchair access lane is marked on the left."],
+    ["jamshad", 250, "Prohibited items list is on the tables. No glass, no power banks over 20,000 mAh."],
+    ["khalid", 182, "First queue forming outside."],
+    ["jamshad", 140, "Gates open. Steady pace, no rushing."],
+    ["turki", 117, "Queue moving well, about 4 minutes each."],
+    ["khalid", 85, "Lane 2 scanner is slow, restarting it."],
+    ["jamshad", 62, "Ice cream spilled at the lane 3 entrance, someone get a cone."],
+    ["turki", 48, "Cones out."],
+    ["khalid", 14, "Big spill near the gate now, it's slippery. Reporting it."],
+  ],
+  c2: [
+    ["dana", 399, "Merch crew, morning! Stock count at 10:30."],
+    ["bandar", 391, "Here. Opening the boxes."],
+    ["dana", 352, "Jerseys: S 80, M 120, L 110, XL 60."],
+    ["bandar", 320, "Scarves and caps are on the wall."],
+    ["dana", 290, "Card machines charged, cash float counted."],
+    ["bandar", 210, "Price tags are done."],
+    ["dana", 150, "First customers in, all on card so far."],
+    ["bandar", 100, "Line is 15 deep, opening the second till."],
+    ["dana", 64, "M jerseys going fast, 30 left."],
+    ["bandar", 40, "Getting more M from storage."],
+    ["dana", 25, "Someone asked for a signed jersey, sending them to the info desk."],
+  ],
+  d1: [
+    ["waleed", 401, "Media Room: briefing is here at 10:30, chairs are out."],
+    ["amal", 395, "Here. Setting up the press badges."],
+    ["waleed", 345, "Wi-Fi password is on the cards on every table."],
+    ["amal", 312, "Accreditation desk is open, 40 badges handed out."],
+    ["waleed", 268, "Interview backdrop is up."],
+    ["amal", 220, "The printer is jammed again, using the spare."],
+    ["waleed", 166, "Coffee for the press is running low."],
+    ["amal", 123, "92 badges handed out."],
+    ["waleed", 71, "Mixed zone after the first match, 2 players."],
+    ["amal", 38, "Chairs for the post-match interviews still to do."],
+  ],
+  d2: [
+    ["nasser", 403, "VIP Lounge crew, morning. Guest list in Mind."],
+    ["lulwa", 396, "Here. Setting up the qahwa station."],
+    ["saud", 389, "Here. Checking the entrance."],
+    ["nasser", 340, "VIP wristbands are gold today."],
+    ["lulwa", 298, "Dates and qahwa at 17:00, ready to go."],
+    ["saud", 255, "Gate 1 knows to send VIPs straight up."],
+    ["nasser", 213, "Two guests changed to tomorrow, list updated."],
+    ["lulwa", 160, "Lounge looks great."],
+    ["saud", 110, "First VIP guests arrived."],
+    ["nasser", 66, "Ministry delegation at 18:00, 8 people."],
+    ["lulwa", 37, "Qahwa refilled."],
+  ],
+};
 
 /* ---- the Ops board: one board, every task tagged with its zone ---- */
 
@@ -262,7 +432,14 @@ export function ewcLive(now: number): OpLive {
 
   type Bare = FeedEvent extends infer E ? (E extends FeedEvent ? Omit<E, "id" | "at"> : never) : never;
   const f = (id: string, minsAgo: number, e: Bare) => ({ id, at: now - minsAgo * MINUTE, ...e }) as FeedEvent;
+  // Day one, so the log has a yesterday to fold away.
+  const DAY1 = 24 * 60;
   const feed: FeedEvent[] = [
+    f("f-d1", DAY1 + 300, { kind: "checkin", userId: "reema", zoneId: "a1", via: "qr" }),
+    f("f-d2", DAY1 + 260, { kind: "task", title: "Walk the stage barriers", zoneId: "a1", by: "ziyad" }),
+    f("f-d3", DAY1 + 200, { kind: "zone", zoneId: "c1", status: "busy", by: "khalid" }),
+    f("f-d4", DAY1 + 150, { kind: "move", userId: "yousef", fromZoneId: "a2", zoneId: "b1" }),
+    f("f-d5", DAY1 + 90, { kind: "checkout", userId: "nasser", zoneId: "d2" }),
     f("f1", 122, { kind: "broadcast", broadcastId: "b-gates" }),
     f("f2", 52, { kind: "request", requestId: "r-a2", by: "rahaf" }),
     f("f3", 47, { kind: "decision", requestId: "r-a2", by: "reema", approved: true }),

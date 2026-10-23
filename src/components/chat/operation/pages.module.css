@@ -334,7 +334,8 @@ div.row { cursor: default; }
 
 .tabs {
   position: sticky;
-  top: var(--bar-h);
+  /* The scroller's top padding (the bar) already counts toward sticking: 0 is right under the bar. */
+  top: 0;
   z-index: 2;
   margin-top: 16px;
   padding: 6px 16px 10px;
@@ -410,42 +411,6 @@ div.where { cursor: default; }
 
 .zoneList { display: flex; flex-direction: column; gap: 8px; }
 .zoneGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.zoneRow, .zoneTile {
-  position: relative;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: none;
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  box-shadow: var(--e1), 0 0 0 .5px var(--line);
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-  -webkit-tap-highlight-color: transparent;
-  transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-mid);
-}
-.zoneRow:active, .zoneTile:active { transform: scale(.98); }
-.zoneTile { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; }
-.zoneTile .zoneEnd { position: absolute; top: 10px; right: 10px; flex-direction: column; align-items: flex-end; }
-.zoneTile .zoneMain { width: 100%; }
-.zoneTile .zoneMeta { flex-direction: column; gap: 0; }
-.isIssue { box-shadow: var(--e1), 0 0 0 1.5px color-mix(in srgb, var(--bad-mark) 70%, transparent); background: color-mix(in srgb, var(--bad-mark) 5%, var(--surface)); }
-.isShort { box-shadow: var(--e1), 0 0 0 1.5px color-mix(in srgb, var(--bad-mark) 45%, transparent); }
-.zoneMain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.zoneName { display: flex; align-items: center; gap: 7px; min-width: 0; font: var(--t-subhead); font-weight: var(--w-emph); }
-.zoneName > span:last-child { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.zoneMeta { display: flex; flex-wrap: wrap; gap: 0 4px; font: var(--t-caption1); color: var(--ink-3); font-variant-numeric: tabular-nums; }
-.metaReq { color: var(--ink-2); font-weight: var(--w-control); }
-.metaUrgent { color: var(--bad); font-weight: var(--w-emph); }
-.zoneEnd { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-
 /* ---- the floor ---- */
 
 .map { position: relative; width: 100%; aspect-ratio: 1000 / 640; border-radius: var(--r-lg); overflow: hidden; background: var(--fill); box-shadow: 0 0 0 .5px var(--line); }
@@ -486,8 +451,8 @@ div.where { cursor: default; }
   box-shadow: var(--e1);
   font-variant-numeric: tabular-nums;
 }
-.pin_ok { background: var(--ok-mark); }
-.pin_warn { background: var(--warn-mark); }
+.pin_ok { background: var(--ink); color: var(--bg) !important; }
+.pin_warn { background: var(--ink); color: var(--bg) !important; }
 .pin_bad { background: var(--bad-mark); animation-name: pinPulse; animation-duration: 1.6s; animation-iteration-count: infinite; }
 .pin_off { background: var(--ink-3); }
 @keyframes pinPulse {
@@ -584,10 +549,6 @@ div.where { cursor: default; }
 .stat { display: flex; flex-direction: column; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface); box-shadow: 0 0 0 .5px var(--line); }
 .stat b { font: var(--t-title3); font-weight: var(--w-emph); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 .stat small { font: var(--t-caption1); color: var(--ink-3); }
-.lvl_ok { color: var(--ok); }
-.lvl_over { color: var(--ink); }
-.lvl_short { color: var(--warn); }
-.lvl_critical { color: var(--bad); }
 .statWarn b { color: var(--warn); }
 .hereRow {
   display: flex;
@@ -624,19 +585,19 @@ div.where { cursor: default; }
 
 /* ---- the ops feed ---- */
 
-.feed { list-style: none; margin: 0; padding: 4px 14px; display: flex; flex-direction: column; border-radius: var(--r-lg); background: var(--surface); box-shadow: 0 0 0 .5px var(--line); }
-.feedRow { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 9px 0; font: var(--t-footnote); color: var(--ink-2); animation: feedIn var(--t-slow) var(--ease-out) both; }
-.feedRow + .feedRow { box-shadow: inset 0 .5px 0 var(--line); }
+.feedRow { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 11px 0; font: var(--t-footnote); color: var(--ink-2); animation: feedIn var(--t-slow) var(--ease-out) both; }
+/* A hairline between entries that starts at the words, not under the picture. */
+.feedRow + .feedRow::before { content: ""; position: absolute; top: 0; left: 44px; right: 0; height: .5px; background: var(--line); }
 @keyframes feedIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 .feedRow b { color: var(--ink); font-weight: var(--w-emph); }
 .feedIcon { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--fill); color: var(--ink-2); }
 .feedIconBad { background: var(--bad-soft); color: var(--bad); }
-.feedBody { min-width: 0; padding-top: 3px; overflow-wrap: anywhere; }
-.feedTime { padding-top: 3px; font: var(--t-caption1); color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.feedBody { min-width: 0; padding-top: 6px; line-height: 22px; overflow-wrap: anywhere; }
+.feedTime { padding-top: 8px; font: var(--t-caption1); color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .feedBad { color: var(--bad); font-weight: var(--w-emph); }
 .feedMeta { color: var(--ink-3); font: var(--t-caption1); white-space: nowrap; }
-.fs_ok { color: var(--ok); font-weight: var(--w-emph); }
-.fs_busy { color: var(--warn); font-weight: var(--w-emph); }
+.fs_ok { color: var(--ink); font-weight: var(--w-emph); }
+.fs_busy { color: var(--ink); font-weight: var(--w-emph); }
 .fs_issue { color: var(--bad); font-weight: var(--w-emph); }
 .fs_closed { color: var(--ink-3); font-weight: var(--w-emph); }
 .codeLink {
@@ -786,11 +747,11 @@ div.where { cursor: default; }
    ========================================================================== */
 
 /* The thread makes room for whatever the strips hold (ChatView measures them). */
-.opScreen.opScreen [data-thread] { padding-top: calc(var(--inset-top) + 150px + var(--op-strips-h, 0px)); }
-.opScreen.opScreen [data-edge-top] { height: calc(var(--inset-top) + 170px + var(--op-strips-h, 0px)); }
+.opScreen.opScreen [data-thread] { padding-top: calc(var(--inset-top) + 110px + var(--op-strips-h, 0px)); }
+.opScreen.opScreen [data-edge-top] { height: calc(var(--inset-top) + 130px + var(--op-strips-h, 0px)); }
 .strips {
   position: absolute;
-  top: calc(var(--inset-top) + 138px);
+  top: calc(var(--inset-top) + 108px);
   left: 0;
   right: 0;
   z-index: 29;
@@ -828,12 +789,6 @@ div.where { cursor: default; }
 .stripPill > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .stripPill > svg:first-child { flex-shrink: 0; color: var(--accent); }
 .stripPill > svg:last-child { flex-shrink: 0; color: var(--ink-3); }
-.onAir {
-  background: color-mix(in srgb, var(--ok-mark) 16%, color-mix(in srgb, var(--surface) 86%, transparent));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok-mark) 45%, transparent), var(--e1);
-  color: var(--ok);
-}
-.onAir > span:last-of-type { color: var(--ink-2); }
 /* A read-only channel's bar (#broadcasts): the megaphone, then who posts. */
 .readOnlyText { display: inline-flex; align-items: center; gap: 6px; }
 .readOnlyText > svg { flex-shrink: 0; }
@@ -843,3 +798,248 @@ div.where { cursor: default; }
   .layer, .banner, .feedRow, .panel { animation: none; }
   .liveDot, .pin_bad, .scanFrame::after { animation-name: none; }
 }
+
+/* ==========================================================================
+   Zones as cards: code and name, the count (ink) over its target (greyed),
+   a bar of how full it is, and one quiet line of what's going on. Every
+   zone looks the same; only an issue is red.
+   ========================================================================== */
+
+.zone {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  border: none;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--e1), 0 0 0 .5px var(--line);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.zone:active { transform: scale(.98); }
+.zone:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.zoneTop { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.zoneCode {
+  width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px;
+  display: grid; place-items: center;
+  background: var(--ink); color: var(--bg);
+  font: var(--t-subhead); font-weight: 700; letter-spacing: .02em;
+}
+.zoneTitle { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.zoneTitle b { font: var(--t-headline); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zoneTitle small { font: var(--t-footnote); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zoneBar { display: block; height: 4px; border-radius: 2px; background: var(--fill-2); overflow: hidden; }
+.zoneBar i { display: block; height: 100%; border-radius: 2px; background: var(--ink); transition: width var(--t-slow) var(--ease-out); }
+.zoneFoot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font: var(--t-footnote); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.zoneIssue { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 2px 8px; border-radius: var(--r-pill); background: var(--bad-soft); color: var(--bad); font: var(--t-caption1); font-weight: var(--w-emph); }
+.zoneState { margin-left: auto; padding: 2px 8px; border-radius: var(--r-pill); background: var(--fill); color: var(--ink-2); font: var(--t-caption1); font-weight: var(--w-emph); }
+/* Two to a row: the count sits beside the code, the name under them. */
+.zoneCompact { gap: 8px; padding: 12px; }
+.zoneCompact .zoneTop { flex-wrap: wrap; gap: 8px 10px; }
+.zoneCompact .zoneCode { width: 32px; height: 32px; border-radius: 10px; font: var(--t-footnote); font-weight: 700; }
+.zoneCompact .zoneTitle { order: 3; flex-basis: 100%; }
+.zoneCompact .zoneTitle b { font: var(--t-subhead); font-weight: var(--w-emph); }
+.zoneCompact .zoneFoot { gap: 2px 8px; font: var(--t-caption1); }
+.zoneCompact .zoneIssue, .zoneCompact .zoneState { margin-left: 0; }
+
+/* A count over its target: the number in ink, "/5" quieter in the same ink. */
+.count { display: inline-flex; align-items: baseline; flex-shrink: 0; margin-left: auto; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.count b { font: var(--t-title2); font-weight: var(--w-emph); color: var(--ink); }
+.count span { font: var(--t-subhead); font-weight: var(--w-control); color: var(--ink); opacity: .38; }
+.stat .count { margin-left: 0; }
+
+/* ---- the ops feed: who did it, then what ---- */
+
+.feedWho { position: relative; width: 32px; height: 32px; }
+.feedKind {
+  position: absolute; right: -4px; bottom: -4px;
+  width: 18px; height: 18px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface); color: var(--ink-2);
+  box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 .5px var(--line-2);
+}
+.feedKindBad { background: var(--bad-soft); color: var(--bad); }
+.feedArrow { margin: 0 6px; color: var(--ink-3); }
+.feedBody .codeLink { margin: 0 3px; }
+
+/* ==========================================================================
+   The Operation's side panel (the menu button): zones, channels, people
+   ========================================================================== */
+
+.drawerScrim {
+  position: absolute; inset: 0; z-index: 46;
+  background: rgba(12, 10, 9, .28);
+  animation-name: drawerFade; animation-duration: var(--t-mid); animation-timing-function: var(--ease-out); animation-fill-mode: both;
+}
+.drawerScrimOut { animation-name: drawerFadeOut; pointer-events: none; }
+@keyframes drawerFade { from { opacity: 0; } }
+@keyframes drawerFadeOut { to { opacity: 0; } }
+.drawer {
+  position: absolute; top: 0; right: 0; bottom: 0; z-index: 47;
+  width: min(330px, 88%);
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  box-shadow: var(--e4);
+  outline: none;
+  animation-name: drawerIn; animation-duration: var(--t-slow); animation-timing-function: var(--ease-out); animation-fill-mode: both;
+}
+.drawerOut { animation-name: drawerOut; animation-duration: var(--t-mid); pointer-events: none; }
+@keyframes drawerIn { from { transform: translateX(100%); } }
+@keyframes drawerOut { to { transform: translateX(100%); } }
+/* Above the list, so the close button's shadow isn't cut off by a sticky label. */
+.drawerHead {
+  position: relative; z-index: 2;
+  display: flex; align-items: center; gap: 10px;
+  padding: calc(var(--inset-top) + 8px) 14px 10px 18px;
+  box-shadow: 0 .5px 0 var(--line);
+}
+.drawerTitle { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.drawerTitle b { font: var(--t-headline); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drawerTitle small { font: var(--t-caption1); color: var(--ink-3); }
+/* No top padding: a sticky label sticks under it, and rows would show through the gap. */
+.drawerScroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 8px calc(var(--inset-bottom) + 20px); scrollbar-width: none; }
+.drawerScroll::-webkit-scrollbar { display: none; }
+.drawerLabel {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; gap: 6px;
+  /* Edge to edge, so nothing scrolls past it at the sides either. */
+  margin: 0 -8px; padding: 14px 18px 6px;
+  background: var(--bg);
+  font: var(--t-caption1); font-weight: var(--w-emph); color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.drawerLabel em { font-style: normal; font-weight: var(--w-control); }
+.drawerRow {
+  width: 100%;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border: none; border-radius: var(--r-sm);
+  background: none; color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+button.drawerRow:hover { background: var(--fill); }
+button.drawerRow:active { background: var(--fill-2); }
+.drawerRowOn { background: var(--fill); }
+.drawerRowOn .drawerMain b { font-weight: var(--w-emph); }
+.drawerPerson { cursor: default; }
+.drawerAway { opacity: .6; }
+.drawerMain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.drawerMain b { font: var(--t-subhead); font-weight: var(--w-control); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drawerMain b em { font-style: normal; color: var(--ink-3); font-weight: 400; }
+.drawerMain small { font: var(--t-caption1); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drawerUnreadName { font-weight: var(--w-emph) !important; }
+.drawerEnd { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.drawerEnd small { font: var(--t-caption1); color: var(--ink-3); }
+.drawerEnd .count b { font: var(--t-headline); }
+.drawerEnd .count span { font: var(--t-footnote); }
+.drawerHash { width: 28px; height: 28px; flex-shrink: 0; border-radius: 8px; display: grid; place-items: center; background: var(--fill); color: var(--ink-2); font: var(--t-subhead); font-weight: var(--w-emph); }
+.drawerIssue { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--bad-soft); color: var(--bad); font: var(--t-caption2); font-weight: var(--w-emph); }
+.drawerGroup { display: flex; flex-direction: column; }
+.drawerCrew { display: flex; align-items: center; gap: 2px; padding: 10px 10px 4px; font: var(--t-caption1); font-weight: var(--w-emph); color: var(--ink-2); }
+.drawerCrew em { margin-left: 6px; font-style: normal; font-weight: var(--w-control); color: var(--ink-3); }
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer, .drawerOut, .drawerScrim, .drawerScrimOut { animation-name: none; }
+}
+
+/* ==========================================================================
+   The hero's day pill, filter buttons, and the log in folding stretches
+   ========================================================================== */
+
+/* "EWC 2026 · Day 2/3": the day sits with the name; the strip says what's happening. */
+.heroTitle { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 8px; margin-top: 12px; max-width: 100%; }
+.heroTitle .heroName { margin: 0; }
+.dayPill {
+  display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: var(--r-pill);
+  background: var(--fill); color: var(--ink-2);
+  font: var(--t-footnote); font-weight: var(--w-emph); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.strip > span > svg { color: var(--ink-3); flex-shrink: 0; }
+
+/* A control row at the top of a tab: the view switch (or a note) and the filter button. */
+.toolRow { display: flex; align-items: center; gap: 8px; }
+.toolRow > :first-child { flex: 1; min-width: 0; }
+.toolNote { margin: 0 4px; font: var(--t-footnote); color: var(--ink-3); }
+.filterBtn {
+  position: relative; width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: var(--r-sm);
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink-2);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.filterBtn:active { transform: scale(.94); }
+.filterBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.filterOn { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.filterDot { position: absolute; top: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg); }
+
+/* The log: stretches of time with a chevron at the far left; entries sit on the page, no card. */
+.log { display: flex; flex-direction: column; }
+.logSection + .logSection { margin-top: 2px; }
+.logHead {
+  width: 100%; display: flex; align-items: center; gap: 8px; padding: 10px 0;
+  border: none; background: none; color: var(--ink);
+  font: var(--t-subhead); font-weight: var(--w-emph); text-align: left; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.logHead svg { flex-shrink: 0; color: var(--ink-3); transition: transform var(--t-mid) var(--ease-out); }
+.logOpen svg { transform: rotate(90deg); }
+.logHead em { font-style: normal; font-weight: var(--w-control); color: var(--ink-3); }
+.logHead:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
+.logItems {
+  list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column;
+  animation-name: panelIn; animation-duration: var(--t-mid); animation-timing-function: var(--ease-out); animation-fill-mode: both;
+}
+
+/* ==========================================================================
+   The day: the pill on the hero opens it; Command finishes, pauses or rewinds it
+   ========================================================================== */
+
+button.dayPill { border: none; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform var(--t-fast) var(--ease-out); }
+button.dayPill:active { transform: scale(.95); }
+button.dayPill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dayPill svg { margin-right: 4px; }
+.dayPillPaused { background: var(--warn-soft); color: var(--warn); }
+
+.dayHead { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0 14px; text-align: center; }
+.dayHead small { font: var(--t-footnote); color: var(--ink-3); }
+.dayBig { font: var(--t-title1); font-weight: var(--w-emph); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.dayBig em { font-style: normal; color: var(--ink); opacity: .38; }
+.dayState {
+  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border-radius: var(--r-pill);
+  background: var(--fill); color: var(--ink-2); font: var(--t-footnote); font-weight: var(--w-emph);
+}
+.dayState i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-2); }
+.day_paused { background: var(--warn-soft); color: var(--warn); }
+
+.dayList { list-style: none; margin: 0 0 12px; padding: 0 4px; display: flex; flex-direction: column; }
+.dayRow { position: relative; display: flex; align-items: center; gap: 12px; padding: 9px 0; }
+.dayRow + .dayRow::before { content: ""; position: absolute; top: 0; left: 40px; right: 0; height: .5px; background: var(--line); }
+.dayNum {
+  width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; display: grid; place-items: center;
+  background: var(--fill); color: var(--ink-2); font: var(--t-footnote); font-weight: var(--w-emph); font-variant-numeric: tabular-nums;
+}
+.dayRowOn .dayNum { background: var(--ink); color: var(--bg); }
+.dayRowDone .dayNum { color: var(--ink-3); }
+.dayMain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.dayMain b { font: var(--t-subhead); font-weight: var(--w-control); }
+.dayRowOn .dayMain b { font-weight: var(--w-emph); }
+.dayMain small { font: var(--t-caption1); color: var(--ink-3); }
+.dayEnd { font: var(--t-footnote); color: var(--ink-3); }
+.dayRowOn .dayEnd { color: var(--ink); font-weight: var(--w-emph); }
+
+.dayStats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+.dayStats > span { display: flex; flex-direction: column; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface); box-shadow: 0 0 0 .5px var(--line); }
+.dayStats b { font: var(--t-title3); font-weight: var(--w-emph); font-variant-numeric: tabular-nums; }
+.dayStats small { font: var(--t-caption1); color: var(--ink-3); }
+.dayBack, .dayBack .menuIcon { color: var(--bad); }

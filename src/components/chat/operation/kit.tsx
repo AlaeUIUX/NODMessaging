@@ -55,7 +55,7 @@ export function Ring({ n, target, level, size = 44 }: { n: number; target: numbe
   );
 }
 
-export const STATUS_LABEL: Record<ZoneStatus, string> = { ok: "OK", busy: "Busy", issue: "Issue", closed: "Closed" };
+export const STATUS_LABEL: Record<ZoneStatus, string> = { ok: "OK", busy: "Under pressure", issue: "Issue", closed: "Closed" };
 export function StatusChip({ status }: { status: ZoneStatus }) {
   return <span className={`${k.chip} ${k[`st_${status}`]}`}>{STATUS_LABEL[status]}</span>;
 }

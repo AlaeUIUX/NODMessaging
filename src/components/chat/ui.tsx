@@ -326,6 +326,9 @@ export function useBackLayer(key: string, open: boolean, onBack: () => void) {
   useEffect(() => { back.current = onBack; }, [onBack]);
   useEffect(() => {
     if (!open) return;
+    // These entries are screens inside the phone, not pages: Back must not scroll the
+    // page around the phone to wherever it was when the screen opened.
+    window.history.scrollRestoration = "manual";
     window.history.pushState({ ...window.history.state, [key]: true }, "");
     const onPop = () => { if (!window.history.state?.[key]) back.current(); };
     window.addEventListener("popstate", onPop);

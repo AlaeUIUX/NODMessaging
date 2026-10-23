@@ -9,7 +9,7 @@ import { allPeople } from "@/lib/chat/people";
 import { useChat, userById } from "@/lib/chat/store";
 import { TONES } from "@/lib/chat/avatar";
 import {
-  canBroadcast, dayOf, emptyLive, isCommand, isOnAir, onSite, pendingRequests, reaches, staffing, zoneByChannel, zoneById,
+  canBroadcast, emptyLive, isCommand, isOnAir, reaches, staffing, zoneByChannel, zoneById,
 } from "@/lib/chat/operation";
 import { ensureOpLive } from "@/lib/chat/opstore";
 import type { BoardMessage } from "@/lib/chat/project";
@@ -19,13 +19,15 @@ import {
   AddSheet, ChecklistBuilder, EventBuilder, LocationBuilder, PaymentBuilder, PollBuilder, ReminderBuilder, type AddKind,
 } from "./CardBuilders";
 import Composer from "./Composer";
-import { IconBack, IconBellOff, IconBoard, IconCheck, IconChevron, IconLocation, IconMegaphone, IconPhone, IconQr } from "./Icons";
+import { IconBack, IconBellOff, IconBoard, IconCheck, IconChevron, IconLocation, IconMegaphone, IconMenu, IconPhone, IconQr } from "./Icons";
 import { Code } from "./operation/kit";
 import { BroadcastSheet, RequestSheet } from "./operation/OpCards";
 import { OperationPage } from "./operation/OperationPage";
 import { RadioButton, RadioScreen } from "./operation/Radio";
+import { OpMenu } from "./operation/OpMenu";
 import { ZonePage } from "./operation/ZonePage";
 import { BroadcastBanner, openTasks, ScanSheet, unreadBroadcasts, useOp } from "./operation/zones";
+import { OnAirIsland } from "./operation/OnAir";
 import ps from "./operation/pages.module.css";
 import MessageList from "./MessageList";
 import MessageOverlay from "./MessageOverlay";
@@ -147,6 +149,8 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   const [zonePage, setZonePage] = useState<string | null>(null);
   const [radio, setRadio] = useState(false);
   const [opsBoard, setOpsBoard] = useState<{ zone: string | null } | null>(null);
+  /** The side panel from the header's menu button. */
+  const [opMenu, setOpMenu] = useState(false);
   /** The zone whose channel this is. */
   const chatZone = o ? zoneByChannel(o.op, chat.id) : undefined;
   const opCommand = !!o && isCommand(o.info, me);
@@ -586,8 +590,8 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   const presence = typing.length
     ? chat.kind === "group" ? `${userById(typing[0]).name} is typing…` : "typing…"
     : o
-      // An Operation's chat says how the day is going, numbers first.
-      ? `Day ${dayOf(o.op, minute)} · ${onSite(o.live)} on site · ${pendingRequests(o.live).length} ${pendingRequests(o.live).length === 1 ? "request" : "requests"}`
+      // An Operation's chat says which channel this is (it has no channel bar); the day lives on its page.
+      ? (channel ? `#${channel.name}` : "")
       : chat.kind === "group"
         ? `${chat.memberIds.length} ${chat.memberIds.length === 1 ? "member" : "members"}`
         : online ? "Active now" : "Active recently";
@@ -620,7 +624,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     <ChatUiProvider value={ui}>
     <div
       ref={screenRef}
-      className={`${styles.screen} ${styles.chatScreen} ${showChannels ? styles.chatWithChannels : ""} ${isOp && showChannels ? ps.opScreen : ""} ${instant ? styles.chatInstant : ""} ${leaving ? styles.leaving : ""}`}
+      className={`${styles.screen} ${styles.chatScreen} ${showChannels && !isOp ? styles.chatWithChannels : ""} ${isOp && showChannels ? ps.opScreen : ""} ${instant ? styles.chatInstant : ""} ${leaving ? styles.leaving : ""}`}
       data-chat-screen
       onPointerDownCapture={onEdgeDown}
       onPointerMove={onEdgeMove}
@@ -633,7 +637,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
 
       <header className={styles.chatHeader}>
         <div className={styles.headerSide}>
-          <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => onBack()} aria-label="Back to messages">
+          <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => onBack()} aria-label={o && chat.id !== o.group.id ? "Back to #general" : "Back to messages"}>
             <IconBack />
           </button>
         </div>
@@ -652,15 +656,25 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
           <span className={`${styles.tcPresence} ${typing.length ? styles.isTyping : ""}`}>{quiet && !typing.length && <IconBellOff size={11} />} {presence}</span>
         </button>
         <div className={`${styles.headerSide} ${styles.headerEnd}`}>
-          <button
-            className={`${styles.circleBtn} ${styles.glass}`}
-            aria-label={opsBoardMessage ? "Open the Ops board" : boards.length ? `Open boards (${boards.length})` : "Start a board"}
-            onClick={() => openBoard()}
-          >
-            <IconBoard />
-          </button>
-          {/* An Operation talks on the radio instead. */}
-          {o ? <RadioButton groupId={o.group.id} onOpen={openRadio} /> : (
+          {o ? <>
+            {/* An Operation: the radio, then the menu (zones, channels, people) at the far right. Its board lives on the Operation page. */}
+            <RadioButton groupId={o.group.id} onOpen={openRadio} />
+            <button
+              className={`${styles.circleBtn} ${styles.glass}`}
+              aria-label="Zones, channels and people"
+              aria-expanded={opMenu}
+              onClick={() => setOpMenu(true)}
+            >
+              <IconMenu />
+            </button>
+          </> : <>
+            <button
+              className={`${styles.circleBtn} ${styles.glass}`}
+              aria-label={boards.length ? `Open boards (${boards.length})` : "Start a board"}
+              onClick={() => openBoard()}
+            >
+              <IconBoard />
+            </button>
             <button
               className={`${styles.circleBtn} ${styles.glass}`}
               aria-label="Call"
@@ -668,11 +682,12 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
             >
               <IconPhone />
             </button>
-          )}
+          </>}
         </div>
       </header>
 
-      {showChannels && group && (
+      {/* An Operation switches channels from its menu (the drawer), so its chat has no channel bar. */}
+      {showChannels && group && !isOp && (
         <ChannelBar
           group={group}
           current={chat.id}
@@ -686,12 +701,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
         // An Operation's chat: a call on air, where I am and what to read (on #general), or the zone this channel is.
         <div ref={stripsRef} className={ps.strips}>
           {onAir && (
-            <button className={`${ps.stripPill} ${ps.onAir}`} onClick={openRadio} aria-label={`${userById(onAir.by).name} is on air. Open the radio`}>
-              <i className={ps.liveDot} aria-hidden="true" />
-              <b>{userById(onAir.by).name}{onAirZone ? ` · ${onAirZone.code}` : ""}</b>
-              <span>on air</span>
-              {onAir.text && <span>“{onAir.text.length > 44 ? `…${onAir.text.slice(-44)}` : onAir.text}”</span>}
-            </button>
+            <OnAirIsland by={onAir.by} where={onAirZone ? `${onAirZone.code} · ${onAirZone.name}` : null} text={onAir.text} onOpen={openRadio} />
           )}
           {onGeneral && !opCommand && (myZone ? (
             <button className={ps.stripPill} onClick={() => openZone(myZone.id)}>
@@ -929,6 +939,15 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
           onNew={() => afterLayers(newBoard)}
           onClose={() => setOpsBoard(null)}
           initialZone={opsBoard?.zone ?? null}
+        />
+      )}
+      {o && opMenu && (
+        <OpMenu
+          groupId={o.group.id}
+          currentChatId={chat.id}
+          onClose={() => setOpMenu(false)}
+          onZone={openZone}
+          onChannel={switchChannel}
         />
       )}
       {o && zonePage !== null && <ZonePage groupId={o.group.id} zoneId={zonePage} onClose={() => setZonePage(null)} />}

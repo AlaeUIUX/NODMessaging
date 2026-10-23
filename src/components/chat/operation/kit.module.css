@@ -19,7 +19,7 @@
   font: var(--t-caption1); font-weight: var(--w-emph); white-space: nowrap; background: var(--fill); color: var(--ink-2);
 }
 .st_ok { background: var(--fill); color: var(--ink-2); }
-.st_busy { background: var(--warn-soft); color: var(--warn); }
+.st_busy { background: var(--fill); color: var(--ink-2); }
 .st_issue { background: var(--bad-soft); color: var(--bad); }
 .st_closed { background: var(--fill); color: var(--ink-3); text-decoration: line-through; }
 .urgent { background: var(--bad-soft); color: var(--bad); }

@@ -6,7 +6,8 @@ import { initials } from "@/lib/chat/avatar";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { htmlToMarkdown, markdownToHtml } from "@/lib/chat/richText";
 import { releaseMedia, toAttachment, useMediaUrl } from "@/lib/chat/media";
-import { dictationSupported, useDictation } from "@/lib/chat/dictation";
+import { canDictate, useDictation } from "@/lib/chat/dictation";
+import { prepare as prepareDictation, sttStatus } from "@/lib/chat/stt";
 import { localStorageAdapter } from "@/lib/chat/storage";
 import { userById } from "@/lib/chat/store";
 import type { Attachment, Message, User } from "@/lib/chat/types";
@@ -535,7 +536,10 @@ export default function Composer({
 
   const dictate = async () => {
     if (listeningRef.current) return;
-    if (!dictationSupported()) { onHint("Dictation isn’t available in this browser"); return; }
+    if (!canDictate()) { onHint("Dictation isn’t available in this browser"); return; }
+    // The on-device model downloads the first time (once); what's said meanwhile is written down when it's here.
+    prepareDictation();
+    if (sttStatus().state === "loading") onHint("Getting dictation ready on this device. Keep talking");
     const granted = ui ? await ui.ask("microphone") : getPermission("microphone") !== "denied";
     const el = editorRef.current;
     if (!granted || !el || listeningRef.current) return;
@@ -560,6 +564,7 @@ export default function Composer({
       onError: (code) => {
         if (code === "not-allowed" || code === "service-not-allowed") onHint("The browser blocked the microphone");
         else if (code === "network") onHint("Dictation needs a connection");
+        else if (code === "audio-capture") onHint("No microphone found");
       },
     });
   };

@@ -72,7 +72,17 @@ export type FeedEvent =
   | { id: string; at: number; kind: "broadcast"; broadcastId: string }
   | { id: string; at: number; kind: "remind"; broadcastId: string; by: string; count: number }
   | { id: string; at: number; kind: "task"; title: string; zoneId?: string | null; by: string }
-  | { id: string; at: number; kind: "zone"; zoneId: string; status: ZoneStatus; by: string };
+  | { id: string; at: number; kind: "zone"; zoneId: string; status: ZoneStatus; by: string }
+  /** `day` is the day it was done on: "finished Day 2", "went back from Day 2". */
+  | { id: string; at: number; kind: "day"; step: DayStep; day: number; to: number; by: string };
+
+export type DayStep = "finish" | "pause" | "resume" | "back";
+/**
+ * Where the Operation is in its days, once someone has run one by hand. Until
+ * then the day follows the calendar. Paused: nothing is simulated and the day
+ * says so everywhere. Done: the last day was finished.
+ */
+export interface DayState { n: number; state: "on" | "paused" | "done"; at: number; by: string }
 
 /** "all" | "command" | "crew:<roleId>" | "zone:<zoneId>" */
 export type ChannelId = string;
@@ -109,6 +119,8 @@ export interface OpLive {
   shift: string;
   /** People on site through the day, for the Day report. */
   headcount: { h: string; value: number }[];
+  /** Set once Command finishes, pauses or rewinds a day; absent, the calendar decides. */
+  day?: DayState;
 }
 
 export const emptyLive = (shift = "evening"): OpLive => ({
@@ -141,6 +153,7 @@ export type OpAction =
   | { t: "radio.words"; id: string; text: string }
   | { t: "radio.release"; id: string; text: string; at: number; source?: Transmission["source"] }
   | { t: "shift"; shift: string }
+  | { t: "day"; step: DayStep; day: DayState; feedId: string }
   | { t: "feed"; event: FeedEvent };
 
 const FEED_CAP = 300;
@@ -305,6 +318,11 @@ export function reduceOp(live: OpLive | undefined, a: OpAction): OpLive | undefi
     }
     case "shift":
       return live.shift === a.shift ? live : { ...live, shift: a.shift };
+    case "day": {
+      if (live.feed.some((e) => e.id === a.feedId)) return live;
+      const was = live.day?.n ?? a.day.n;
+      return { ...live, day: a.day, feed: pushFeed(live, { id: a.feedId, at: a.day.at, kind: "day", step: a.step, day: was, to: a.day.n, by: a.day.by }) };
+    }
     case "feed":
       return live.feed.some((e) => e.id === a.event.id) ? live : { ...live, feed: pushFeed(live, a.event) };
   }
@@ -714,5 +732,24 @@ export function clock(at: number) {
 export function dayOf(op: OperationInfo, now: number) {
   return Math.min(op.days, Math.max(1, Math.floor((now - op.startsAt) / 86_400_000) + 1));
 }
+
+/** The day as it stands: what Command last set, or the calendar's. */
+export function currentDay(op: OperationInfo, live: OpLive, now: number): DayState {
+  return live.day ?? { n: dayOf(op, now), state: "on", at: op.startsAt, by: "" };
+}
+/** "Day 2/3", "Day 2/3 · Paused" or "Finished". */
+export const dayLabel = (d: DayState, days: number) =>
+  d.state === "done" ? "Finished" : `Day ${d.n}/${days}${d.state === "paused" ? " · Paused" : ""}`;
+/** What a step does to the day. Finishing the last day finishes the Operation; going back from there reopens it. */
+export function stepDay(op: OperationInfo, cur: DayState, step: DayStep, by: string, at: number): DayState {
+  switch (step) {
+    case "finish": return cur.n < op.days ? { n: cur.n + 1, state: "on", at, by } : { n: cur.n, state: "done", at, by };
+    case "pause": return { n: cur.n, state: "paused", at, by };
+    case "resume": return { n: cur.n, state: "on", at, by };
+    case "back": return { n: cur.state === "done" ? cur.n : Math.max(1, cur.n - 1), state: "on", at, by };
+  }
+}
+/** Finishing, pausing and rewinding a day is for Command and whoever runs the zones. */
+export const canRunDay = (info: GroupInfo, userId: string) => isCommand(info, userId) || can(info, userId, "manageZones");
 
 export const opId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;

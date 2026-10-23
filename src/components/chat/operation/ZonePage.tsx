@@ -78,7 +78,7 @@ export function ZonePage({ groupId, zoneId, onClose }: { groupId: string; zoneId
       </div>
 
       <div className={p.stats}>
-        <div className={p.stat}><b className={p[`lvl_${st.level}`]}>{st.n}/{st.target}</b><small>here</small></div>
+        <div className={p.stat}><span className={p.count}><b>{st.n}</b><span>/{st.target}</span></span><small>here</small></div>
         <div className={p.stat}><b>{openCount}</b><small>open {openCount === 1 ? "task" : "tasks"}</small></div>
         <div className={`${p.stat} ${pendingCount ? p.statWarn : ""}`}><b>{pendingCount}</b><small>{pendingCount === 1 ? "request" : "requests"}</small></div>
       </div>

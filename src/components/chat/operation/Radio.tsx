@@ -5,7 +5,9 @@ import { IconAlert, IconBack, IconCheck, IconChevronDown, IconMic, IconWalkie } 
 import StatusBar from "@/components/chat/StatusBar";
 import { getPermission, Segmented, Sheet, smooth, useChatUi, useDialog, useNow } from "@/components/chat/ui";
 import styles from "@/components/chat/chat.module.css";
-import { dictationSupported, useDictation } from "@/lib/chat/dictation";
+import { canDictate, useDictation } from "@/lib/chat/dictation";
+import { micAccess, micGranted } from "@/lib/chat/mic";
+import { listen as listenOnDevice, prepare as prepareDictation, sttStatus, useSttStatus } from "@/lib/chat/stt";
 import { isAdmin } from "@/lib/chat/groups";
 import {
   canBroadcast, clock, crewOf, isCommand, joinedChannel, leadsZone, listeners, missedCalls, NO_CHANNEL, radioChannel, radioChannels,
@@ -15,7 +17,8 @@ import {
 import { opDispatch, opLive } from "@/lib/chat/opstore";
 import { userById } from "@/lib/chat/store";
 import type { GroupInfo } from "@/lib/chat/types";
-import { Av, CrewDot, Stack, toneColor } from "./kit";
+import { Av, CrewDot } from "./kit";
+import { LiveWave } from "./OnAir";
 import { useOperation } from "./useOperation";
 import r from "./radio.module.css";
 
@@ -28,6 +31,15 @@ import r from "./radio.module.css";
  * button waits; Command can break in.
  */
 
+/** Why dictation stopped, in words a person can act on. */
+const MIC_TROUBLE: Record<string, string> = {
+  "not-allowed": "The browser blocked the microphone. Allow it from the address bar, then try again",
+  "service-not-allowed": "This browser won’t let the page use speech recognition. Try Chrome or Edge",
+  "audio-capture": "No microphone found on this device",
+  network: "Dictation needs an internet connection (the browser’s speech service is online)",
+  "language-not-supported": "Dictation doesn’t support this language here",
+};
+
 /** A call still "on air" after this long lost its sender (a tab closed mid-call): treat it as over. */
 const DROPPED = 2 * 60_000;
 const onAir = (t: Transmission, now: number) => !!t.live && now - t.at < DROPPED;
@@ -37,24 +49,14 @@ const firstName = (id: string) => userById(id).name;
    Small parts
 --------------------------------------------------------------------------- */
 
-/** A channel's square tile: a crew's colour, red for All-call, ink for a zone. */
+/** A channel's square tile, as in the Operation's drawer: ink for a zone and Command, quiet for a crew, red for All-call. */
 function ChannelTile({ ch, size = "sm" }: { ch: RadioChannel; size?: "sm" | "lg" }) {
-  const tint = ch.kind === "all" ? "var(--bad-mark)" : ch.kind === "zone" ? undefined : toneColor(ch.tone ?? "graphite");
   return (
     <span
-      className={size === "lg" ? r.chCodeLg : r.chCode}
-      style={tint ? { ["--ch" as string]: tint, ["--ch-ink" as string]: "#fff" } : undefined}
+      className={`${size === "lg" ? r.chCodeLg : r.chCode} ${ch.kind === "crew" ? r.chCrew : ""} ${ch.kind === "all" ? r.chAll : ""}`}
       aria-hidden="true"
     >
       {ch.short}
-    </span>
-  );
-}
-
-function Wave({ n = 22 }: { n?: number }) {
-  return (
-    <span className={r.wave} aria-hidden="true">
-      {Array.from({ length: n }, (_, i) => <i key={i} style={{ ["--i" as string]: i }} />)}
     </span>
   );
 }
@@ -152,7 +154,7 @@ function Transcript({ info, live, items, me, since, until, now }: {
                   {t.text || (airing ? <span className={r.txListening}>Listening…</span> : "")}
                   {airing && <span className={r.caret} />}
                 </p>
-                {airing && <Wave />}
+                {airing && <LiveWave className={r.txWave} bars={32} mic={t.by === me && t.source === "voice"} words={t.text} />}
                 {(via || t.by !== me || t.source === "voice") && (
                   <footer className={r.txFoot}>
                     {via && <span className={`${r.txVia} ${t.target.all ? r.txViaAll : ""}`}>{via}</span>}
@@ -196,7 +198,7 @@ function ChannelSheet({ groupId, onPick }: { groupId: string; onPick: (id: Chann
           <p className={r.sheetHint}>One channel at a time, like a walkie. All-call and calls from Command always come through.</p>
           {groups.filter(([, g]) => g.length).map(([name, g]) => (
             <div key={name} className={r.chGroup}>
-              <div className={r.label}>{name}</div>
+              <div className={r.label}>{name}<em>{g.length}</em></div>
               {g.map((ch) => {
                 const talking = live.radio.tx.find((t) => onAir(t, now) && t.target.channel === ch.id);
                 const on = joined === ch.id;
@@ -206,14 +208,15 @@ function ChannelSheet({ groupId, onPick }: { groupId: string; onPick: (id: Chann
                   <button key={ch.id} className={`${r.chRow} ${on ? r.chOn : ""}`} aria-pressed={on} onClick={() => close(() => onPick(ch.id))}>
                     <ChannelTile ch={ch} />
                     <span className={r.pickMain}>
-                      <b>{ch.name}{here && <span className={r.here}> · you’re here</span>}</b>
-                      <small>
-                        {talking
-                          ? <span className={r.chLive}>● {talking.by === me ? "You’re" : `${firstName(talking.by)} is`} talking</span>
-                          : `${tuned.length} tuned in · ${ch.sub}`}
-                      </small>
+                      <b>{ch.name}</b>
+                      <small>{here ? "You’re here" : ch.kind === "zone" ? ch.sub.split(" · ").slice(1).join(" · ") || ch.sub : ch.sub}</small>
                     </span>
-                    {on ? <span className={r.chCheck}><IconCheck size={16} /></span> : <Stack ids={tuned} size={20} max={3} />}
+                    <span className={r.chEnd}>
+                      {talking
+                        ? <span className={r.chLive}>● {talking.by === me ? "You" : firstName(talking.by)}</span>
+                        : <span className={r.chCount}><b>{tuned.length}</b> tuned</span>}
+                      {on && <IconCheck size={16} />}
+                    </span>
                   </button>
                 );
               })}
@@ -296,11 +299,22 @@ function TalkButton({ groupId, target }: { groupId: string; target: Target }) {
   const dict = useDictation();
   const [txId, setTxId] = useState<string | null>(null);
   const [mode, setMode] = useState<"hold" | "tap">("hold");
+  // What the mic is doing while on air: open, or actually picking up a voice.
+  const [ear, setEar] = useState<"listening" | "hearing" | null>(null);
+  const [voiceCall, setVoiceCall] = useState(false);
+  // The thumb is on the button (hold mode): a press that had to wait for the mic only goes on air if it still is.
+  const held = useRef(false);
+  // Ended by a mic or service error: that message stands, not "didn’t catch that".
+  const troubled = useRef(false);
   // The call on air, for handlers (state lags a render behind a fast press and release).
   const txRef = useRef<string | null>(null);
   const said = useRef<{ text: string; source: Transmission["source"] }>({ text: "", source: "voice" });
   const ending = useRef(false);
   const asking = useRef(false);
+  // The on-device listen while it runs (null: the browser's engine has the call, or none).
+  const device = useRef<{ stop: () => Promise<string> } | null>(null);
+  const [finishing, setFinishing] = useState(false);
+  const stt = useSttStatus();
 
   // Leaving the radio mid-call ends the call with what was said so far: the screen closing, the tab going
   // away, or (in hold mode) the thumb losing the button while something takes focus or the app goes behind.
@@ -309,6 +323,9 @@ function TalkButton({ groupId, target }: { groupId: string; target: Target }) {
       const id = txRef.current;
       if (!id) return;
       txRef.current = null;
+      // Let the mic go too; the words so far are what went out.
+      void device.current?.stop();
+      device.current = null;
       opDispatch(groupId, { t: "radio.release", id, text: said.current.text, at: Date.now(), source: said.current.source });
     };
     const ifHidden = () => { if (document.visibilityState === "hidden") drop(); };
@@ -336,39 +353,97 @@ function TalkButton({ groupId, target }: { groupId: string; target: Target }) {
   const begin = (voice: boolean) => {
     if (txRef.current) return;
     ending.current = false;
-    const listen = voice && dictationSupported();
+    const listen = voice && canDictate();
     const source: Transmission["source"] = listen ? "voice" : "sample";
     const id = act.keyUp(target, source);
     txRef.current = id;
     said.current = { text: "", source };
     setTxId(id);
-    dict.start(sample, (text) => { said.current.text = text; act.words(id, text); }, { listen });
+    setEar(null);
+    setVoiceCall(listen);
+    const words = (text: string) => { if (txRef.current !== id) return; said.current.text = text; act.words(id, text); };
+    const browserEngine = () => dict.start(sample, words, {
+      listen,
+      // The device model was tried first, here; this is the browser's engine only.
+      onDevice: false,
+      onState: setEar,
+      // The mic or the speech service failed: say why, and end the call with whatever was heard.
+      onError: (code) => { troubled.current = true; ui.toast(MIC_TROUBLE[code] ?? "Dictation stopped"); void end(); },
+      onEnd: () => { void end(); },
+    });
+    if (!listen || sttStatus().state === "failed") { browserEngine(); return; }
+    // On the device: the words are worked out from the mic's own sound, as it comes in.
+    setEar("listening");
+    void listenOnDevice(words, () => { if (txRef.current === id) setEar("hearing"); }).then((h) => {
+      if (txRef.current !== id) { void h?.stop(); return; }
+      if (h) device.current = h;
+      else browserEngine();
+    });
+  };
+
+  /** The browser's own mic permission, settled before going on air (its prompt can't wait mid-call). */
+  const browserMic = async () => {
+    asking.current = true;
+    const access = await micAccess();
+    asking.current = false;
+    if (access !== "granted") ui.toast(access === "missing" ? "No microphone found on this device" : "The browser blocked the microphone. Allow it from the address bar, then try again");
+    return access === "granted";
   };
 
   const press = async () => {
     if (txRef.current || blocked || asking.current) return;
     const perm = getPermission("microphone");
     if (perm === "prompt") {
-      // The first time, the phone asks; the press itself doesn't go on air.
+      // The first time, the phone asks, then the browser; the press itself doesn't go on air.
       asking.current = true;
       const granted = await ui.ask("microphone");
       asking.current = false;
-      if (mode === "tap") begin(granted);
-      else if (granted) ui.toast("Microphone on · hold to talk");
+      const real = granted && canDictate() && await browserMic();
+      if (mode === "tap") begin(real);
+      else if (real) ui.toast("Microphone on · hold to talk");
       return;
     }
-    // Denied, or no speech engine: a sample line goes out, so the radio still works.
-    begin(perm === "granted");
+    // Said no to the phone's prompt, or a browser that can't dictate: a sample line goes out, so the demo still works.
+    if (perm !== "granted" || !canDictate()) {
+      if (perm === "granted") ui.toast("This browser can’t dictate. Try Chrome or Edge; sending a sample line");
+      begin(false);
+      return;
+    }
+    if (!(await micGranted())) {
+      // Not yet allowed in the browser: ask now, and go on air with the next press.
+      if (await browserMic() && mode === "tap") begin(true);
+      else if (mode === "hold") ui.toast("Microphone on · hold to talk");
+      return;
+    }
+    if (mode === "hold" && !held.current) return;
+    begin(true);
   };
 
   const end = async () => {
+    held.current = false;
     const id = txRef.current;
     if (!id || ending.current) return;
     ending.current = true;
-    const { text, voice } = await dict.stop(sample);
+    let text: string;
+    let voice: boolean;
+    const h = device.current;
+    device.current = null;
+    if (h) {
+      // The last words: the model hears the whole call once more (still downloading: as soon as it's here).
+      setFinishing(true);
+      text = await h.stop();
+      voice = true;
+      setFinishing(false);
+    } else {
+      ({ text, voice } = await dict.stop(sample));
+    }
+    // Nothing heard: the call goes away, and nothing anyone didn't say goes out.
+    if (voice && !text && !troubled.current) ui.toast("Didn’t catch that. Nothing was sent");
+    troubled.current = false;
     act.release(id, text, voice ? "voice" : "sample");
     txRef.current = null;
     setTxId(null);
+    setEar(null);
   };
 
   const label = talking
@@ -376,7 +451,14 @@ function TalkButton({ groupId, target }: { groupId: string; target: Target }) {
     : blocked ? `${firstName(busy!.by)} is talking…`
       : busy ? (mode === "hold" ? "Hold to break in" : "Tap to break in")
         : mode === "hold" ? "Hold to talk" : "Tap to talk";
-  const sub = talking ? `On air · ${reach} hear you` : `${targetLabel(info, target)} · ${reach} ${reach === 1 ? "person" : "people"}`;
+  const readying = stt.state === "loading" ? `Getting dictation ready · ${Math.round(stt.progress * 100)}%` : null;
+  const sub = finishing
+    ? readying ?? "Writing it down…"
+    : talking
+    ? voiceCall
+      ? readying ? `${readying} · keep talking` : ear === "hearing" ? `Hearing you · ${reach} hear you` : ear === "listening" ? "Listening… start talking" : "Opening the mic…"
+      : `On air · ${reach} hear you`
+    : `${targetLabel(info, target)} · ${reach} ${reach === 1 ? "person" : "people"}`;
 
   return (
     <div className={r.ptt}>
@@ -388,6 +470,7 @@ function TalkButton({ groupId, target }: { groupId: string; target: Target }) {
         onPointerDown={(e) => {
           if (mode !== "hold" || e.button > 0) return;
           e.currentTarget.setPointerCapture(e.pointerId);
+          held.current = true;
           void press();
         }}
         onPointerUp={() => { if (mode === "hold") void end(); }}
@@ -398,7 +481,7 @@ function TalkButton({ groupId, target }: { groupId: string; target: Target }) {
         onKeyDown={(e) => {
           if (mode !== "hold" || (e.key !== " " && e.key !== "Enter")) return;
           e.preventDefault();
-          if (!e.repeat) void press();
+          if (!e.repeat) { held.current = true; void press(); }
         }}
         onKeyUp={(e) => {
           if (mode !== "hold" || (e.key !== " " && e.key !== "Enter")) return;
@@ -449,6 +532,7 @@ export function RadioScreen({ groupId, onClose }: { groupId: string; onClose: ()
   useDialog(rootRef, close);
   useEffect(() => {
     rootRef.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+    prepareDictation();
   }, []);
 
   // Looking at the radio counts as having heard it: on open, and as each new call comes in.
@@ -515,7 +599,6 @@ export function RadioScreen({ groupId, onClose }: { groupId: string; onClose: ()
                   : `${tuned.length} tuned in · ${ch.sub}`}
               </small>
             </span>
-            <Stack ids={tuned} size={24} max={4} />
           </>
         )}
       </button>
@@ -540,10 +623,21 @@ export function RadioScreen({ groupId, onClose }: { groupId: string; onClose: ()
         ) : (
           <TalkButton groupId={groupId} target={talkTo} />
         )}
-        <small className={r.deckHint}>Transcribed live, with who said it · double-tap an earbud to talk</small>
+        <DictationNote />
       </div>
     </div>
   );
+}
+
+/** Under the talk button: how calls are written down, and whether that's ready yet. */
+function DictationNote() {
+  const stt = useSttStatus();
+  const text = stt.state === "loading"
+    ? `Getting dictation ready on this device · ${Math.round(stt.progress * 100)}% (once)`
+    : stt.state === "ready"
+      ? "Dictated on this device as you talk · nothing leaves the phone"
+      : "Transcribed live, with who said it · double-tap an earbud to talk";
+  return <small className={r.deckHint}>{text}</small>;
 }
 
 /* ---------------------------------------------------------------------------
