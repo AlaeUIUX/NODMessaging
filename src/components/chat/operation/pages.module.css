@@ -201,6 +201,14 @@
 .secHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; margin: 0 4px; }
 .h3 { margin: 0; display: inline-flex; align-items: baseline; gap: 6px; font: var(--t-footnote); font-weight: var(--w-emph); color: var(--ink-2); }
 .h3 em { font-style: normal; font-weight: 400; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+/* A heading that folds its section: the whole title is the button, the chevron turns down when open. */
+.fold { display: inline-flex; align-items: center; gap: 6px; margin: -6px -8px; padding: 6px 8px; border: none; border-radius: var(--r-sm); background: none; color: inherit; font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.fold:hover { background: var(--fill); }
+.foldChevron { display: inline-flex; color: var(--ink-3); transition: transform var(--t-mid) var(--ease-out); }
+.foldOpen { transform: rotate(90deg); }
+.foldBody { animation: foldIn var(--t-mid) var(--ease-out); }
+@keyframes foldIn { from { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .foldChevron { transition: none; } .foldBody { animation: none; } }
 .hint, .empty { margin: 2px 4px; font: var(--t-caption1); color: var(--ink-3); }
 .emptyBox { margin: 0; padding: 14px 16px; border-radius: var(--r-md); background: var(--fill); color: var(--ink-2); font: var(--t-footnote); text-align: center; }
 .pill {

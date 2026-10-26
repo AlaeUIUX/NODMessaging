@@ -59,6 +59,8 @@ export function OperationPage({ groupId, onClose, onSettings, onSwitchChannel }:
   const [view, setView] = useState<View>("list");
   const [pin, setPin] = useState<string | null>(null);
   const [zoneFilter, setZoneFilter] = useState<ZoneFilter>(ALL_ZONES);
+  // Needs you folds away under its chevron, and stays the way you left it while the page is open.
+  const [needsOpen, setNeedsOpen] = useState(true);
   const [logFilter, setLogFilter] = useState<LogFilter>(WHOLE_LOG);
 
   // Mind's "From the chat": the files and links of the channel that's open, as on any group's page.
@@ -193,14 +195,23 @@ export function OperationPage({ groupId, onClose, onSettings, onSwitchChannel }:
       {decides && (
         <section className={p.section} aria-label="Needs you">
           <div className={p.secHead}>
-            <h3 className={p.h3}>Needs you<em>{needs.length}</em></h3>
+            <h3 className={p.h3}>
+              <button className={p.fold} onClick={() => setNeedsOpen((v) => !v)} aria-expanded={needsOpen} aria-controls="needs-you">
+                Needs you<em>{needs.length}</em>
+                <span className={`${p.foldChevron} ${needsOpen ? p.foldOpen : ""}`} aria-hidden="true"><IconChevron size={13} /></span>
+              </button>
+            </h3>
             <button className={p.pill} onClick={() => ui.openSheet(<DayReport groupId={groupId} onClose={ui.closeSheet} />)}>
               <IconChart size={15} />Day report
             </button>
           </div>
-          {needs.length
-            ? <div className={p.reqList}>{needs.map((r) => <RequestView key={r.id} groupId={groupId} request={r} compact interactive />)}</div>
-            : <p className={p.emptyBox}>Nothing waiting on you.</p>}
+          {needsOpen && (
+            <div id="needs-you" className={p.foldBody}>
+              {needs.length
+                ? <div className={p.reqList}>{needs.map((r) => <RequestView key={r.id} groupId={groupId} request={r} compact interactive />)}</div>
+                : <p className={p.emptyBox}>Nothing waiting on you.</p>}
+            </div>
+          )}
         </section>
       )}
 
