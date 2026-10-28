@@ -4956,6 +4956,22 @@ a.bsheetAction { text-decoration: none !important; }
    ========================================================================== */
 
 .chatWithChannels .thread { padding-top: calc(var(--inset-top) + 150px); }
+/* Pinned messages: a pin in the header, next to the board and the call, there once something's pinned.
+   Three buttons a side: both sides widen together so the name stays centred, and the buttons tighten a little. */
+.headerSide.headerWide { width: 136px; gap: 4px; }
+.headerWide .circleBtn { width: 42px; height: 42px; }
+.pinBtn { position: relative; animation: pinBtnIn var(--t-slow) var(--ease-spring); }
+.pinCount { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--accent); color: #fff; font: var(--t-caption2, var(--t-caption1)); font-size: 11px; line-height: 18px; font-style: normal; font-weight: var(--w-emph); text-align: center; box-shadow: 0 0 0 2px var(--bg); }
+@keyframes pinBtnIn { from { opacity: 0; transform: scale(.4); } }
+@media (prefers-reduced-motion: reduce) { .pinBtn { animation: none; } }
+/* A pinned bubble wears a small pin on its outer top corner. */
+.pinBadge { position: absolute; top: -6px; z-index: 2; display: grid; place-items: center; width: 18px; height: 18px; border-radius: var(--r-pill); background: var(--surface); color: var(--accent); box-shadow: 0 0 0 1px var(--line), var(--e1); pointer-events: none; }
+.theirs .pinBadge { right: -6px; }
+.mine .pinBadge { left: -6px; }
+.pinRow { position: relative; display: flex; align-items: center; gap: 8px; padding-right: 10px; }
+.pinRowMain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 10px 4px 10px 14px; border: none; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.pinRowMain .contactText small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pinRowUnpin { flex-shrink: 0; height: 30px; padding: 0 12px; border: none; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); font: var(--t-footnote); font-weight: var(--w-control); cursor: pointer; }
 .chatWithChannels .edgeTop { height: calc(var(--inset-top) + 170px); }
 /* Another channel of the same group: swapped in place, not pushed */
 .chatScreen.chatInstant { animation: none; }

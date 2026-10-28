@@ -13,7 +13,7 @@ import type { AvatarTone } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import {
   IconBack, IconBell, IconBellOff, IconCamera, IconCheck, IconChevron, IconContacts, IconGlobe, IconHelp, IconImage,
-  IconInfo, IconKeyboard, IconLocation, IconLogout, IconMic, IconPalette, IconPlus, IconShare, IconShield, IconStorage,
+  IconInfo, IconKeyboard, IconLocation, IconLock, IconLogout, IconMic, IconPalette, IconPlus, IconShare, IconShield, IconStorage,
 } from "./Icons";
 import Logo from "./Logo";
 import { AvatarPicker, ProfileFields, profileReady, type ProfileDraft } from "./Profile";
@@ -231,9 +231,18 @@ function ProfilePage({ leaving, onBack, onSaved }: { leaving: boolean; onBack: (
     >
       <AvatarPicker draft={draft} onChange={(p) => setDraft((d) => ({ ...d, ...p }))} />
       <ProfileFields draft={draft} userId={me} withBio onChange={(p) => setDraft((d) => ({ ...d, ...p }))} />
-      <Group label="Your ID" note="Your phone number is your NOD ID. People who have it in their contacts can find you. Changing it isn’t part of the demo.">
-        <Row title={formatPhone(user.phone) || "No number"} trailing={<span />} />
-      </Group>
+      {/* Shown like the fields above but switched off: flat, dimmed, a lock, nothing to tap or type. */}
+      <section className={s.group}>
+        <p className={s.groupLabel}>Your ID</p>
+        <div className={`${s.field} ${s.fieldLocked}`} aria-disabled="true">
+          <span>Phone number</span>
+          <span className={s.lockedValue}>
+            <input value={formatPhone(user.phone) || "No number"} disabled readOnly tabIndex={-1} aria-label="Your NOD ID, can't be changed" />
+            <IconLock size={15} />
+          </span>
+        </div>
+        <p className={s.groupNote}>Your phone number is your NOD ID. People who have it in their contacts can find you. Changing it isn’t part of the demo.</p>
+      </section>
     </SubPage>
   );
 }

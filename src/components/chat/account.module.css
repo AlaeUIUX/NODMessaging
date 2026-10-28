@@ -302,6 +302,10 @@
 .field > span:first-child { font: var(--t-caption1); font-weight: var(--w-control); color: var(--ink-3); }
 .field input, .field textarea { width: 100%; padding: 0; border: none; outline: none; background: none; color: var(--ink); font: var(--t-body); resize: none; }
 .field input::placeholder, .field textarea::placeholder { color: var(--ink-3); opacity: .7; }
+/* A field that can't be changed: flat (no edge, no lift), dimmed, a lock at the end, the not-allowed cursor. */
+.field.fieldLocked { background: color-mix(in srgb, var(--ink) 4%, transparent); box-shadow: none; cursor: not-allowed; }
+.lockedValue { display: flex; align-items: center; gap: 8px; color: var(--ink-3); }
+.fieldLocked input { flex: 1; min-width: 0; color: var(--ink-3); -webkit-text-fill-color: var(--ink-3); opacity: 1; cursor: not-allowed; }
 .handle { display: flex; align-items: center; gap: 2px; }
 .handle i { font-style: normal; font: var(--t-body); color: var(--ink-3); }
 .fieldNote { margin: -4px 4px 0; display: flex; align-items: center; gap: 5px; min-height: 18px; font: var(--t-footnote); color: var(--ink-3); }

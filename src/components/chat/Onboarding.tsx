@@ -425,8 +425,8 @@ function Welcome({ onStart }: { onStart: () => void }) {
         ))}
       </div>
       <footer className={s.foot}>
+        {/* One button: new or returning, it's the same phone-number step. */}
         <button className={styles.primaryWide} onClick={onStart}>Get started</button>
-        <button className={s.textBtn} onClick={onStart}>I already have an account</button>
       </footer>
     </>
   );

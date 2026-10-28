@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { chatIdentity } from "@/lib/chat/avatar";
+import { chatIdentity, initials } from "@/lib/chat/avatar";
 import { can, canPost, groupInfo, groupOf, roleNames, visibleChannels, writeLastChannel } from "@/lib/chat/groups";
 import { effectiveRule, isQuiet, useMutes } from "@/lib/chat/mutes";
 import { stripFormatting } from "@/lib/chat/markdown";
@@ -19,7 +19,8 @@ import {
   AddSheet, ChecklistBuilder, EventBuilder, LocationBuilder, PaymentBuilder, PollBuilder, ReminderBuilder, type AddKind,
 } from "./CardBuilders";
 import Composer from "./Composer";
-import { IconBack, IconBellOff, IconBoard, IconCheck, IconChevron, IconLocation, IconMegaphone, IconMenu, IconPhone, IconQr } from "./Icons";
+import { IconBack, IconBellOff, IconBoard, IconCheck, IconChevron, IconLocation, IconMegaphone, IconMenu, IconPhone, IconPin, IconQr } from "./Icons";
+import { Sheet } from "./ui";
 import { Code } from "./operation/kit";
 import { BroadcastSheet, RequestSheet } from "./operation/OpCards";
 import { OperationPage } from "./operation/OperationPage";
@@ -468,6 +469,19 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     settle(d.dx > width * 0.4 || velocity > 0.6 ? "back" : "stay");
   };
 
+  // Pinned messages live behind the pin in the header, which shows up with the first one.
+  const pinCount = useMemo(() => messages.filter((m) => m.pinned && !m.deletedAt).length, [messages]);
+  const openPins = () => setOverlaySheet(<PinnedSheet chatId={chat.id} me={me} onClose={closeSheet} onJump={(id) => jumpTo(id)} onUnpin={(m) => togglePin(m)} />);
+  /** Pins a message, and a copy of it flies up into the header's pin (the way a save flies into Mind). */
+  const pinWithFlight = (m: Message) => {
+    togglePin(m);
+    if (m.pinned) return;
+    const screen = screenRef.current;
+    const row = screen?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(m.id)}"]`);
+    const bubble = row?.querySelector<HTMLElement>("[data-bubble]");
+    if (screen && row && bubble) fly({ el: bubble, host: screen, wrap: row.className, target: () => screen.querySelector<HTMLElement>("[data-pin-target]") });
+  };
+
   const jumpTo = useCallback((messageId: string) => {
     const el = screenRef.current?.querySelector(`[data-message-id="${messageId}"]`);
     el?.scrollIntoView({ behavior: smooth(), block: "center" });
@@ -636,7 +650,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
       <div className={styles.edgeTop} data-edge-top />
 
       <header className={styles.chatHeader}>
-        <div className={styles.headerSide}>
+        <div className={`${styles.headerSide} ${pinCount ? styles.headerWide : ""}`}>
           <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => onBack()} aria-label={o && chat.id !== o.group.id ? "Back to #general" : "Back to messages"}>
             <IconBack />
           </button>
@@ -655,7 +669,18 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
           </span>
           <span className={`${styles.tcPresence} ${typing.length ? styles.isTyping : ""}`}>{quiet && !typing.length && <IconBellOff size={11} />} {presence}</span>
         </button>
-        <div className={`${styles.headerSide} ${styles.headerEnd}`}>
+        <div className={`${styles.headerSide} ${styles.headerEnd} ${pinCount ? styles.headerWide : ""}`}>
+          {pinCount > 0 && (
+            <button
+              className={`${styles.circleBtn} ${styles.glass} ${styles.pinBtn}`}
+              data-pin-target
+              aria-label={`Pinned messages (${pinCount})`}
+              onClick={openPins}
+            >
+              <IconPin />
+              {pinCount > 1 && <em className={styles.pinCount}>{pinCount}</em>}
+            </button>
+          )}
           {o ? <>
             {/* An Operation: the radio, then the menu (zones, channels, people) at the far right. Its board lives on the Operation page. */}
             <RadioButton groupId={o.group.id} onOpen={openRadio} />
@@ -843,7 +868,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
           onReply={() => { setReplyTo(menuMessage); setEditing(null); }}
           onEdit={() => { setEditing(menuMessage); setReplyTo(null); }}
           onDelete={() => { deleteMessage(menuMessage); flash("Message deleted"); }}
-          onPin={() => { togglePin(menuMessage); flash(menuMessage.pinned ? "Unpinned" : "Pinned"); }}
+          onPin={() => pinWithFlight(menuMessage)}
           onSave={() => {
             const m = menuMessage;
             const c = m.card;
@@ -957,5 +982,55 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
       {alert && <PermissionAlert kind={alert.kind} onResolve={alert.resolve} />}
     </div>
     </ChatUiProvider>
+  );
+}
+
+/** One line for a pinned message: its text, or what it is when it has none. */
+function pinPreview(m: Message) {
+  if (m.kind === "voice") return "Voice message";
+  if (m.card) {
+    const c = m.card as Record<string, unknown>;
+    const name = [c.title, c.question, c.name, c.text, c.place, c.prompt].find((x) => typeof x === "string" && x);
+    return (name as string | undefined) ?? "A card";
+  }
+  const text = stripFormatting(m.body).replace(/\s+/g, " ").trim();
+  if (text) return text;
+  const a = m.attachments[0];
+  return a ? (a.kind === "image" ? "Photo" : a.name) : "Message";
+}
+
+/** Every pinned message in the chat: tap one to go to it, or unpin it. */
+function PinnedSheet({ chatId, me, onClose, onJump, onUnpin }: {
+  chatId: string;
+  me: string;
+  onClose: () => void;
+  onJump: (id: string) => void;
+  onUnpin: (m: Message) => void;
+}) {
+  // Read live, so unpinning here takes the row away.
+  const { state } = useChat();
+  const pins = (state.data.messages[chatId] ?? []).filter((m) => m.pinned && !m.deletedAt).sort((a, b) => b.createdAt - a.createdAt);
+  return (
+    <Sheet title={pins.length ? `Pinned · ${pins.length}` : "Pinned"} onClose={onClose}>
+      {(close) => (!pins.length ? <p className={styles.sheetNote}>Nothing pinned here any more.</p> : (
+        <div className={styles.listGroup}>
+          {pins.map((m) => {
+            const who = userById(m.authorId);
+            return (
+              <div key={m.id} className={styles.pinRow}>
+                <button className={styles.pinRowMain} onClick={() => close(() => setTimeout(() => onJump(m.id), 60))}>
+                  <Avatar glyph={initials(who.fullName)} tone={who.tone} photo={who.photo} size={32} shape="circle" />
+                  <span className={styles.contactText}>
+                    <b>{m.authorId === me ? "You" : who.name}</b>
+                    <small>{emojify(pinPreview(m))}</small>
+                  </span>
+                </button>
+                <button className={styles.pinRowUnpin} onClick={() => onUnpin(m)} aria-label="Unpin">Unpin</button>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </Sheet>
   );
 }

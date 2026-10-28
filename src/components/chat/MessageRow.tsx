@@ -10,7 +10,7 @@ import CardView from "./CardView";
 import { FileRow, MediaBlock } from "./Media";
 import { reducedMotion, useChatUi } from "./ui";
 import { Emoji, emojiCount, emojify } from "@/lib/chat/emoji";
-import { IconChevron, IconPause, IconPlay, IconReply } from "./Icons";
+import { IconChevron, IconPause, IconPin, IconPlay, IconReply } from "./Icons";
 import { LandingGlow, RECEIVE } from "./Landing";
 import styles from "./chat.module.css";
 
@@ -456,6 +456,7 @@ export default memo(function MessageRow({
             {tail && <span className={styles.tail} aria-hidden="true" />}
           </div>
 
+          {message.pinned && !deleted && <span className={styles.pinBadge} title="Pinned" aria-label="Pinned"><IconPin size={10} /></span>}
           <span ref={hintRef} className={styles.replyHint}><IconReply /></span>
 
           {(message.reactions.length > 0 || leavingReactions.length > 0) && !deleted && (
