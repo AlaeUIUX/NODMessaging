@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { getForceFailure, setForceFailure } from "@/lib/chat/api";
+import { getForceFailure, getForceNetFailure, setForceFailure, setForceNetFailure } from "@/lib/chat/api";
 import { getPrefs, resetDemoData, THEME_EVENT, useAccounts, type ThemePref } from "@/lib/chat/account";
 import { groupInfo } from "@/lib/chat/groups";
 import { mindOf } from "@/lib/chat/mind";
@@ -75,6 +75,7 @@ const MIND_PERSONAS: Record<string, string> = {
 function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => void }) {
   const { state, me, setMe, peers } = useChat();
   const [failing, setFailing] = useState(getForceFailure());
+  const [netFailing, setNetFailing] = useState(getForceNetFailure());
   // Everyone in the demo (29 people), by their crew at EWC.
   const people = personGroups(state.data.chats);
 
@@ -132,6 +133,15 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
             onChange={(e) => { setFailing(e.target.checked); setForceFailure(e.target.checked); }}
           />
           Force send failure
+        </label>
+        {/* Saving to Mind, link previews, book search, Explore and publishing: each fails as it would offline. */}
+        <label className={styles.devToggle}>
+          <input
+            type="checkbox"
+            checked={netFailing}
+            onChange={(e) => { setNetFailing(e.target.checked); setForceNetFailure(e.target.checked); }}
+          />
+          Force Mind &amp; network failure
         </label>
         {/* Fresh seed for demos: conversations, drafts, identities, profiles, settings, permission answers and stored files. */}
         <button className={styles.devReset} onClick={() => { void resetDemoData(); }}>

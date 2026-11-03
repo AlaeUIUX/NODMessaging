@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { initials } from "@/lib/chat/avatar";
-import { isGrouped, userById } from "@/lib/chat/store";
+import { isGrouped, typingLine, typingNames, userById } from "@/lib/chat/store";
 import type { AvatarTone, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { IconArrowUp, IconLock } from "./Icons";
@@ -164,21 +164,7 @@ export default function MessageList({
     setUnseen(0);
   };
 
-  // The typing bubble fades out instead of vanishing when someone stops.
-  // Derived during render (React's "adjust state on prop change" pattern).
-  const typingNow = typingUsers[0] ?? null;
-  const [prevTyping, setPrevTyping] = useState(typingNow);
-  const [typingExit, setTypingExit] = useState<string | null>(null);
-  if (typingNow !== prevTyping) {
-    setPrevTyping(typingNow);
-    setTypingExit(typingNow ? null : prevTyping);
-  }
-  useEffect(() => {
-    if (!typingExit) return;
-    const t = setTimeout(() => setTypingExit(null), 220);
-    return () => clearTimeout(t);
-  }, [typingExit]);
-  const typingShown = typingNow ? { user: typingNow, leaving: false } : typingExit ? { user: typingExit, leaving: true } : null;
+  const typists = useTypists(typingUsers);
 
   return (
     <>
@@ -241,18 +227,7 @@ export default function MessageList({
         );
       })}
 
-      {typingShown && (
-        <div className={`${styles.row} ${styles.theirs} ${styles.typingRow} ${typingShown.leaving ? styles.typingLeaving : styles.enterTheirs}`}>
-          {isGroupChat && (
-            <div className={styles.avatarSlot}>
-              <Avatar glyph={initials(userById(typingShown.user).fullName)} tone={userById(typingShown.user).tone} photo={userById(typingShown.user).photo} size={28} />
-            </div>
-          )}
-          <div className={styles.stack}>
-            <div className={styles.typingBubble} aria-label="typing"><span /><span /><span /></div>
-          </div>
-        </div>
-      )}
+      {typists.length > 0 && <TypingRow typists={typists} group={isGroupChat} />}
 
       <div className={styles.threadSpacer} />
     </div>
@@ -263,5 +238,71 @@ export default function MessageList({
       </button>
     )}
     </>
+  );
+}
+
+interface Typist { id: string; leaving: boolean }
+
+/**
+ * Who the typing bubble shows, in the order they started. Someone who stops
+ * stays a moment longer, so their face shrinks away instead of vanishing.
+ * Derived during render (React's "adjust state on prop change" pattern).
+ */
+function useTypists(ids: string[]) {
+  const key = ids.join(" ");
+  const [seen, setSeen] = useState(key);
+  const [shown, setShown] = useState<Typist[]>(() => ids.map((id) => ({ id, leaving: false })));
+  if (key !== seen) {
+    setSeen(key);
+    setShown([
+      ...shown.map((t) => ({ id: t.id, leaving: !ids.includes(t.id) })),
+      ...ids.filter((id) => !shown.some((t) => t.id === id)).map((id) => ({ id, leaving: false })),
+    ]);
+  }
+  const gone = shown.filter((t) => t.leaving).map((t) => t.id).join(" ");
+  useEffect(() => {
+    if (!gone) return;
+    const t = setTimeout(() => setShown((list) => list.filter((x) => !x.leaving)), 220);
+    return () => clearTimeout(t);
+  }, [gone]);
+  return shown;
+}
+
+/** Faces in the bubble before a "+2". */
+const MAX_FACES = 3;
+
+/**
+ * The typing bubble. In a group it carries the faces of everyone typing,
+ * overlapping, with their names above like a byline: faces pop in as people
+ * start and shrink away as they stop, and the bubble resizes around them.
+ */
+function TypingRow({ typists, group }: { typists: Typist[]; group: boolean }) {
+  const active = typists.filter((t) => !t.leaving).map((t) => t.id);
+  // While the last one fades out, their name stays with them.
+  const names = active.length ? active : typists.map((t) => t.id);
+  const more = typists.slice(MAX_FACES).filter((t) => !t.leaving).length;
+  return (
+    <div className={`${styles.row} ${styles.theirs} ${styles.typingRow} ${active.length ? styles.enterTheirs : styles.typingLeaving}`}>
+      {group && <div className={styles.avatarSlot} />}
+      <div className={styles.stack}>
+        {group && <span className={styles.byline}>{typingNames(names)}</span>}
+        <div className={`${styles.typingBubble} ${group ? styles.typingGroup : ""}`} aria-label={group ? typingLine(names) : "typing"}>
+          {group && (
+            <span className={styles.typingFaces} aria-hidden="true">
+              {typists.slice(0, MAX_FACES).map((t) => {
+                const u = userById(t.id);
+                return (
+                  <span key={t.id} className={`${styles.typingFace} ${t.leaving ? styles.typingFaceOut : ""}`}>
+                    <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={24} shape="circle" />
+                  </span>
+                );
+              })}
+              {more > 0 && <span className={`${styles.typingFace} ${styles.typingMore}`}>+{more}</span>}
+            </span>
+          )}
+          <span className={styles.typingDots} aria-hidden="true"><i /><i /><i /></span>
+        </div>
+      </div>
+    </div>
   );
 }

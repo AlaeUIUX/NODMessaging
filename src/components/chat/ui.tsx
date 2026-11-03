@@ -197,8 +197,12 @@ export function Sheet({
   onClosing?: () => void;
   /** A step inside a flow: the top-left reads Back (not Cancel), closes this sheet and runs this to reopen the one before. */
   onBack?: () => void;
-  /** The top-right action closes the sheet, then runs; `keepOpen` runs it in place (a step that moves on). */
-  action?: { label: string; disabled?: boolean; onClick: () => void; href?: string; keepOpen?: boolean };
+  /**
+   * The top-right action closes the sheet, then runs; `keepOpen` runs it in
+   * place (a step that moves on). `first` runs in place before it (an upload
+   * that has to finish): the sheet only closes and runs it once that says yes.
+   */
+  action?: { label: string; disabled?: boolean; onClick: () => void; href?: string; keepOpen?: boolean; first?: () => Promise<boolean> };
   /** A function child receives `close(after)`, which animates out, then runs `after`. */
   children: ReactNode | ((close: (after?: () => void) => void) => ReactNode);
   footer?: ReactNode;
@@ -254,7 +258,11 @@ export function Sheet({
             <button
               className={styles.bsheetAction}
               disabled={action.disabled}
-              onClick={() => (action.keepOpen ? action.onClick() : close(action.onClick))}
+              onClick={() => {
+                if (action.keepOpen) action.onClick();
+                else if (action.first) void action.first().then((ok) => { if (ok) close(action.onClick); });
+                else close(action.onClick);
+              }}
             >
               {action.label}
             </button>

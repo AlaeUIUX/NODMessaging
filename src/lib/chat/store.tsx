@@ -235,6 +235,12 @@ function autoReply(text: string): string {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+/** A second voice in a group: short, the way people pile on. */
+function chimeIn(): string {
+  const pool = ["+1", "Same here.", "Agreed 👍", "Count me in.", "Nice one 🙌"];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 interface ChatContextValue {
   state: State;
   me: string;
@@ -595,31 +601,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const info = group ? groupInfo(group) : null;
       const channel = info?.channels.find((c) => c.id === sent.chatId);
       const others = chat ? chat.memberIds.filter((id) => id !== sent.authorId) : ["charles"];
-      const counterpart = (info && channel ? others.filter((id) => canPost(info, channel, id)) : others)[0];
+      const posters = info && channel ? others.filter((id) => canPost(info, channel, id)) : others;
+      const counterpart = posters[0];
       if (!counterpart) {
         others.forEach((uid, i) => later(() => receipt(sent.chatId, sent.id, "read", uid), 1400 + i * 1300));
         return;
       }
-      const typing = (isTyping: boolean) => {
-        dispatch({ type: "typing", chatId: sent.chatId, userId: counterpart, isTyping });
-        publish({ type: "typing", chatId: sent.chatId, userId: counterpart, isTyping });
+      const typing = (userId: string, isTyping: boolean) => {
+        dispatch({ type: "typing", chatId: sent.chatId, userId, isTyping });
+        publish({ type: "typing", chatId: sent.chatId, userId, isTyping });
+        if (isTyping) clearTypingLater(sent.chatId, userId);
       };
-
-      later(() => receipt(sent.chatId, sent.id, "delivered", counterpart), 700);
-      later(() => {
-        typing(true);
-        clearTypingLater(sent.chatId, counterpart);
-      }, 1200);
-      later(() => {
-        typing(false);
+      const answer = (authorId: string, body: string) => {
+        typing(authorId, false);
         const id = `sim-${newId()}`;
         const reply: Message = {
           id,
           clientId: id,
           chatId: sent.chatId,
-          authorId: counterpart,
+          authorId,
           kind: "text",
-          body: autoReply(sent.body),
+          body,
           createdAt: Date.now(),
           status: "delivered",
           reactions: [],
@@ -633,11 +635,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "append", message: reply });
         publish({ type: "message", message: reply });
         signal("in");
-        receipt(sent.chatId, sent.id, "read", counterpart);
-      }, 2600);
+        receipt(sent.chatId, sent.id, "read", authorId);
+      };
+
+      later(() => receipt(sent.chatId, sent.id, "delivered", counterpart), 700);
+      later(() => typing(counterpart, true), 1200);
+      later(() => answer(counterpart, autoReply(sent.body)), 2600);
+      // In a group, two more start typing while the first answers: one chimes in, the other thinks better of it.
+      const [second, third] = chat?.kind === "group" ? posters.slice(1).sort(() => Math.random() - 0.5) : [];
+      if (second) {
+        later(() => typing(second, true), 1700);
+        later(() => answer(second, chimeIn()), 4200);
+      }
+      if (third) {
+        later(() => typing(third, true), 2200);
+        later(() => typing(third, false), 3600);
+      }
       // In a group, everyone else reads it too, one by one.
       (chat?.memberIds ?? [])
-        .filter((id) => id !== sent.authorId && id !== counterpart)
+        .filter((id) => id !== sent.authorId && id !== counterpart && id !== second)
         .forEach((uid, i) => later(() => receipt(sent.chatId, sent.id, "read", uid), 3400 + i * 1300));
     },
     [chatOf, clearTypingLater, later, publish, receipt],
@@ -1065,6 +1081,19 @@ export function useChat() {
 /** Anyone on NOD, with their latest profile. */
 export function userById(id: string) {
   return personById(id);
+}
+
+/** Who's typing, by name: "Charles", "Charles and Reema", "Charles, Reema and Jamshad", "Charles, Reema and 2 others". */
+export function typingNames(ids: string[]) {
+  const names = ids.map((id) => userById(id).name);
+  if (names.length <= 2) return names.join(" and ");
+  return `${names[0]}, ${names[1]} and ${names.length === 3 ? names[2] : `${names.length - 2} others`}`;
+}
+
+/** One short line for a chat's header and its inbox row: a name or two, else how many. */
+export function typingLine(ids: string[]) {
+  if (ids.length > 2) return `${ids.length} people are typing`;
+  return `${typingNames(ids)} ${ids.length === 1 ? "is" : "are"} typing`;
 }
 
 /** Consecutive messages from one author inside the window collapse together. */

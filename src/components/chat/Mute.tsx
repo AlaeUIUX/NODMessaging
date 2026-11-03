@@ -34,7 +34,7 @@ export function MuteSheet({ me, chatId, name, group, onClose, onToast }: {
   const [calls, setCalls] = useState(own?.calls ?? false);
 
   const options: { id: Choice; label: string; sub: string; icon: React.ReactNode }[] = [
-    ...(group ? [{ id: "follow" as const, label: `Same as ${group.name}`, sub: describe(groupRule, now), icon: <span className={m.follow}>↩</span> }] : []),
+    ...(group ? [{ id: "follow" as const, label: `Same as ${group.name}`, sub: groupRule ? describe(groupRule, now) : "Everything", icon: <span className={m.follow}>↩</span> }] : []),
     { id: "all", label: "Everything", sub: "Every message notifies you", icon: <IconBell size={18} /> },
     { id: "mentions", label: "Only @mentions", sub: "Quiet, unless someone mentions you", icon: <IconAt size={18} /> },
     { id: "none", label: "Nothing", sub: `No notifications from ${name}`, icon: <IconBellOff size={18} /> },

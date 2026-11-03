@@ -529,16 +529,25 @@ export function GroupSettings({ groupId, leaving, onBack, onToast, onLeft }: {
         </div>
 
         {(() => {
-          // The group, then each channel you can see: a channel follows the group unless set on its own.
+          // The group, then each other channel you can see: a channel follows the group unless set on its own.
+          // #general is the group's own chat, so it's the group's row, not a channel that could differ from it.
           const groupRule = ruleFor(rules, groupId, now);
-          const mine = info.channels.filter((c) => !c.roles.length || isAdmin(info, me) || rolesOf(info, me).some((r) => c.roles.includes(r)));
+          const general = info.channels.find((c) => c.id === groupId);
+          const mine = info.channels.filter((c) => c.id !== groupId && (!c.roles.length || isAdmin(info, me) || rolesOf(info, me).some((r) => c.roles.includes(r))));
           const sheetFor = (id: string, name: string, channel: boolean) => setSheet(
             <MuteSheet me={me} chatId={id} name={name} group={channel ? { id: groupId, name: group.name } : undefined} onClose={closeSheet} onToast={onToast} />,
           );
           return (
             <Group label="Notifications" note={isQuiet(groupRule) ? "Channels follow the group unless you set them on their own, like keeping #announcements on." : "Mute the whole group, or just a noisy channel."}>
-              <Row icon={<Tile tone="clay"><IconBell size={16} /></Tile>} title={group.name} value={describe(groupRule, now)} onClick={() => sheetFor(groupId, group.name, false)} />
-              {mine.length > 1 && mine.map((c) => {
+              {/* Named the way the sheet names its choices: "Everything", not "On". */}
+              <Row
+                icon={<Tile tone="clay"><IconBell size={16} /></Tile>}
+                title={group.name}
+                sub={general ? `Includes #${general.name}` : undefined}
+                value={groupRule ? describe(groupRule, now) : "Everything"}
+                onClick={() => sheetFor(groupId, group.name, false)}
+              />
+              {mine.map((c) => {
                 const own = ruleFor(rules, c.id, now);
                 return (
                   <Row
@@ -546,7 +555,7 @@ export function GroupSettings({ groupId, leaving, onBack, onToast, onLeft }: {
                     icon={<span className={g.muteHash}>#</span>}
                     title={`#${c.name}`}
                     value={own ? describe(own, now) : "Same as group"}
-                    onClick={() => sheetFor(c.id, `#${c.name}`, c.id !== groupId)}
+                    onClick={() => sheetFor(c.id, `#${c.name}`, true)}
                   />
                 );
               })}

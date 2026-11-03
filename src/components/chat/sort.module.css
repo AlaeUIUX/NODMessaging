@@ -1,0 +1,291 @@
+/* ==========================================================================
+   Sorting Unassigned like Tinder: one big card on a small pile (what's still
+   waiting). Dragged right, a stamp with the best guess grows; left, "Later".
+   Under it, every collection in a row that scrolls sideways, and the card
+   can be dropped on one. The end is a check that pops, then the sheet goes.
+   ========================================================================== */
+
+.deck { display: grid; gap: 14px; padding-bottom: 4px; }
+
+/* "3 of 7", a thin bar that fills as you go, and Undo. */
+.progress { display: flex; align-items: center; gap: 12px; font: var(--t-footnote); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.progress i { flex: 1; height: 4px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 8%, transparent); overflow: hidden; }
+.progress b { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width var(--t-slow) var(--ease-out); }
+.undo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+  font: var(--t-footnote);
+  font-weight: var(--w-emph);
+  cursor: pointer;
+}
+.undo:disabled { opacity: .35; cursor: default; }
+
+/* The table the card sits on, with the pile showing under it. */
+.stage {
+  position: relative;
+  display: grid;
+  height: clamp(300px, 52vh, 480px);
+  padding: 12px 12px 22px;
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%),
+    color-mix(in srgb, var(--ink) 3%, transparent);
+}
+.under {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 12px;
+  height: 60px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--e1), 0 0 0 1px var(--line);
+  transform: scale(.96);
+}
+.under2 { left: 36px; right: 36px; bottom: 5px; opacity: .7; transform: scale(.92); }
+
+/* The card: grab it anywhere. It follows the finger and tilts the way it's going. */
+.card {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), 0 14px 30px -12px rgba(28, 25, 23, .28);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transform: translate(var(--dx), var(--dy)) rotate(var(--rot));
+  transition: transform 320ms var(--ease-spring);
+  animation: cardIn 420ms var(--ease-spring) both;
+}
+.dragging { cursor: grabbing; transition: none; }
+/* Over a collection in the row: it shrinks, ready to drop in. */
+.overPlace { transform: translate(var(--dx), var(--dy)) scale(.34); opacity: .6; transition: transform 160ms var(--ease-out), opacity 160ms; }
+.overPlace .stamp { opacity: 0 !important; }
+/* The next one comes up off the pile. */
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(26px) scale(.94); }
+}
+
+/* Gone: off to the right (the best guess), the left (Later), or into the place it was dropped on. */
+.flyRight { animation: offRight 440ms cubic-bezier(.4, 0, .8, .4) forwards; }
+.flyLeft { animation: offLeft 440ms cubic-bezier(.4, 0, .8, .4) forwards; }
+.flyPlace { animation: intoPlace 440ms cubic-bezier(.55, 0, .75, .2) forwards; }
+@keyframes offRight {
+  from { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); }
+  to { transform: translate(calc(var(--dx) + 130%), calc(var(--dy) + 40px)) rotate(22deg); opacity: 0; }
+}
+@keyframes offLeft {
+  from { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); }
+  to { transform: translate(calc(var(--dx) - 130%), calc(var(--dy) + 40px)) rotate(-22deg); opacity: 0; }
+}
+@keyframes intoPlace {
+  from { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); }
+  to { transform: translate(var(--fx), var(--fy)) scale(.1) rotate(-8deg); opacity: 0; }
+}
+
+/* What it is, then the item itself, as it looks opened. Long ones fade out at the bottom. */
+.cardBody {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 8px;
+  min-height: 0;
+  padding: 16px 16px 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
+}
+/* Short items sit in the middle; long ones start at the top. */
+.cardBody > :last-child { align-self: safe center; padding-bottom: 24px; }
+.cardKind { font: var(--t-caption1); font-weight: var(--w-emph); color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
+
+/* The best guess, written on the card. */
+.cardGuess {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--tone, var(--accent)) 12%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--accent)) 24%, transparent);
+  pointer-events: none;
+}
+.noGuess { background: color-mix(in srgb, var(--ink) 5%, transparent); box-shadow: none; }
+.guessIcon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--e1), 0 0 0 1px var(--line);
+  font-size: 18px;
+}
+.guessText { flex: 1; min-width: 0; display: grid; }
+.guessText b { font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guessText small { font: var(--t-caption1); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cardGuess em { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; font: var(--t-caption1); font-style: normal; font-weight: var(--w-emph); color: var(--ink-3); }
+
+/* The stamps: the guess's name on the left as it goes right, Later on the right as it goes left. */
+.stamp {
+  position: absolute;
+  top: 18px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 70%;
+  padding: 6px 12px;
+  border: 3px solid currentColor;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  font: var(--t-headline);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+}
+.stampYes { left: 16px; color: color-mix(in srgb, var(--tone, var(--ok)) 80%, var(--ink)); transform: rotate(-12deg) scale(var(--s)); transform-origin: left top; }
+.stampNo { right: 16px; color: var(--ink-2); transform: rotate(12deg) scale(var(--s)); transform-origin: right top; }
+
+/* Every collection, likeliest first, scrolling sideways; a search at the front. */
+.row {
+  display: flex;
+  gap: 8px;
+  margin: 0 -16px;
+  padding: 2px 16px 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.row::-webkit-scrollbar { display: none; }
+.row > * { flex-shrink: 0; }
+.find {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink-3);
+}
+.find:focus-within { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 16%, transparent); }
+.find input { width: 96px; border: none; outline: none; background: transparent; color: var(--ink); font: var(--t-subhead); }
+.find input::placeholder { color: var(--ink-3); }
+.place {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink);
+  font: var(--t-subhead);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast), background var(--t-fast);
+}
+.place:active { transform: scale(.96); }
+.place:disabled { cursor: default; }
+.placeGuess {
+  background: color-mix(in srgb, var(--tone, var(--accent)) 12%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--accent)) 30%, transparent);
+  font-weight: var(--w-emph);
+}
+/* The card is over it: let go to put it here. */
+.placeOver {
+  transform: scale(1.08);
+  background: color-mix(in srgb, var(--tone, var(--accent)) 20%, var(--surface));
+  box-shadow: inset 0 0 0 2px var(--tone, var(--accent)), 0 0 0 5px color-mix(in srgb, var(--tone, var(--accent)) 16%, transparent);
+}
+.placeNew { color: var(--accent); font-weight: var(--w-emph); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent); }
+/* Where the card went: a bump. */
+.took { animation: took 520ms 260ms var(--ease-spring) both; }
+@keyframes took {
+  40% { transform: scale(1.1); box-shadow: inset 0 0 0 2px var(--tone, var(--accent)), 0 0 0 6px color-mix(in srgb, var(--tone, var(--accent)) 18%, transparent); }
+}
+
+/* Later on the left, the best guess on the right: the swipes, as buttons. */
+.actions { display: flex; justify-content: space-between; gap: 10px; }
+.actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  height: 48px;
+  padding: 0 18px;
+  border: none;
+  border-radius: var(--r-pill);
+  font: var(--t-subhead);
+  font-weight: var(--w-emph);
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.actions button:active { transform: scale(.96); }
+.actions button:disabled { opacity: .5; cursor: default; }
+.later { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
+.yes {
+  flex: 1;
+  max-width: 64%;
+  margin-left: auto;
+  background: color-mix(in srgb, var(--tone, var(--accent)) 82%, var(--ink));
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The end: a check that pops, a puff of sparkles, then the sheet closes. */
+.done { display: grid; justify-items: center; gap: 6px; padding: 28px 16px 36px; text-align: center; }
+.done b { font: var(--t-title3); color: var(--ink); }
+.done small { max-width: 280px; font: var(--t-footnote); color: var(--ink-3); text-wrap: pretty; }
+.done .undo { margin-top: 10px; }
+.doneMark {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  margin-bottom: 10px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--ok);
+  color: #fff;
+  box-shadow: 0 10px 28px -10px color-mix(in srgb, var(--ok) 70%, transparent);
+  animation: pop 620ms var(--ease-spring) both;
+}
+.doneMarkSome { background: var(--accent); box-shadow: 0 10px 28px -10px color-mix(in srgb, var(--accent) 70%, transparent); }
+@keyframes pop {
+  0% { transform: scale(.2); opacity: 0; }
+  60% { transform: scale(1.12); opacity: 1; }
+  100% { transform: none; }
+}
+.done b, .done small { animation: rise 420ms 180ms var(--ease-out) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .card { transition: none; }
+  .card, .flyRight, .flyLeft, .flyPlace, .took, .doneMark, .done b, .done small { animation-duration: 1ms; animation-delay: 0ms; }
+}

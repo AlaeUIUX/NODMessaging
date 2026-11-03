@@ -5,6 +5,8 @@
  * is null: the item is still made, just with less filled in.
  */
 
+import { netDown } from "./api";
+
 /** A web page or a video, as its site describes it. */
 export interface LinkMeta {
   kind: "video" | "page";
@@ -44,6 +46,8 @@ const links = new Map<string, Promise<LinkMeta | null>>();
 const books = new Map<string, Promise<BookHit[] | null>>();
 
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T | null> {
+  // Offline, or failing on purpose from the developer panel: it tries for a moment, then gives up.
+  if (netDown()) return new Promise((resolve) => setTimeout(() => resolve(null), 350 + Math.random() * 250));
   try {
     const res = await fetch(path, { signal });
     return res.ok ? ((await res.json()) as T) : null;

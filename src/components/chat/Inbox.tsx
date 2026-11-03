@@ -7,7 +7,7 @@ import { groupInfo, landingChannel, visibleChannels } from "@/lib/chat/groups";
 import { isLanding } from "@/lib/chat/landing";
 import { isUnassigned, useMind } from "@/lib/chat/mind";
 import { describe, effectiveRule, isQuiet, QUICK_MUTE, useMutes } from "@/lib/chat/mutes";
-import { useChat, userById } from "@/lib/chat/store";
+import { typingLine, useChat, userById } from "@/lib/chat/store";
 import type { Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { IconBellOff, IconPin, IconShare, IconUserGroup } from "./Icons";
@@ -449,7 +449,7 @@ export default function Inbox({ onOpen, pushed }: {
                           <span className={`${styles.rowPreview} ${operation ? ops.opPreview : ""}`}>
                             {typing.length > 0 ? (
                               <span className={styles.typingText}>
-                                {chat.kind === "group" ? `${userById(typing[0]).name} is typing` : "typing"}
+                                {chat.kind === "group" ? typingLine(typing) : "typing"}
                                 <span className={styles.ellipsis}><i>.</i><i>.</i><i>.</i></span>
                               </span>
                             ) : emojify(`${channel ? `#${channel} · ` : ""}${preview(last, me)}`)}

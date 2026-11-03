@@ -312,6 +312,8 @@ function PrivacyPage({ leaving, onBack, onToast }: { leaving: boolean; onBack: (
   const { me } = useChat();
   const [prefs, set] = usePrefs(me);
   const [, bump] = useState(0);
+  // The phone only asks once: after that, a permission changes in its Settings app, which this stands in for.
+  const [system, setSystem] = useState<(typeof PERMS)[number] | null>(null);
   return (
     <SubPage title="Privacy & security" onBack={onBack} leaving={leaving}>
       <Group label="Online status" note={prefs.lastSeen === "everyone" ? "People you chat with see a green dot when you’re here." : "Nobody sees when you’re online, even in a chat you have open."}>
@@ -324,7 +326,7 @@ function PrivacyPage({ leaving, onBack, onToast }: { leaving: boolean; onBack: (
       <Group label="Who can invite me to groups" note={prefs.spaceInvites === "everyone" ? "Anyone can invite you to a group. You choose whether to join." : "Nobody can invite you to a group. You can still join with an invite link."}>
         <div className={s.segRow}><Segmented value={prefs.spaceInvites} options={[{ id: "everyone", label: "Everyone" }, { id: "nobody", label: "Nobody" }]} onChange={(v) => set({ spaceInvites: v })} /></div>
       </Group>
-      <Group label="App permissions" note="What you allowed when NOD asked. Reset one and NOD asks again next time it needs it.">
+      <Group label="App permissions" note="What you allowed when NOD asked. Your phone lets NOD ask only once, so Settings takes you to your phone’s Settings to turn one on or off.">
         {PERMS.map((p) => {
           const st = getPermission(p.kind);
           return (
@@ -333,11 +335,28 @@ function PrivacyPage({ leaving, onBack, onToast }: { leaving: boolean; onBack: (
               icon={<Tile tone={p.tone}>{p.icon}</Tile>}
               title={p.label}
               sub={st === "granted" ? "Allowed" : st === "denied" ? "Not allowed" : "Not asked yet"}
-              trailing={st === "prompt" ? <span /> : <button className={s.pill} onClick={() => { setPermission(p.kind, "prompt"); bump((n) => n + 1); onToast(`NOD will ask about ${p.label.toLowerCase()} again`); }}>Reset</button>}
+              trailing={st === "prompt" ? <span /> : <button className={s.pill} onClick={() => setSystem(p)}>Settings</button>}
             />
           );
         })}
       </Group>
+      {system && (
+        <Sheet title="Settings" onClose={() => setSystem(null)}>
+          <Group label="NOD" note="On a phone this is the Settings app, where Settings in NOD sends you. Back in NOD, the change is already there.">
+            <Row
+              icon={<Tile tone={system.tone}>{system.icon}</Tile>}
+              title={system.label}
+              trailing={(
+                <Toggle
+                  on={getPermission(system.kind) === "granted"}
+                  onChange={(v) => { setPermission(system.kind, v ? "granted" : "denied"); bump((n) => n + 1); onToast(`${system.label} ${v ? "allowed" : "turned off"} in Settings`); }}
+                  label={`Allow ${system.label.toLowerCase()}`}
+                />
+              )}
+            />
+          </Group>
+        </Sheet>
+      )}
     </SubPage>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { netFailureText } from "@/lib/chat/api";
 import { initials, TONES } from "@/lib/chat/avatar";
 import { Emoji, emojify } from "@/lib/chat/emoji";
 import {
@@ -8,13 +9,14 @@ import {
   saveItem, STRANGERS, suggestCollection, TOPIC_LABEL, type Activity, type PublicCollection, type PublicItem, type Ranked, type Topic,
 } from "@/lib/chat/explore";
 import { addMember, groupInfo, landingChannel } from "@/lib/chat/groups";
-import { isUnassigned, makeCollection, useMind } from "@/lib/chat/mind";
+import { isUnassigned, makeCollection, MIND_FAILED, useMind } from "@/lib/chat/mind";
 import { useChat, userById } from "@/lib/chat/store";
 import type { AvatarTone, Chat } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { DragScroll } from "./Composer";
 import { GroupBanner } from "./Groups";
 import { IconBack, IconBookmark, IconCheck, IconClose, IconFilter, IconFolder, IconOpen, IconSparkles, IconUserGroup } from "./Icons";
+import { ExploreSkeleton, LoadFailed, RowSkeleton, useFirstLoad, useSettled } from "./Loading";
 import Logo from "./Logo";
 import { BlockView, KIND_LABEL } from "./MindBlocks";
 import { FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, type MindFilter } from "./MindFilter";
@@ -80,6 +82,16 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
     setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), stay);
     setTimeout(() => setToast((t) => (t?.id === id ? null : t)), stay + 220);
   }, [setToast]);
+  // Explore comes from the server in the real app: the first visit this session waits for it, and may not get it.
+  const load = useFirstLoad(`explore:${me}`, { canFail: true });
+  // Saving or adding to Mind that didn't go through has already been put back (see updateMind): say so.
+  useEffect(() => {
+    const failed = (e: Event) => {
+      if ((e as CustomEvent<{ userId: string }>).detail.userId === me) flash(`${netFailureText()}. It wasn't saved to your Mind.`);
+    };
+    window.addEventListener(MIND_FAILED, failed);
+    return () => window.removeEventListener(MIND_FAILED, failed);
+  }, [me, flash]);
   const closeSheet = () => setSheet(null);
   const openPage = (id: string) => setPage({ id, leaving: false });
   const closePage = () => {
@@ -150,6 +162,7 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
     groups: groups.filter((r) => [r.value.name, groupInfo(r.value).description, ...(groupInfo(r.value).discover?.topics ?? [])].some((s) => s.toLowerCase().includes(q))),
     items: rankItems(mind, chats, me).filter((r) => r.value.item.title.toLowerCase().includes(q)).slice(0, 8),
   } : null;
+  const searching = useSettled(q);
 
   const tile = (r: Ranked<{ item: PublicItem; collection: PublicCollection }>) => (
     <ItemTile key={r.value.item.id} item={r.value.item} reason={r.reason} saved={!!saved[r.value.item.id]} onOpen={() => showItem(r.value.item, r.value.collection)} holdProps={itemMenu(r.value.item, r.value.collection)} />
@@ -231,6 +244,9 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
 
       <div className={styles.inboxBody}>
         <div className={styles.inboxScroll}>
+          {load.state === "loading" ? <ExploreSkeleton />
+            : load.state === "failed" ? <LoadFailed what="Explore" onRetry={load.retry} />
+            : <>
           {!q && (
             <div className={styles.chips} role="tablist">
               {FILTERS.map((f) => (
@@ -239,7 +255,9 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
             </div>
           )}
 
-          {found ? (
+          {found && searching.state === "loading" ? <RowSkeleton />
+          : found && searching.state === "failed" ? <LoadFailed what="Search results" onRetry={searching.retry} />
+          : found ? (
             <div className={x.stack}>
               {found.collections.length > 0 && <Section title="Collections">{colCards(found.collections)}</Section>}
               {found.groups.length > 0 && <Section title="Groups">{groupCards(found.groups)}</Section>}
@@ -273,6 +291,7 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
               {activity.length ? feed(activity) : <p className={styles.emptyInbox}>When people you chat with save or join something public, it shows here.</p>}
             </div>
           )}
+          </>}
         </div>
       </div>
 

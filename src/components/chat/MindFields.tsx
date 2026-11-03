@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Emoji } from "@/lib/chat/emoji";
 import { isIsbnQuery } from "@/lib/chat/links";
 import { findBooks, SOURCE_LABEL, type BookHit } from "@/lib/chat/lookup";
 import { MAX_ATTACHMENT_BYTES } from "@/lib/chat/media";
+import { allCurrencies, currencyFlag, currencyName } from "@/lib/chat/money";
+import { CURRENCIES } from "@/lib/chat/receipt";
 import FileTypeIcon from "./FileTypeIcon";
-import { IconCheck, IconClose, IconFileAdd, IconImageAdd, IconPaste, IconPlay, IconSearch } from "./Icons";
+import { IconCheck, IconChevronDown, IconClose, IconFileAdd, IconImageAdd, IconPaste, IconPlay, IconSearch } from "./Icons";
+import { BookSkeleton, RetryLine } from "./Loading";
 import { fileSize } from "./Media";
 import { toneFor } from "./MindBlocks";
 import f from "./mindfields.module.css";
@@ -278,6 +282,7 @@ export function BookSearch({ picked, onPick, onManual, autoFocus, children }: {
   const [q, setQ] = useState("");
   const [found, setFound] = useState<{ q: string; results: BookHit[] | null } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [tries, setTries] = useState(0);
   const pick = useRef(onPick);
   useEffect(() => { pick.current = onPick; });
   const query = q.trim();
@@ -297,7 +302,7 @@ export function BookSearch({ picked, onPick, onManual, autoFocus, children }: {
       });
     }, exact ? 0 : 320);
     return () => { live = false; clearTimeout(timer); };
-  }, [query]);
+  }, [query, tries]);
 
   const results = query.length >= 2 ? found?.results : null;
   const yourself = <button type="button" className={f.inlineLink} onClick={onManual}>add it yourself</button>;
@@ -342,15 +347,89 @@ export function BookSearch({ picked, onPick, onManual, autoFocus, children }: {
           {query.length < 2 ? (
             <p className={f.note}>Searches Apple Books and Open Library. You can also paste an ISBN, or a link to the book from any shop.</p>
           ) : found && found.results === null && !loading ? (
-            <p className={f.note}>The book catalogues didn’t answer. Try again in a moment, or {yourself}.</p>
+            <RetryLine onRetry={() => { setFound(null); setTries((n) => n + 1); }}>The book catalogues didn’t answer. Try again, or {yourself}.</RetryLine>
           ) : found && results && !results.length && !loading ? (
             <p className={f.note}>Nothing found for “{found.q}”. Try the author’s name, or {yourself}.</p>
-          ) : null}
+          ) : loading && !results?.length ? <BookSkeleton /> : null}
           {results && results.length > 0 && (
             <div className={f.bookList} role="listbox" aria-label="Books found">{results.slice(0, 8).map(row)}</div>
           )}
           {results && results.length > 0 && <button type="button" className={f.manual} onClick={onManual}>Not here? Add it yourself</button>}
         </>
+      )}
+    </div>
+  );
+}
+
+/* ===========================================================================
+   An amount, and the currency it's in
+   =========================================================================== */
+
+/**
+ * The amount, with its currency in front (flag, code, chevron). Tapping the
+ * currency opens a list to search: the ones receipts know first, then every
+ * other currency.
+ */
+export function AmountField({ value, currency, onChange, onCurrency, onEnter, autoFocus }: {
+  value: string;
+  currency: string;
+  onChange: (v: string) => void;
+  onCurrency: (code: string) => void;
+  onEnter?: () => void;
+  autoFocus?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const all = useMemo(() => allCurrencies(), []);
+  const query = q.trim().toLowerCase();
+  const shown = query ? all.filter((c) => c.toLowerCase().includes(query) || currencyName(c).toLowerCase().includes(query)) : all;
+  const pick = (code: string) => { onCurrency(code); setOpen(false); setQ(""); };
+  return (
+    <div className={f.fieldWrap}>
+      <div className={f.field}>
+        <button type="button" className={f.currency} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label={`Currency: ${currencyName(currency)}`}>
+          <Emoji char={currencyFlag(currency)} />
+          <b>{currency}</b>
+          <IconChevronDown size={14} />
+        </button>
+        <input
+          className={f.input}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") onEnter?.(); }}
+          inputMode="decimal"
+          placeholder="Amount"
+          aria-label="Amount"
+          data-autofocus={autoFocus || undefined}
+        />
+      </div>
+      {open && (
+        <div className={f.currencies}>
+          <label className={f.currencySearch}>
+            <IconSearch size={16} />
+            <input
+              autoFocus
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && shown.length) pick(shown[0]); }}
+              placeholder="Search currencies"
+              aria-label="Search currencies"
+            />
+          </label>
+          <div className={f.currencyList} role="listbox" aria-label="Currencies">
+            {shown.map((c, i) => (
+              <Fragment key={c}>
+                {!query && i === CURRENCIES.length && <p className={f.currencyHead}>All currencies</p>}
+                <button type="button" role="option" aria-selected={c === currency} onClick={() => pick(c)}>
+                  <Emoji char={currencyFlag(c)} />
+                  <span><b>{currencyName(c)}</b><small>{c}</small></span>
+                  {c === currency && <IconCheck size={14} />}
+                </button>
+              </Fragment>
+            ))}
+            {!shown.length && <p className={f.note}>No currency matches “{q.trim()}”.</p>}
+          </div>
+        </div>
       )}
     </div>
   );

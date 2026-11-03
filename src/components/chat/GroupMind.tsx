@@ -67,7 +67,7 @@ export default function GroupMind({ group, files, links, onJump, onToast }: {
   const who = chatIdentity(group, me, userById);
 
   const edit = () => {
-    updateMind(id, (m) => ensureShared(m, group).mind);
+    updateMind(id, (m) => ensureShared(m, group).mind, { local: true });
     startDraft(id);
     ui.openSheet(
       <MindEditor

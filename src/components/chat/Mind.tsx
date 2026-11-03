@@ -1,15 +1,18 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { netDown, netFailureText } from "@/lib/chat/api";
+import { DEFAULT_CURRENCY, lastCurrency, rememberCurrency } from "@/lib/chat/money";
 import { initials, TONES } from "@/lib/chat/avatar";
+import { TOPIC_LABEL, topicsIn } from "@/lib/chat/explore";
 import { Emoji, emojify, firstEmoji } from "@/lib/chat/emoji";
 import { findUrl, hostOf, normalizeUrl, parseVideo, splitUrl, videoProvider, videoThumb, watchUrl } from "@/lib/chat/links";
 import { findBooks, sameTitle, unfurl, type BookHit, type LinkMeta } from "@/lib/chat/lookup";
 import { isLanding, land } from "@/lib/chat/landing";
 import { toAttachment } from "@/lib/chat/media";
 import {
-  amendBlock, collectionItems, commitDraft, commitShareDraft, draftOf, dropDraft, intoUnassigned, isUnassigned, learnChat, locate, makeCollection, newId, nowMs,
+  amendBlock, collectionItems, commitDraft, commitShareDraft, draftOf, dropDraft, intoUnassigned, isUnassigned, learnChat, locate, makeCollection, MIND_FAILED, newId, nowMs,
   patchBlock, patchCollection, place, projectCollection, removeBlock, tagOf, tagsOf, todayKey, UNASSIGNED, useMind,
   type Block, type BlockKind, type Collection, type Mind, type MindView, type Step, type TaskStatus,
 } from "@/lib/chat/mind";
@@ -22,13 +25,14 @@ import { BlockView, KIND_LABEL, whenOf } from "./MindBlocks";
 import { DateField } from "./DatePicker";
 import { DragScroll } from "./Composer";
 import { LAND, LandingGlow, Poof, RECEIVE } from "./Landing";
-import { BookSearch, FilePicker, PasteButton, PasteField, PhotoPicker, VideoPreview } from "./MindFields";
+import { AmountField, BookSearch, FilePicker, PasteButton, PasteField, PhotoPicker, VideoPreview } from "./MindFields";
+import { FolderSkeleton, LoadFailed, RetryLine, RowSkeleton, upload as sendFile, Uploading, useFirstLoad, useSettled, VideoSkeleton } from "./Loading";
 import { ActionMenu, FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, ScopeSearch, ScopeTools, type MindFilter } from "./MindFilter";
 import PaletteEditor from "./PaletteEditor";
 import { SendSheet, ShareSheet } from "./Share";
 import {
   IconArrowRight, IconArrowUp, IconBack, IconBell, IconCheck, IconChevron, IconClose, IconEdit, IconGrid,
-  IconFolder, IconGlobe, IconInbox, IconLink, IconListView, IconMessage, IconOpen, IconPalette, IconPlus, IconShare, IconShelf, IconSmile, IconTrash, IconUserGroup, IconVideo,
+  IconFolder, IconGlobe, IconInbox, IconLink, IconListView, IconMessage, IconOpen, IconPalette, IconPlus, IconSearch, IconShare, IconShelf, IconSmile, IconTrash, IconUndo, IconUserGroup, IconVideo,
 } from "./Icons";
 import { HoldMenu, useHold, type HoldAction, type HoldBind, type HoldSrc } from "./MindHold";
 import Logo from "./Logo";
@@ -36,6 +40,7 @@ import { getPermission, PermissionAlert, Segmented, setPermission, Sheet, smooth
 import styles from "./chat.module.css";
 import fieldStyles from "./mindfields.module.css";
 import tray from "./tray.module.css";
+import sortCss from "./sort.module.css";
 
 /**
  * Mind: collections, each holding everything on one level, built one + (or one
@@ -125,6 +130,22 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
   const [folder, setFolder] = useState<{ id: string; leaving: boolean } | null>(null);
   const [sheet, setSheet] = useState<React.ReactNode>(null);
   const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean; actions?: ToastAction[] } | null>(null);
+  const flash = useCallback((text: string, actions?: ToastAction[]) => {
+    const id = nowMs();
+    setToast({ text, id, actions });
+    // A toast with actions (Undo) waits longer, so there's time to tap them.
+    const stay = actions ? 4200 : 1800;
+    setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), stay);
+    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), stay + 220);
+  }, []);
+  // A save that didn't go through has already been put back (see updateMind): say so.
+  useEffect(() => {
+    const failed = (e: Event) => {
+      if ((e as CustomEvent<{ userId: string }>).detail.userId === me) flash(`${netFailureText()}. Your change wasn't saved.`);
+    };
+    window.addEventListener(MIND_FAILED, failed);
+    return () => window.removeEventListener(MIND_FAILED, failed);
+  }, [me, flash]);
 
   // Switching person (Developer → Signed in as) starts from their Mind.
   const [seenMe, setSeenMe] = useState(me);
@@ -135,20 +156,15 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
     setQuery("");
   }
 
+  // Mind comes from the server in the real app: the first visit this session waits for it, and may not get it.
+  const home = useFirstLoad(`mind:${me}`, { canFail: true });
+
   if (!mind) return <div className={styles.inboxBody} />;
   const col = folder ? mind.collections.find((c) => c.id === folder.id) ?? null : null;
   if (folder && !col) setFolder(null);
 
   const ctx: Ctx = {
-    mind, col, update, me, store: me,
-    flash: (text, actions) => {
-      const id = nowMs();
-      setToast({ text, id, actions });
-      // A toast with actions (Undo) waits longer, so there's time to tap them.
-      const stay = actions ? 4200 : 1800;
-      setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), stay);
-      setTimeout(() => setToast((t) => (t?.id === id ? null : t)), stay + 220);
-    },
+    mind, col, update, me, store: me, flash,
     openFolder: (id) => {
       update((m) => ({ ...m, current: id }));
       setFolder({ id, leaving: false });
@@ -204,7 +220,9 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
 
       <div className={styles.inboxBody}>
         <div className={styles.inboxScroll} key={me}>
-          {q ? <SearchResults ctx={ctx} q={q} />
+          {home.state === "loading" ? <FolderSkeleton />
+            : home.state === "failed" ? <LoadFailed what="Your Mind" onRetry={home.retry} />
+            : q ? <SearchResults ctx={ctx} q={q} />
             : mind.collections.length ? <FolderGrid ctx={ctx} />
             : <EmptyMind ctx={ctx} />}
         </div>
@@ -864,6 +882,10 @@ function SearchResults({ ctx, q, within, keep }: {
     return !within || locate(ctx.mind, b.id)?.collection.id === within.id;
   });
   const total = folders.length + blocks.length;
+  // Search runs on the server in the real app: a moment of placeholder rows first.
+  const run = useSettled(q);
+  if (run.state === "loading") return <RowSkeleton />;
+  if (run.state === "failed") return <LoadFailed what="Search results" onRetry={run.retry} />;
   return (
     <div className={styles.mindStack}>
       {total === 0 ? (
@@ -1684,7 +1706,8 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
   const [typedA, setTypedA] = useState(false);
   const [typedB, setTypedB] = useState(false);
   const [url, setUrl] = useState("");
-  const [found, setFound] = useState<{ url: string; meta: LinkMeta | null } | null>(null);
+  const [found, setFound] = useState<{ url: string; meta: LinkMeta | null; failed?: boolean } | null>(null);
+  const [tries, setTries] = useState(0);
   const [book, setBook] = useState<BookHit | null>(null);
   const [byHand, setByHand] = useState(false);
   const [shelf, setShelf] = useState<Shelf>("want");
@@ -1693,11 +1716,16 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
   const [swatches, setSwatches] = useState<Swatch[]>(() => randomPalette(5));
   const [image, setImage] = useState<string>(SAMPLE_IMAGES[0]);
   const [upload, setUpload] = useState<File | null>(null);
+  // How far a photo or file has got on its way up, and whether it didn't make it.
+  const [sent, setSent] = useState<number | null>(null);
+  const [unsent, setUnsent] = useState(false);
   const [asking, setAsking] = useState<{ host: HTMLElement; answer: (ok: boolean) => void } | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const stepRef = useRef<HTMLInputElement>(null);
   const [remindAt, setRemindAt] = useState(() => soon("hour"));
   const [unit, setUnit] = useState("pages");
+  // An amount starts in the currency used last.
+  const [currency, setCurrency] = useState(lastCurrency);
   const where = nameOf(ctx.mind, collectionId);
   const info = KINDS.find((k) => k.kind === kind)!;
 
@@ -1707,11 +1735,14 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
   useEffect(() => {
     if (!link) return;
     let live = true;
-    const wait = setTimeout(() => { void unfurl(link).then((meta) => { if (live) setFound({ url: link, meta }); }); }, 300);
+    // Nothing back while the network is down is a failure, not a page without a title: it can be tried again.
+    const wait = setTimeout(() => { void unfurl(link).then((meta) => { if (live) setFound({ url: link, meta, failed: !meta && netDown() }); }); }, 300);
     return () => { live = false; clearTimeout(wait); };
-  }, [link]);
+  }, [link, tries]);
   const meta = link && found?.url === link ? found.meta : null;
   const looking = !!link && found?.url !== link;
+  const unread = !!link && found?.url === link && !!found.failed;
+  const reread = () => { setFound(null); setTries((n) => n + 1); };
   const title = typedA ? a : meta?.title || a;
   const channel = typedB ? b : meta?.author || b;
   const still = meta?.image ?? (video ? videoThumb(video) ?? undefined : undefined);
@@ -1721,7 +1752,7 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
     note: ["Title", "Write something…"],
     quote: ["The quote", "Who said it, or what it means"], flashcard: ["Front, e.g. gemütlich", "Back, e.g. cosy"],
     habit: ["A habit, e.g. Review for 10 minutes"],
-    amount: ["What for? e.g. Invoice 044", "From whom? e.g. Acme Co", "Amount in €"], date: ["What's happening? e.g. Pitch day"],
+    amount: ["What for? e.g. Invoice 044", "From whom? e.g. Acme Co"], date: ["What's happening? e.g. Pitch day"],
   };
   const simple = fields[kind];
   const ready = kind === "file" ? !!upload
@@ -1739,6 +1770,19 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
     const host = (from.closest('[role="dialog"]')?.parentElement ?? document.body) as HTMLElement;
     setAsking({ host, answer: (ok) => { setPermission("photos", ok ? "granted" : "denied"); setAsking(null); resolve(ok); } });
   });
+
+  // A photo or file goes up first; the item is only added once it's there.
+  const sending = kind === "file" ? upload : kind === "image" ? photo : null;
+  const sendUp = async () => {
+    if (!sending || sent !== null) return !sending;
+    setUnsent(false);
+    setSent(0);
+    const ok = await sendFile(sending.size, setSent);
+    setSent(null);
+    setUnsent(!ok);
+    return ok;
+  };
+  const submit = () => { void sendUp().then((ok) => { if (ok) void create(); }); };
 
   const create = async () => {
     const id = newId();
@@ -1778,7 +1822,10 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
       block = { ...base, value: Math.min(total, Math.max(0, Number(b) || 0)), total, unit: unit.trim() || undefined };
     }
     if (kind === "habit") block = { ...base, days: [] };
-    if (kind === "amount") block = { ...base, source: b.trim(), amount: Number(c.replace(",", ".")) || 0, paid: flag, at };
+    if (kind === "amount") {
+      block = { ...base, source: b.trim(), amount: Number(c.replace(",", ".")) || 0, currency, paid: flag, at };
+      rememberCurrency(currency);
+    }
     if (kind === "date") block = { ...base, at };
     if (kind === "palette") {
       const colors = swatches.map((s) => s.hex);
@@ -1803,14 +1850,14 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
     // No toast: the item landing in its collection says it was added.
     ctx.closeSheet();
   };
-  const enter = (e: React.KeyboardEvent) => { if (e.key === "Enter" && ready) void create(); };
+  const enter = (e: React.KeyboardEvent) => { if (e.key === "Enter" && ready) submit(); };
 
   return (
     <Sheet
       title={`${info.label} · ${where}`}
       onClose={ctx.closeSheet}
       onBack={() => ctx.openSheet(<MindAddSheet ctx={ctx} collectionId={collectionId} />)}
-      action={{ label: "Add", disabled: !ready, onClick: () => { void create(); } }}
+      action={{ label: sent !== null ? "Adding…" : "Add", disabled: !ready || sent !== null, onClick: () => { void create(); }, first: sending ? sendUp : undefined }}
     >
 
       {(kind === "link" || kind === "video") && (
@@ -1826,7 +1873,8 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
             busy={looking}
             onEnter={() => { if (ready) void create(); }}
           />
-          {kind === "video" && link && <VideoPreview image={still} duration={meta?.duration} site={video ? videoProvider(video) : meta?.site} />}
+          {kind === "video" && link && (looking && !still ? <VideoSkeleton /> : <VideoPreview image={still} duration={meta?.duration} site={video ? videoProvider(video) : meta?.site} />)}
+          {unread && <RetryLine onRetry={reread}>{netFailureText()}, so the link couldn’t be read. Type the title yourself, or try again.</RetryLine>}
           {(kind === "link" || link) && (
             <input
               className={`${styles.plainInput} ${styles.mindTitleInput}`}
@@ -1868,6 +1916,8 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
         <>
           {/* No title: a picture speaks for itself. Tags find it again. */}
           <PhotoPicker file={photo} onFile={setUpload} before={askPhotos} />
+          {photo && sent !== null && <Uploading name="your photo" value={sent} />}
+          {photo && unsent && <RetryLine onRetry={submit}>{netFailureText()}, so the photo didn’t upload.</RetryLine>}
           {!photo && (
             <>
               <p className={styles.sheetLabel}>Or use a sample</p>
@@ -1886,7 +1936,9 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
 
       {kind === "file" && (
         <>
-          <FilePicker file={upload} onFile={setUpload} />
+          <FilePicker file={upload} onFile={(file) => { setUpload(file); setUnsent(false); }} />
+          {upload && sent !== null && <Uploading name={upload.name} value={sent} />}
+          {upload && unsent && <RetryLine onRetry={submit}>{netFailureText()}, so {upload.name} didn’t upload.</RetryLine>}
           <input className={`${styles.plainInput} ${styles.mindTitleInput}`} placeholder="Name (optional)" value={a} onChange={(e) => setA(e.target.value)} onKeyDown={enter} aria-label="Name" />
         </>
       )}
@@ -1960,6 +2012,7 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
             : <input className={styles.plainInput} placeholder={simple[1]} value={b} onChange={(e) => setB(e.target.value)} inputMode={kind === "progress" ? "numeric" : undefined} aria-label={simple[1]} />)}
           {simple[2] && <input className={styles.plainInput} placeholder={simple[2]} value={c} onChange={(e) => setC(e.target.value)} inputMode={kind === "progress" || kind === "amount" ? "decimal" : undefined} aria-label={simple[2]} />}
           {kind === "date" && <DateField label="Date" value={at} onChange={setAt} />}
+          {kind === "amount" && <AmountField value={c} currency={currency} onChange={setC} onCurrency={setCurrency} onEnter={() => { if (ready) void create(); }} />}
           {kind === "amount" && <DateField label="Due" value={at} onChange={setAt} />}
           {kind === "amount" && <div className={styles.mindField}><span>Already paid</span><Toggle on={flag} onChange={setFlag} label="Already paid" /></div>}
         </>
@@ -2108,6 +2161,23 @@ function TagField({ value, suggestions, onChange }: { value: string[]; suggestio
   );
 }
 
+/** An amount's figure and currency, changed in its sheet. The figure is saved once it reads as a number. */
+function AmountEditor({ b, set }: { b: Block; set: (patch: Partial<Block>) => void }) {
+  const [text, setText] = useState(String(b.amount ?? ""));
+  return (
+    <AmountField
+      value={text}
+      currency={b.currency ?? DEFAULT_CURRENCY}
+      onChange={(v) => {
+        setText(v);
+        const n = Number(v.replace(",", "."));
+        if (v.trim() && Number.isFinite(n)) set({ amount: n });
+      }}
+      onCurrency={(code) => { set({ currency: code }); rememberCurrency(code); }}
+    />
+  );
+}
+
 /**
  * An item in detail, with what can be changed right there: the palette
  * maker, a date, a shelf, a status, the stepper. The item sheet shows it, and
@@ -2138,6 +2208,7 @@ export function BlockEditor({ b, set, onToggle }: { b: Block; set: (patch: Parti
         <div className={styles.mindDetail}><BlockView block={b} shape="detail" onToggle={onToggle} autoPlay /></div>
       )}
       {b.kind === "date" && <DateField label="Date" value={b.at ?? nowMs()} onChange={(at) => set({ at })} />}
+      {b.kind === "amount" && <AmountEditor b={b} set={set} />}
       {b.kind === "amount" && <DateField label="Due" value={b.at ?? nowMs()} onChange={(at) => set({ at })} />}
       {b.kind === "book" && <Segmented value={b.shelf ?? "want"} options={SHELVES} onChange={(v) => set({ shelf: v })} />}
       {b.kind === "todo" && b.status && <Segmented value={b.status} options={COLUMNS} onChange={(v) => set({ status: v, done: v === "done" })} />}
@@ -2248,101 +2319,353 @@ function NewPlace({ chip, onCreate }: { chip?: boolean; onCreate: (name: string)
   return chip ? field : <div className={styles.actionRow}><span className={styles.mindEmoji}><Emoji char={firstEmoji(name) ?? "📁"} /></span>{field}</div>;
 }
 
+/** How long a sorted card takes to fly off, or into the place it went. */
+const FLY_MS = 440;
+/** How far a card is dragged sideways before letting go sorts it. */
+const SWIPE_PX = 96;
+const FLY_CLASS = { right: "flyRight", left: "flyLeft", place: "flyPlace" } as const;
+
+/** Words too common to say where something belongs. */
+const STOP = new Set(["about", "with", "from", "into", "this", "that", "your", "what", "when", "find", "have", "will", "there", "their"]);
+const wordsOf = (text: string) => new Set((text.toLowerCase().match(/[a-zà-ÿß]{4,}/g) ?? []).filter((w) => !STOP.has(w)));
+const textOf = (b: Block) => [b.title, b.body, b.source, b.back, b.note, ...(b.tags ?? [])].filter(Boolean).join(" ");
+
 /**
- * Sorting Unassigned: everything waiting, one under the other, each with your
- * collections to pick from (or a new one, named right there). Pick a place for
- * as many as you like; Done moves them all at once, and anything skipped keeps
- * waiting. Saves from a chat teach Mind where that chat's saves go next time.
+ * Every collection, the likeliest place for `b` first, and the best guess
+ * when there's a real reason for one, with that reason: saves from its chat
+ * go there, it shares a tag, its title names the collection, words in it come
+ * up there, or it's about the same thing. Places picked this time round
+ * (`used`) and things of the same kind only break ties: they're no reason.
+ */
+function rankPlaces(mind: Mind, b: Block, places: Collection[], used: Record<string, number>) {
+  const text = textOf(b);
+  const mine = [...wordsOf(text)];
+  const topics = topicsIn(text);
+  const scored = places.map((c) => {
+    const items = collectionItems(mind, c);
+    const body = items.map(textOf).join(" ");
+    const theirs = wordsOf(body);
+    const name = wordsOf(c.name);
+    const tags = (b.tags ?? []).filter((t) => items.some((x) => x.tags?.includes(t)));
+    const hits = mine.filter((w) => theirs.has(w));
+    const about = topics.filter((t) => topicsIn(`${c.name} ${body}`).includes(t));
+    const reasons: [number, string][] = [
+      [b.ref && c.chatIds.includes(b.ref.chatId) ? 100 : 0, "Saves from this chat go here"],
+      [tags.length * 8, `Tagged ${tags[0]} there too`],
+      [mine.some((w) => name.has(w)) ? 12 : 0, `Its title says ${c.name}`],
+      [Math.min(hits.length, 4) * 3, `“${hits[0]}” comes up there too`],
+      [about.length * 5, `Also about ${about[0] ? TOPIC_LABEL[about[0]] : ""}`],
+    ];
+    const score = reasons.reduce((n, [x]) => n + x, 0);
+    const why = [...reasons].sort((p, q) => q[0] - p[0])[0][1];
+    const tie = (used[c.id] ?? 0) * 2 + Math.min(1, items.filter((x) => x.kind === b.kind).length / 10);
+    return { c, score, why, rank: score + tie };
+  }).sort((p, q) => q.rank - p.rank);
+  const top = scored[0];
+  return { ranked: scored.map((x) => x.c), guess: top && top.score >= 5 ? { c: top.c, why: top.why } : null };
+}
+
+/** One card sorted, so it can be undone: where it went (null for Later), and what changed with it. */
+type Sorted = {
+  id: string;
+  to: string | null;
+  /** A collection made for it. */
+  made?: string;
+  /** Which chats' saves each collection learned, before it taught them. */
+  chats?: Record<string, string[]>;
+  /** The last card's move waits for the sheet to close: undoing it just drops that. */
+  deferred?: boolean;
+};
+
+/**
+ * Sorting Unassigned like Tinder: one card, most of the sheet. Swipe right
+ * and it goes to the best guess, written on the card (a stamp with its name
+ * grows as you drag); swipe left and it's for Later, still in Unassigned.
+ * Any other collection is in the row under the card, likeliest first: tap
+ * it, or drag the card onto it. The row's search finds one among many, or
+ * makes a new one. Undo puts the last card back. With no real guess there's
+ * no swipe right: the card says to pick one below. When the last card has a
+ * place a check pops, the sheet closes and Unassigned goes away behind it.
+ * Saves from a chat teach Mind where that chat's saves go next time.
  */
 function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
   const { mind, update } = useMind(ctx.store);
-  /** Item → the collection picked for it. */
-  const [picks, setPicks] = useState<Record<string, string>>({});
-  /** Collections named here: made on Done, only if something goes in them. */
-  const [made, setMade] = useState<Collection[]>([]);
-  if (!mind) return null;
-  const waiting = mind.collections.find(isUnassigned);
-  const items = waiting ? collectionItems(mind, waiting) : [];
-  const places = [...mind.collections.filter((c) => !isUnassigned(c)), ...made];
-  const count = items.filter((b) => picks[b.id]).length;
-  const pick = (blockId: string, colId: string) => setPicks((p) => {
-    const next = { ...p };
-    if (next[blockId] === colId) delete next[blockId];
-    else next[blockId] = colId;
-    return next;
+  /** What was waiting when the sheet opened, in order. */
+  const [queue] = useState<string[]>(() => {
+    const u = ctx.mind.collections.find(isUnassigned);
+    return u ? collectionItems(ctx.mind, u).map((b) => b.id) : [];
   });
-  const all = (colId: string) => setPicks(Object.fromEntries(items.map((b) => [b.id, colId])));
+  const [at, setAt] = useState(0);
+  const [history, setHistory] = useState<Sorted[]>([]);
+  /** Places picked this time round: they move up the row. */
+  const [used, setUsed] = useState<Record<string, number>>({});
+  const [query, setQuery] = useState("");
+  /** Where the card is being dragged, and the place in the row it's over. */
+  const [drag, setDrag] = useState<{ dx: number; dy: number; over: string | null } | null>(null);
+  const [fly, setFly] = useState<{ how: "right" | "left" | "place"; x: number; y: number; to: string | null; from: { dx: number; dy: number } } | null>(null);
+  const grab = useRef<{ x: number; y: number } | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  /** The last move waits for the sheet to close, so Unassigned is seen going away. */
+  const last = useRef<(() => void) | null>(null);
 
-  const apply = () => {
-    const used = new Set(Object.values(picks));
-    land(...Object.keys(picks));
-    update((m) => {
-      let next: Mind = { ...m, collections: [...m.collections, ...made.filter((c) => used.has(c.id))] };
-      for (const b of items) {
-        const to = picks[b.id];
-        if (!to || !next.blocks[b.id]) continue;
-        next = place(next, b.id, { collectionId: to });
-        if (b.ref) next = learnChat(next, to, b.ref.chatId);
-      }
-      return next;
-    });
+  const rest = mind ? queue.slice(at).filter((id) => mind.blocks[id]) : [];
+  const b = mind && rest.length ? mind.blocks[rest[0]] : null;
+  const places = mind ? mind.collections.filter((c) => !isUnassigned(c)) : [];
+  const { ranked, guess } = mind && b ? rankPlaces(mind, b, places, used) : { ranked: places, guess: null };
+  const sorted = history.filter((h) => h.to).length;
+  const later = history.length - sorted;
+  const total = history.length + rest.length;
+  const finished = !!mind && !b && queue.length > 0;
+  const q = query.trim().toLowerCase();
+  const row = q ? ranked.filter((c) => c.name.toLowerCase().includes(q)) : ranked;
+  const offerNew = !!q && !places.some((c) => c.name.toLowerCase() === q);
+
+  /** Sorts the card: into `col`, or Later. It flies off the side it was swiped to, or into the place it was dropped on. */
+  const go = (col: Collection | null, { el, made }: { el?: Element | null; made?: boolean } = {}) => {
+    if (!b || !mind || fly) return;
+    const from = { dx: drag?.dx ?? 0, dy: drag?.dy ?? 0 };
+    const card = cardRef.current?.getBoundingClientRect();
+    const target = el?.getBoundingClientRect();
+    // From the card's resting place: the drag offset is added back in the animation.
+    const x = card && target ? target.left + target.width / 2 - (card.left + card.width / 2) + from.dx : 0;
+    const y = card && target ? target.top + target.height / 2 - (card.top + card.height / 2) + from.dy : 0;
+    setDrag(null);
+    setFly({ how: !col ? "left" : target ? "place" : "right", x, y, to: col?.id ?? null, from });
+    const { id, ref } = b;
+    const isLast = rest.length === 1;
+    const entry: Sorted = { id, to: col?.id ?? null, made: made ? col?.id : undefined, deferred: isLast && !!col };
+    if (col && ref) entry.chats = Object.fromEntries(mind.collections.filter((c) => c.id === col.id || c.chatIds.includes(ref.chatId)).map((c) => [c.id, c.chatIds]));
+    const move = () => {
+      if (!col) return;
+      land(id);
+      update((m) => {
+        let out = made && !m.collections.some((c) => c.id === col.id) ? { ...m, collections: [...m.collections, col] } : m;
+        out = place(out, id, { collectionId: col.id });
+        if (ref) out = learnChat(out, col.id, ref.chatId);
+        return out;
+      });
+    };
+    if (col) setUsed((u) => ({ ...u, [col.id]: (u[col.id] ?? 0) + 1 }));
+    if (entry.deferred) last.current = move;
+    setTimeout(() => {
+      if (!entry.deferred) move();
+      setFly(null);
+      setQuery("");
+      setHistory((h) => [...h, entry]);
+      setAt(queue.indexOf(id) + 1);
+    }, FLY_MS);
   };
-  const done = () => {
-    const left = items.length - count;
-    ctx.flash(left ? `Sorted ${count} · ${left} still waiting` : `All sorted: ${count} ${count === 1 ? "item has" : "items have"} a place`);
-    // Everything sorted: Unassigned goes away, so its screen slides out first.
-    if (!left && onDone) { onDone(); setTimeout(apply, 240); } else apply();
+
+  /** Puts the last card back on top, and back in Unassigned where it was. */
+  const undo = () => {
+    const e = history[history.length - 1];
+    if (!e || fly) return;
+    setHistory((h) => h.slice(0, -1));
+    if (e.deferred) last.current = null;
+    else if (e.to) {
+      update((m) => {
+        const after = queue.slice(queue.indexOf(e.id) + 1).find((id) => locate(m, id)?.unsorted);
+        let out = place(m, e.id, { collectionId: UNASSIGNED, beforeId: after ?? null });
+        const chats = e.chats;
+        if (chats) out = { ...out, collections: out.collections.map((c) => (chats[c.id] ? { ...c, chatIds: chats[c.id] } : c)) };
+        if (e.made) out = { ...out, collections: out.collections.filter((c) => c.id !== e.made || c.items.length) };
+        return out;
+      });
+    }
+    setAt(queue.indexOf(e.id));
   };
+
+  /* ---- dragging the card ---- */
+  const placeAt = (x: number, y: number) => {
+    const el = document.elementsFromPoint(x, y).map((n) => n.closest<HTMLElement>("[data-sort-place]")).find(Boolean);
+    return el?.dataset.sortPlace ?? null;
+  };
+  const onDown = (e: React.PointerEvent) => {
+    if (fly || e.button !== 0) return;
+    grab.current = { x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (!grab.current) return;
+    setDrag({ dx: e.clientX - grab.current.x, dy: e.clientY - grab.current.y, over: placeAt(e.clientX, e.clientY) });
+  };
+  const onUp = () => {
+    if (!grab.current) return;
+    grab.current = null;
+    const d = drag;
+    if (!d) return;
+    const chip = d.over ? document.querySelector(`[data-sort-place="${d.over}"]`) : null;
+    if (d.over === "new" && offerNew) go(quickCollection(query.trim(), places.length), { el: chip, made: true });
+    else if (d.over && d.over !== "new") go(places.find((c) => c.id === d.over) ?? null, { el: chip });
+    else if (d.dx > SWIPE_PX && guess) go(guess.c);
+    else if (d.dx < -SWIPE_PX) go(null);
+    else setDrag(null);
+  };
+
+  // On a keyboard: → the best guess, ← Later, ⌘Z undo.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement | null)?.closest("input, textarea")) return;
+      if ((e.metaKey || e.ctrlKey) && e.key === "z") { e.preventDefault(); undo(); return; }
+      if (!b || fly) return;
+      if (e.key === "ArrowRight" && guess) { e.preventDefault(); go(guess.c); }
+      if (e.key === "ArrowLeft") { e.preventDefault(); go(null); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  // Runs as the sheet starts closing, however it closes: the last move, and Unassigned's screen slides out first when it's about to go.
+  const settle = () => {
+    const move = last.current;
+    last.current = null;
+    if (!move) return;
+    if (!later && onDone) { onDone(); setTimeout(move, 240); } else move();
+  };
+
+  if (!mind) return null;
+  const allDone = finished && !later;
+  const dx = fly ? fly.from.dx : drag?.dx ?? 0;
+  const pull = Math.min(1, Math.abs(dx) / SWIPE_PX);
+  const cardStyle = {
+    ["--dx" as string]: `${dx}px`,
+    ["--dy" as string]: `${fly ? fly.from.dy : drag?.dy ?? 0}px`,
+    ["--rot" as string]: `${dx / 18}deg`,
+    ["--fx" as string]: `${fly?.x ?? 0}px`,
+    ["--fy" as string]: `${fly?.y ?? 0}px`,
+  };
+  const undoBtn = (
+    <button className={sortCss.undo} onClick={undo} disabled={!history.length || !!fly} title="Undo (⌘Z)">
+      <IconUndo size={15} /> Undo
+    </button>
+  );
 
   return (
-    <Sheet title="Sort" onClose={ctx.closeSheet} action={{ label: "Done", disabled: !count, onClick: done }}>
-      {!items.length ? <p className={styles.emptyInbox}>Nothing is waiting to be sorted.</p> : (
-        <>
-          <p className={styles.sheetNote}>
-            {count === items.length ? `${count === 1 ? "It has" : `All ${count} have`} a place. Done moves ${count === 1 ? "it" : "them"} there.`
-              : count ? `${count} of ${items.length} have a place. Anything you skip stays in Unassigned.`
-              : "Pick a collection for each one, then Done moves them. Anything you skip stays in Unassigned."}
-          </p>
-          {places.length > 0 && items.length > 1 && (
-            <div className={styles.mindSortAll}>
-              <span>All to</span>
-              <div className={styles.mindSortPlaces}>
-                {places.map((c) => (
-                  <button key={c.id} className={`${styles.choice} ${items.every((b) => picks[b.id] === c.id) ? styles.choiceOn : ""}`} onClick={() => all(c.id)}>
-                    <Emoji char={c.emoji} /> {c.name}
-                  </button>
-                ))}
+    <Sheet title="Sort" onClose={ctx.closeSheet} onClosing={settle}>
+      {(close) => !queue.length ? <p className={styles.emptyInbox}>Nothing is waiting to be sorted.</p> : finished ? (
+        <div className={sortCss.done}>
+          <AutoClose close={close} after={allDone ? 1500 : 1900} />
+          <span className={`${sortCss.doneMark} ${allDone ? "" : sortCss.doneMarkSome}`}>
+            {allDone ? <IconCheck size={30} /> : <IconInbox size={26} />}
+            <Poof />
+          </span>
+          <b>{allDone ? "All sorted" : sorted ? `${sorted} sorted` : "Nothing sorted"}</b>
+          <small>
+            {allDone
+              ? `${sorted === 1 ? "It has" : `All ${sorted} have`} a place. Unassigned is cleared.`
+              : `${later} still ${later === 1 ? "waits" : "wait"} in Unassigned for later.`}
+          </small>
+          {undoBtn}
+        </div>
+      ) : b && (
+        <div className={sortCss.deck}>
+          <div className={sortCss.progress}>
+            <span>{history.length + 1} of {total}</span>
+            <i aria-hidden="true"><b style={{ width: `${(history.length / total) * 100}%` }} /></i>
+            {undoBtn}
+          </div>
+
+          <div className={sortCss.stage}>
+            {rest.length > 2 && <span className={`${sortCss.under} ${sortCss.under2}`} aria-hidden="true" />}
+            {rest.length > 1 && <span className={sortCss.under} aria-hidden="true" />}
+            <div
+              key={b.id}
+              ref={cardRef}
+              className={`${sortCss.card} ${drag ? sortCss.dragging : ""} ${drag?.over ? sortCss.overPlace : ""} ${fly ? sortCss[FLY_CLASS[fly.how]] : ""}`}
+              style={cardStyle}
+              onPointerDown={onDown}
+              onPointerMove={onMove}
+              onPointerUp={onUp}
+              onPointerCancel={() => { grab.current = null; setDrag(null); }}
+              aria-roledescription="card"
+            >
+              {guess && (
+                <span className={`${sortCss.stamp} ${sortCss.stampYes}`} style={{ opacity: dx > 0 ? pull : 0, ["--s" as string]: 0.7 + pull * 0.4, ["--tone" as string]: guess.c.tone }} aria-hidden="true">
+                  <Emoji char={guess.c.emoji} /> {guess.c.name}
+                </span>
+              )}
+              <span className={`${sortCss.stamp} ${sortCss.stampNo}`} style={{ opacity: dx < 0 ? pull : 0, ["--s" as string]: 0.7 + pull * 0.4 }} aria-hidden="true">Later</span>
+              <div className={sortCss.cardBody}>
+                <span className={sortCss.cardKind}>{KIND_LABEL[b.kind]}</span>
+                <BlockView block={b} shape="detail" />
+              </div>
+              <div className={`${sortCss.cardGuess} ${guess ? "" : sortCss.noGuess}`} style={guess ? { ["--tone" as string]: guess.c.tone } : undefined}>
+                {guess ? (
+                  <>
+                    <span className={sortCss.guessIcon}><Emoji char={guess.c.emoji} /></span>
+                    <span className={sortCss.guessText}><b>{guess.c.name}</b><small>{guess.why}</small></span>
+                    <em aria-hidden="true">Swipe <IconArrowRight size={13} /></em>
+                  </>
+                ) : (
+                  <span className={sortCss.guessText}><b>No clear place for this</b><small>Pick a collection below</small></span>
+                )}
               </div>
             </div>
-          )}
-          <ol className={styles.mindSortList}>
-            {items.map((b) => {
-              const to = places.find((c) => c.id === picks[b.id]);
-              return (
-                <li key={b.id} className={`${styles.mindSortItem} ${to ? styles.mindSortDone : ""}`}>
-                  <div className={styles.mindSortWhat}>
-                    <BlockView block={b} shape={b.kind === "chat" ? "tile" : "row"} />
-                  </div>
-                  <div className={styles.mindSortPlaces} role="group" aria-label={`Where ${b.title || KIND_LABEL[b.kind]} goes`}>
-                    {places.map((c) => (
-                      <button key={c.id} className={`${styles.choice} ${to?.id === c.id ? styles.choiceOn : ""}`} aria-pressed={to?.id === c.id} onClick={() => pick(b.id, c.id)}>
-                        <Emoji char={c.emoji} /> {c.name}
-                      </button>
-                    ))}
-                    <NewPlace chip onCreate={(name) => {
-                      const c = quickCollection(name, places.length);
-                      setMade((x) => [...x, c]);
-                      setPicks((p) => ({ ...p, [b.id]: c.id }));
-                    }} />
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        </>
+          </div>
+
+          <div className={sortCss.row} aria-label="Collections, likeliest first">
+            <label className={sortCss.find}>
+              <IconSearch size={15} />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || !q) return;
+                  if (row.length === 1 && !offerNew) go(row[0], { el: document.querySelector(`[data-sort-place="${row[0].id}"]`) });
+                  else if (offerNew) go(quickCollection(query.trim(), places.length), { el: document.querySelector('[data-sort-place="new"]'), made: true });
+                }}
+                placeholder="Find or make"
+                aria-label="Find a collection, or name a new one"
+                enterKeyHint="go"
+              />
+            </label>
+            {row.map((c) => (
+              <button
+                key={c.id}
+                data-sort-place={c.id}
+                className={`${sortCss.place} ${guess?.c.id === c.id ? sortCss.placeGuess : ""} ${drag?.over === c.id ? sortCss.placeOver : ""} ${fly?.to === c.id ? sortCss.took : ""}`}
+                style={{ ["--tone" as string]: c.tone }}
+                onClick={(e) => go(c, { el: e.currentTarget })}
+                disabled={!!fly}
+              >
+                <Emoji char={c.emoji} /> {c.name}
+              </button>
+            ))}
+            {offerNew && (
+              <button
+                data-sort-place="new"
+                className={`${sortCss.place} ${sortCss.placeNew} ${drag?.over === "new" ? sortCss.placeOver : ""}`}
+                onClick={(e) => go(quickCollection(query.trim(), places.length), { el: e.currentTarget, made: true })}
+                disabled={!!fly}
+              >
+                <IconPlus size={14} /> Create “{query.trim()}”
+              </button>
+            )}
+          </div>
+
+          <div className={sortCss.actions}>
+            <button className={sortCss.later} onClick={() => go(null)} disabled={!!fly}>
+              <IconBack size={16} /> Later
+            </button>
+            {guess && (
+              <button className={sortCss.yes} style={{ ["--tone" as string]: guess.c.tone }} onClick={() => go(guess.c)} disabled={!!fly}>
+                <Emoji char={guess.c.emoji} /> {guess.c.name} <IconArrowRight size={16} />
+              </button>
+            )}
+          </div>
+        </div>
       )}
     </Sheet>
   );
+}
+
+/** Closes the sheet on its own after a moment: the end of sorting shows its check, then goes. */
+function AutoClose({ close, after }: { close: (after?: () => void) => void; after: number }) {
+  useEffect(() => {
+    const t = setTimeout(() => close(), after);
+    return () => clearTimeout(t);
+  }, [close, after]);
+  return null;
 }
 
 /**

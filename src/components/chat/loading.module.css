@@ -1,0 +1,137 @@
+/* ==========================================================================
+   Loading and failing: grey shapes that shimmer while something loads (the
+   same look as the inbox's skeleton rows), and what shows in its place when
+   it couldn't load.
+   ========================================================================== */
+
+.bone {
+  display: block;
+  flex-shrink: 0;
+  border-radius: var(--r-xs);
+  background: linear-gradient(90deg, var(--fill) 25%, color-mix(in srgb, var(--fill) 40%, var(--bg)) 50%, var(--fill) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+.lines { flex: 1; min-width: 0; display: grid; gap: 7px; }
+
+/* Mind home: the section bar and two columns of folder cards. */
+.folders { display: grid; gap: 14px; padding: 4px 0 16px; }
+.folderBar { display: flex; align-items: center; justify-content: space-between; }
+.folderGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.folder {
+  display: grid;
+  gap: 12px;
+  height: 154px;
+  padding: 12px;
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.folder .lines { align-content: start; }
+.peeks { display: flex; gap: 4px; align-self: end; }
+
+/* Search and book results: a row per result. */
+.rows { display: grid; gap: 14px; padding: 6px 0 12px; }
+.row { display: flex; align-items: center; gap: 12px; }
+
+/* Explore: the top pick, then shelves. */
+.explore { display: grid; gap: 16px; padding: 4px 0 24px; }
+.hero { display: grid; overflow: hidden; border-radius: var(--r-xl, 28px); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
+.heroCover { width: 100%; }
+.heroBody { display: grid; gap: 8px; padding: 16px; }
+.heroPill { justify-self: end; margin-top: 4px; }
+.heading { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+.strip { display: flex; gap: 10px; overflow: hidden; }
+
+/* A video's still while the link is read. */
+.video { aspect-ratio: 16 / 9; height: auto; }
+
+/* In place of what couldn't load. */
+.failed {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 56px 24px;
+  text-align: center;
+}
+.failedIcon {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 6px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink-2);
+}
+.failed b { font: var(--t-headline); color: var(--ink); }
+.failed small { max-width: 260px; font: var(--t-footnote); color: var(--ink-3); text-wrap: pretty; }
+.retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  margin-top: 12px;
+  padding: 0 18px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: var(--bg);
+  font: var(--t-subhead);
+  font-weight: var(--w-emph);
+  cursor: pointer;
+}
+.retry:active { transform: scale(.96); }
+
+/* A lookup that didn't answer, on one line. */
+.retryLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--danger, #DC2626) 7%, transparent);
+  font: var(--t-footnote);
+  color: var(--ink-2);
+}
+.retryLine span { flex: 1; min-width: 0; text-wrap: pretty; }
+.retryLine button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: var(--w-emph);
+  cursor: pointer;
+}
+
+/* An upload on its way: a ring that fills, with how far inside. */
+.uploading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--fill);
+  font: var(--t-footnote);
+  color: var(--ink-2);
+}
+.uploading span:last-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ring { position: relative; display: inline-grid; place-items: center; flex-shrink: 0; }
+.ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 3; }
+.ringTrack { stroke: color-mix(in srgb, var(--ink) 10%, transparent); }
+.ringFill { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .1s linear; }
+.ring b { font-size: 11px; font-weight: var(--w-emph); color: var(--ink); font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bone { animation: none; }
+  .ringFill { transition: none; }
+}

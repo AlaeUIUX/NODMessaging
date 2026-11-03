@@ -377,3 +377,61 @@
   .swatch, .photo img, .video img, .bookRow { animation: none; }
   .swatch { transition: none; }
 }
+
+/* ---- an amount and its currency ---- */
+.currency {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 36px;
+  margin-left: -6px;
+  padding: 0 8px 0 10px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink-2);
+  font: var(--t-subhead);
+  cursor: pointer;
+}
+.currency b { color: var(--ink); font-weight: var(--w-emph); font-variant-numeric: tabular-nums; }
+.currency:active { transform: scale(.96); }
+.currencies {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), 0 8px 24px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.currencySearch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink-3);
+}
+.currencySearch input { flex: 1; width: 0; min-width: 0; border: none; outline: none; background: transparent; color: var(--ink); font: var(--t-body); }
+.currencyList { display: grid; max-height: 248px; overflow-y: auto; overscroll-behavior: contain; }
+.currencyList button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.currencyList button:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.currencyList button[aria-selected="true"] { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.currencyList button span { flex: 1; min-width: 0; display: grid; }
+.currencyList b { font: var(--t-subhead); font-weight: var(--w-emph); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.currencyList small { font: var(--t-caption1); color: var(--ink-3); }
+.currencyHead { margin: 8px 10px 2px; font: var(--t-caption1); font-weight: var(--w-emph); color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }

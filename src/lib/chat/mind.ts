@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
+import { netDown } from "./api";
 import type { Attachment } from "./types";
 
 /**
@@ -78,6 +79,8 @@ export interface Block {
   duration?: string;
   size?: number;
   amount?: number;
+  /** Amounts: the currency, as an ISO code (USD). None means euros. */
+  currency?: string;
   paid?: boolean;
   /** Amounts: when it's due. Dates: the day itself. Reminders: when to remind. */
   at?: number;
@@ -548,13 +551,42 @@ export function mindOf(userId: string): Mind {
   }
   return all[userId];
 }
-export function updateMind(userId: string, fn: (m: Mind) => Mind) {
-  // Read, change and write in one go, from what's stored right now.
+/** Fired on window when a save to Mind didn't go through and was put back; `detail.userId` says whose Mind. */
+export const MIND_FAILED = "nod:mind-failed";
+/** Saves waiting to fail, by Mind: what that Mind was before the first of them, and when it's put back. */
+const failing = new Map<string, { before: Mind; timer: ReturnType<typeof setTimeout> }>();
+
+/**
+ * Read, change and write in one go, from what's stored right now. The change
+ * shows at once, as it will in the app; if the network is down (or failing on
+ * purpose, from the developer panel) the save "fails" a moment later and Mind
+ * is put back the way it was, then MIND_FAILED tells the screen to say so.
+ * Copies being edited (drafts) never fail: they're only on this phone until
+ * they're saved. `local` is for changes that never go to the server.
+ */
+export function updateMind(userId: string, fn: (m: Mind) => Mind, { local = false }: { local?: boolean } = {}) {
   load(true);
-  const next = fn(mindOf(userId));
+  const before = mindOf(userId);
+  const next = fn(before);
   cache = { ...cache!, [userId]: next };
   write();
   notify();
+  if (local || userId.startsWith("draft:") || !netDown()) return;
+  // Quick changes in a row are one failure: back to before the first, once the last has "failed".
+  const pending = failing.get(userId);
+  if (pending) clearTimeout(pending.timer);
+  const base = pending?.before ?? before;
+  failing.set(userId, {
+    before: base,
+    timer: setTimeout(() => {
+      failing.delete(userId);
+      load(true);
+      cache = { ...cache!, [userId]: base };
+      write();
+      notify();
+      window.dispatchEvent(new CustomEvent(MIND_FAILED, { detail: { userId } }));
+    }, 400 + Math.random() * 200),
+  });
 }
 /*
  * Editing a Mind that isn't yours alone (a group's) happens on a copy, kept in
@@ -663,7 +695,7 @@ export function peopleMinds(): [string, Mind][] {
 export function amendBlock(storeId: string, blockId: string, fn: (b: Block) => Partial<Block> | null) {
   const b = (load(true)[storeId] as Mind | undefined)?.blocks?.[blockId];
   const patch = b ? fn(b) : null;
-  if (patch) updateMind(storeId, (m) => (m.blocks[blockId] ? patchBlock(m, blockId, patch) : m));
+  if (patch) updateMind(storeId, (m) => (m.blocks[blockId] ? patchBlock(m, blockId, patch) : m), { local: true });
 }
 
 export function useMind(userId: string) {

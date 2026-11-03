@@ -6,7 +6,7 @@ import { can, canPost, groupInfo, groupOf, roleNames, visibleChannels, writeLast
 import { effectiveRule, isQuiet, useMutes } from "@/lib/chat/mutes";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { allPeople } from "@/lib/chat/people";
-import { useChat, userById } from "@/lib/chat/store";
+import { typingLine, useChat, userById } from "@/lib/chat/store";
 import { TONES } from "@/lib/chat/avatar";
 import {
   canBroadcast, emptyLive, isCommand, isOnAir, reaches, staffing, zoneByChannel, zoneById,
@@ -43,7 +43,8 @@ import { openItems, openState } from "@/lib/chat/open";
 import { newProject, newTask, parseTaskCommand, projectsOf } from "@/lib/chat/project";
 import { emojify } from "@/lib/chat/emoji";
 import { land } from "@/lib/chat/landing";
-import { saveToMind, UNASSIGNED } from "@/lib/chat/mind";
+import { MIND_FAILED, saveToMind, UNASSIGNED } from "@/lib/chat/mind";
+import { netFailureText } from "@/lib/chat/api";
 import { fly } from "./flight";
 import { MindMark } from "./Landing";
 import { MoveSheet } from "./Mind";
@@ -282,6 +283,14 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     setToast((t) => (t ? { ...t, leaving: true } : t));
     setTimeout(() => setToast(null), 220);
   };
+  // Save to Mind that didn't go through: Mind has already put it back (see updateMind), so take back "Saved".
+  useEffect(() => {
+    const failed = (e: Event) => {
+      if ((e as CustomEvent<{ userId: string }>).detail.userId === me) flash(`${netFailureText()}. It wasn't saved to Mind.`);
+    };
+    window.addEventListener(MIND_FAILED, failed);
+    return () => window.removeEventListener(MIND_FAILED, failed);
+  }, [me, flash]);
 
   /** Asks for a permission the way the OS would: once, then remembered. */
   const ask = useCallback((kind: PermissionKind) => new Promise<boolean>((resolve) => {
@@ -602,7 +611,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   );
   const firstName = identity.label.split(" ")[0];
   const presence = typing.length
-    ? chat.kind === "group" ? `${userById(typing[0]).name} is typing…` : "typing…"
+    ? chat.kind === "group" ? `${typingLine(typing)}…` : "typing…"
     : o
       // An Operation's chat says which channel this is (it has no channel bar); the day lives on its page.
       ? (channel ? `#${channel.name}` : "")
@@ -650,10 +659,22 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
       <div className={styles.edgeTop} data-edge-top />
 
       <header className={styles.chatHeader}>
-        <div className={`${styles.headerSide} ${pinCount ? styles.headerWide : ""}`}>
+        {/* The pin sits beside Back: two buttons a side, so the name keeps its room even on the smallest phones. */}
+        <div className={styles.headerSide}>
           <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => onBack()} aria-label={o && chat.id !== o.group.id ? "Back to #general" : "Back to messages"}>
             <IconBack />
           </button>
+          {pinCount > 0 && (
+            <button
+              className={`${styles.circleBtn} ${styles.glass} ${styles.pinBtn}`}
+              data-pin-target
+              aria-label={`Pinned messages (${pinCount})`}
+              onClick={openPins}
+            >
+              <IconPin />
+              {pinCount > 1 && <em className={styles.pinCount}>{pinCount}</em>}
+            </button>
+          )}
         </div>
         {/* The name opens the contact page (an Operation's: its page); a blue dot means something here is still open. */}
         <button
@@ -669,18 +690,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
           </span>
           <span className={`${styles.tcPresence} ${typing.length ? styles.isTyping : ""}`}>{quiet && !typing.length && <IconBellOff size={11} />} {presence}</span>
         </button>
-        <div className={`${styles.headerSide} ${styles.headerEnd} ${pinCount ? styles.headerWide : ""}`}>
-          {pinCount > 0 && (
-            <button
-              className={`${styles.circleBtn} ${styles.glass} ${styles.pinBtn}`}
-              data-pin-target
-              aria-label={`Pinned messages (${pinCount})`}
-              onClick={openPins}
-            >
-              <IconPin />
-              {pinCount > 1 && <em className={styles.pinCount}>{pinCount}</em>}
-            </button>
-          )}
+        <div className={`${styles.headerSide} ${styles.headerEnd}`}>
           {o ? <>
             {/* An Operation: the radio, then the menu (zones, channels, people) at the far right. Its board lives on the Operation page. */}
             <RadioButton groupId={o.group.id} onOpen={openRadio} />
