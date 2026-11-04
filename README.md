@@ -12,6 +12,7 @@ This repo is the interactive prototype. It's live at
 | ----- | ---------- |
 | `/`   | The chat app, behind a landing stage. `/?as=charles` signs a tab in as Charles, so two tabs can talk. |
 | `/chat` | Redirects to `/`. |
+| `/updates` | What changed this week: short clips of the latest prototype changes, for the team. |
 
 ## Running it
 
