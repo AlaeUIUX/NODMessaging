@@ -621,7 +621,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     at: m.pin.at,
     text: `${m.pin.by === me ? "You" : userById(m.pin.by).name} pinned a message`,
     onTap: () => jumpTo(m.id),
-  }] : []);
+  }] : []).sort((x, y) => x.at - y.at); // pins come newest first; the thread reads oldest first
   const firstName = identity.label.split(" ")[0];
   const presence = typing.length
     ? chat.kind === "group" ? typingLine(typing) : "typing"
