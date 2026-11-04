@@ -2,6 +2,8 @@
 
 import { useId, type ReactNode } from "react";
 import { dayKey } from "@/lib/chat/mind";
+import { moneyParts } from "@/lib/chat/money";
+import { money } from "@/lib/chat/ops";
 import type { Chat, Message } from "@/lib/chat/types";
 import { IconChevron } from "./Icons";
 import s from "./activity.module.css";
@@ -92,12 +94,14 @@ export function Trend({ current, previous }: { current: number; previous: number
 }
 
 /** Big euros, small muted cents — the mockup's own number treatment, for the hero and the balance tiles. */
-export function BigMoney({ cents }: { cents: number }) {
-  const neg = cents < 0;
-  const abs = Math.abs(cents);
-  const euros = Math.floor(abs / 100);
-  const c = Math.round(abs % 100);
-  return <>{neg ? "-" : ""}€{euros}<span className={s.cents}>.{c.toString().padStart(2, "0")}</span></>;
+/** A money row in its own currency ("CHF 42.00"); when that isn't the Dashboard's, its detail says what it comes to ("≈ €44.70"). */
+export const rowMoney = (r: { original: number; currency: string }) => money(r.original, r.currency);
+export const rowDetail = (detail: string, r: { amount: number; currency: string }, main: string) =>
+  r.currency === main ? detail : `${detail} · ≈ ${money(r.amount, main)}`;
+
+export function BigMoney({ cents, currency = "EUR", approx }: { cents: number; currency?: string; /** Converted from other currencies: "≈". */ approx?: boolean }) {
+  const parts = moneyParts(cents, currency);
+  return <>{approx && <span className={s.cents}>≈ </span>}{parts.main}{parts.cents && <span className={s.cents}>{parts.cents}</span>}</>;
 }
 
 /** Catmull-Rom-style smoothing through a set of points — the same curve the mockup draws its spend line with. */

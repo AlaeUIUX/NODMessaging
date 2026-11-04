@@ -20,12 +20,13 @@ import { allPeople, enablePeople, personById, usePeopleVersion } from "./people"
 import { addMember, canPost, cancelInvite, groupInfo, groupOf, invite, newGroupInfo, setMemberRoles, syncChannels } from "./groups";
 import { findLink } from "./operation";
 import { opDispatch } from "./opstore";
+import { activePins, isPinned, PIN_FOR_DEFAULT, PIN_LIMIT, pinMs } from "./pins";
 import { buildSeedState, CHATS } from "./seed";
 import { localStorageAdapter, readKey } from "./storage";
 import {
   createBroadcastTransport, NULL_TRANSPORT, PRESENCE_INTERVAL_MS, PRESENCE_TIMEOUT_MS, samePeers, type Peer,
 } from "./transport";
-import type { Attachment, AvatarTone, Card, CardOp, Chat, ChatState, ChatTransport, DeliveryStatus, Message, TransportEvent } from "./types";
+import type { Attachment, AvatarTone, Card, CardOp, Chat, ChatState, ChatTransport, DeliveryStatus, Message, MessagePin, TransportEvent } from "./types";
 
 /**
  * One id per browsing context, fixed at module load — two tabs get different
@@ -56,7 +57,7 @@ type Action =
   | { type: "react"; chatId: string; messageId: string; emoji: string; userId: string; op: "add" | "remove" }
   | { type: "edit"; chatId: string; messageId: string; body: string; editedAt: number }
   | { type: "delete"; chatId: string; messageId: string; deletedAt: number }
-  | { type: "pin"; chatId: string; messageId: string; pinned: boolean }
+  | { type: "pin"; chatId: string; messageId: string; pinned: boolean; pin?: MessagePin }
   | { type: "card"; chatId: string; messageId: string; card: Card }
   | { type: "card-op"; chatId: string; messageId: string; op: CardOp }
   | { type: "load-earlier"; chatId: string }
@@ -153,7 +154,7 @@ function reducer(state: State, action: Action): State {
 
     case "pin":
       return mapMessages(state, action.chatId, (m) =>
-        m.id === action.messageId ? { ...m, pinned: action.pinned } : m,
+        m.id === action.messageId ? { ...m, pinned: action.pinned, pin: action.pinned ? action.pin : undefined } : m,
       );
 
     case "add-chat": {
@@ -280,7 +281,8 @@ interface ChatContextValue {
   toggleReaction: (message: Message, emoji: string) => void;
   editMessage: (message: Message, body: string) => void;
   deleteMessage: (message: Message) => void;
-  togglePin: (message: Message) => void;
+  /** Pins for `forMs` (or unpins). A fourth pin in a chat takes the oldest one's place. */
+  togglePin: (message: Message, forMs?: number) => void;
   loadEarlier: (chatId: string) => void;
   hasEarlier: (chatId: string) => boolean;
   setTyping: (chatId: string, isTyping: boolean) => void;
@@ -526,6 +528,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             chatId: event.chatId,
             messageId: event.messageId,
             pinned: event.pinned,
+            pin: event.pin,
           });
           break;
         case "card":
@@ -998,10 +1001,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   );
 
   const togglePin = useCallback<ChatContextValue["togglePin"]>(
-    (message) => {
-      const pinned = !message.pinned;
-      dispatch({ type: "pin", chatId: message.chatId, messageId: message.id, pinned });
-      publish({ type: "pin", chatId: message.chatId, messageId: message.id, pinned });
+    (message, forMs = pinMs(PIN_FOR_DEFAULT)) => {
+      const set = (m: Message, pinned: boolean, pin?: MessagePin) => {
+        dispatch({ type: "pin", chatId: m.chatId, messageId: m.id, pinned, pin });
+        publish({ type: "pin", chatId: m.chatId, messageId: m.id, pinned, pin });
+      };
+      if (isPinned(message)) return set(message, false);
+      const now = Date.now();
+      const pins = activePins(latest.current.messages[message.chatId] ?? [], now);
+      pins.slice(PIN_LIMIT - 1).forEach((oldest) => set(oldest, false));
+      set(message, true, { by: meRef.current, at: now, until: now + forMs });
     },
     [publish],
   );

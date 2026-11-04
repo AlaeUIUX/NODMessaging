@@ -47,6 +47,7 @@ function backfillMessage(raw: LegacyMessage, chatId: string, index: number): Mes
     editedAt: (raw.editedAt as number | null) ?? null,
     editHistory: Array.isArray(raw.editHistory) ? (raw.editHistory as Message["editHistory"]) : [],
     pinned: Boolean(raw.pinned ?? false),
+    pin: raw.pin && typeof raw.pin === "object" ? (raw.pin as Message["pin"]) : undefined,
     deletedAt: (raw.deletedAt as number | null) ?? null,
     attachments: Array.isArray(raw.attachments) ? (raw.attachments as Message["attachments"]) : [],
     durationMs: typeof raw.durationMs === "number" ? raw.durationMs : undefined,

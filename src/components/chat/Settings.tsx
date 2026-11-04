@@ -5,7 +5,9 @@ import { chatIdentity, initials, TONES } from "@/lib/chat/avatar";
 import {
   accountIds, LANGUAGES, readThemePref, removeAccount, requestTheme, resetDemoData, usePrefs, type ThemePref,
 } from "@/lib/chat/account";
+import { Emoji } from "@/lib/chat/emoji";
 import { clearMedia } from "@/lib/chat/media";
+import { currencyFlag, currencyName, MAIN_CURRENCIES } from "@/lib/chat/money";
 import { describe, ruleFor, useMutes } from "@/lib/chat/mutes";
 import { formatPhone, updatePerson } from "@/lib/chat/people";
 import { useChat, userById } from "@/lib/chat/store";
@@ -14,6 +16,7 @@ import Avatar from "./Avatar";
 import {
   IconBack, IconBell, IconBellOff, IconCamera, IconCheck, IconChevron, IconContacts, IconGlobe, IconHelp, IconImage,
   IconInfo, IconKeyboard, IconLocation, IconLock, IconLogout, IconMic, IconPalette, IconPlus, IconShare, IconShield, IconStorage,
+  IconWallet,
 } from "./Icons";
 import Logo from "./Logo";
 import { AvatarPicker, ProfileFields, profileReady, type ProfileDraft } from "./Profile";
@@ -28,7 +31,7 @@ import s from "./account.module.css";
  * group pushes in as its own page, the way a chat does.
  */
 
-type Page = "profile" | "notifications" | "privacy" | "chats" | "language" | "storage" | "about";
+type Page = "profile" | "notifications" | "privacy" | "chats" | "language" | "currency" | "storage" | "about";
 
 export function Tile({ tone, children }: { tone: AvatarTone | "accent" | "danger"; children: React.ReactNode }) {
   const bg = tone === "accent" ? "var(--accent)" : tone === "danger" ? "var(--danger)" : TONES[tone];
@@ -162,6 +165,7 @@ export default function Settings({ leaving, onBack, onAddIdentity, onInvite, onT
           <Row icon={<Tile tone="denim"><IconShield size={16} /></Tile>} title="Privacy & security" onClick={() => open("privacy")} />
           <Row icon={<Tile tone="plum"><IconPalette size={16} /></Tile>} title="Chats & appearance" value={theme === "system" ? "Automatic" : theme === "dark" ? "Dark" : "Light"} onClick={() => open("chats")} />
           <Row icon={<Tile tone="sage"><IconGlobe size={16} /></Tile>} title="Language" value={LANGUAGES.find((l) => l.id === prefs.language)?.native ?? "English"} onClick={() => open("language")} />
+          <Row icon={<Tile tone="accent"><IconWallet size={16} /></Tile>} title="Currency" value={prefs.currency} onClick={() => open("currency")} />
           <Row icon={<Tile tone="ochre"><IconStorage size={16} /></Tile>} title="Data & storage" onClick={() => open("storage")} />
         </Group>
 
@@ -181,6 +185,7 @@ export default function Settings({ leaving, onBack, onAddIdentity, onInvite, onT
       {page?.id === "privacy" && <PrivacyPage leaving={page.leaving} onBack={close} onToast={onToast} />}
       {page?.id === "chats" && <ChatsPage leaving={page.leaving} onBack={close} />}
       {page?.id === "language" && <LanguagePage leaving={page.leaving} onBack={close} />}
+      {page?.id === "currency" && <CurrencyPage leaving={page.leaving} onBack={close} />}
       {page?.id === "storage" && <StoragePage leaving={page.leaving} onBack={close} onToast={onToast} />}
       {page?.id === "about" && <AboutPage leaving={page.leaving} onBack={close} />}
 
@@ -398,6 +403,27 @@ function LanguagePage({ leaving, onBack }: { leaving: boolean; onBack: () => voi
             sub={l.native !== l.name ? l.name : undefined}
             onClick={() => set({ language: l.id })}
             trailing={prefs.language === l.id ? <span className={s.check}><IconCheck size={12} /></span> : <span />}
+          />
+        ))}
+      </Group>
+    </SubPage>
+  );
+}
+
+function CurrencyPage({ leaving, onBack }: { leaving: boolean; onBack: () => void }) {
+  const { me } = useChat();
+  const [prefs, set] = usePrefs(me);
+  return (
+    <SubPage title="Currency" onBack={onBack} leaving={leaving}>
+      <Group note="The Dashboard adds up what you spend, owe and are owed in this currency. Bills in other currencies keep their own, and their totals are converted at reference rates, marked ≈.">
+        {MAIN_CURRENCIES.map((c) => (
+          <Row
+            key={c}
+            icon={<span className={s.flag}><Emoji char={currencyFlag(c)} /></span>}
+            title={currencyName(c)}
+            sub={c}
+            onClick={() => set({ currency: c })}
+            trailing={prefs.currency === c ? <span className={s.check}><IconCheck size={12} /></span> : <span />}
           />
         ))}
       </Group>

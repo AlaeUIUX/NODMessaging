@@ -17,6 +17,7 @@ export const PERMISSIONS: { id: GroupPermission; label: string; sub: string; /**
   { id: "manageChannels", label: "Manage channels", sub: "Add channels, rename them, choose who sees them" },
   { id: "manageRoles", label: "Manage roles & members", sub: "Create roles, give them to people, remove members" },
   { id: "invite", label: "Invite people", sub: "Send invitations and share the invite link" },
+  { id: "pinMessages", label: "Pin messages", sub: "Keep up to three messages at the top of a channel" },
   { id: "editMind", label: "Edit the group’s Mind", sub: "Add files and links, sort shelves, remove things" },
   { id: "approveRequests", label: "Approve requests", sub: "Send people where they’re short, approve supplies, close issues", op: true },
   { id: "broadcast", label: "Broadcast", sub: "Post in #broadcasts, send Critical alerts, All-call on the radio", op: true },
@@ -31,8 +32,8 @@ export const ROLE_TONES: AvatarTone[] = ["plum", "denim", "sage", "ochre", "clay
 export function baseRoles(): GroupRole[] {
   return [
     { id: ADMIN, name: "Admin", tone: "clay", permissions: ALL },
-    // Like most chat apps, anyone can bring people in until an admin says otherwise.
-    { id: MEMBER, name: "Member", tone: "graphite", permissions: ["invite"] },
+    // Like most chat apps, anyone can bring people in and pin messages until an admin says otherwise.
+    { id: MEMBER, name: "Member", tone: "graphite", permissions: ["invite", "pinMessages"] },
   ];
 }
 

@@ -309,6 +309,8 @@
 }
 .money span { font: var(--t-footnote); color: var(--ink-2); }
 .money b { font: var(--t-title3); font-weight: var(--w-emph); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+/* Under a total that adds up more than one currency. */
+.fxNote { margin: -2px 2px 0; font: var(--t-footnote); color: var(--ink-3); text-wrap: pretty; }
 
 /* ---- Money sheet's own spend chart card ---- */
 .chartCard {

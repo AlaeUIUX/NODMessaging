@@ -23,6 +23,8 @@ import styles from "./chat.module.css";
 import r from "./operation/radio.module.css";
 
 const TYPING_IDLE_MS = 3000;
+/** How often "typing" is said again while it goes on (others drop it after 5 s). */
+const TYPING_REFRESH_MS = 2500;
 
 type FormatKind = "bold" | "italic" | "underline" | "strike" | "heading" | "link" | "bullet" | "number" | "quote" | "code";
 type Tool = { kind: FormatKind; label: string; glyph: React.ReactNode; sep?: boolean };
@@ -189,6 +191,7 @@ export default function Composer({
   const fileRef = useRef<HTMLInputElement>(null);
   const linkRange = useRef<Range | null>(null);
   const typingRef = useRef(false);
+  const typingRefresh = useRef<ReturnType<typeof setInterval> | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -254,6 +257,8 @@ export default function Composer({
 
   const stopTyping = useCallback(() => {
     if (idleTimer.current) clearTimeout(idleTimer.current);
+    if (typingRefresh.current) clearInterval(typingRefresh.current);
+    typingRefresh.current = null;
     if (!typingRef.current) return;
     typingRef.current = false;
     onTypingRef.current(false);
@@ -271,9 +276,13 @@ export default function Composer({
   }, []);
 
   const signalTyping = () => {
+    // Fixing a sent message isn't writing a new one, so nobody hears about it.
+    if (editing) return;
     if (!typingRef.current) {
       typingRef.current = true;
       onTypingRef.current(true);
+      // Said again every few seconds while it goes on: others drop "typing" after 5 s without news.
+      typingRefresh.current = setInterval(() => onTypingRef.current(true), TYPING_REFRESH_MS);
     }
     if (idleTimer.current) clearTimeout(idleTimer.current);
     idleTimer.current = setTimeout(stopTyping, TYPING_IDLE_MS);

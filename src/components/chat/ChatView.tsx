@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { chatIdentity, initials } from "@/lib/chat/avatar";
+import { chatIdentity } from "@/lib/chat/avatar";
 import { can, canPost, groupInfo, groupOf, roleNames, visibleChannels, writeLastChannel } from "@/lib/chat/groups";
 import { effectiveRule, isQuiet, useMutes } from "@/lib/chat/mutes";
 import { stripFormatting } from "@/lib/chat/markdown";
@@ -19,8 +19,7 @@ import {
   AddSheet, ChecklistBuilder, EventBuilder, LocationBuilder, PaymentBuilder, PollBuilder, ReminderBuilder, type AddKind,
 } from "./CardBuilders";
 import Composer from "./Composer";
-import { IconBack, IconBellOff, IconBoard, IconCheck, IconChevron, IconLocation, IconMegaphone, IconMenu, IconPhone, IconPin, IconQr } from "./Icons";
-import { Sheet } from "./ui";
+import { IconBack, IconBellOff, IconBoard, IconCheck, IconChevron, IconLocation, IconMegaphone, IconMenu, IconPhone, IconQr } from "./Icons";
 import { Code } from "./operation/kit";
 import { BroadcastSheet, RequestSheet } from "./operation/OpCards";
 import { OperationPage } from "./operation/OperationPage";
@@ -31,6 +30,7 @@ import { BroadcastBanner, openTasks, ScanSheet, unreadBroadcasts, useOp } from "
 import { OnAirIsland } from "./operation/OnAir";
 import ps from "./operation/pages.module.css";
 import MessageList from "./MessageList";
+import { PinnedBar, PinnedSheet, PinSheet } from "./PinnedBar";
 import MessageOverlay from "./MessageOverlay";
 import MessageRow, { type BubblePos } from "./MessageRow";
 import { ArtifactGallery, SketchBuilder, WheelBuilder } from "./Artifacts";
@@ -42,9 +42,9 @@ import { ProjectBoard, ProjectBuilder, TaskFromMessage } from "./Project";
 import { openItems, openState } from "@/lib/chat/open";
 import { newProject, newTask, parseTaskCommand, projectsOf } from "@/lib/chat/project";
 import { emojify } from "@/lib/chat/emoji";
+import { activePins, isPinned } from "@/lib/chat/pins";
 import { land } from "@/lib/chat/landing";
-import { MIND_FAILED, saveToMind, UNASSIGNED } from "@/lib/chat/mind";
-import { netFailureText } from "@/lib/chat/api";
+import { failureText, MIND_FAILED, saveToMind, UNASSIGNED, type MindFailure } from "@/lib/chat/mind";
 import { fly } from "./flight";
 import { MindMark } from "./Landing";
 import { MoveSheet } from "./Mind";
@@ -136,6 +136,8 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   const channel = gInfo?.channels.find((c) => c.id === chat.id) ?? null;
   const channels = group ? visibleChannels(group, me) : [];
   const manageChannels = !!gInfo && can(gInfo, me, "manageChannels");
+  // In a group, pinning is a permission (members have it until an admin says otherwise); in a DM, anyone can.
+  const canPin = !gInfo || can(gInfo, me, "pinMessages");
   const showChannels = !!group && !!channel && (channels.length > 1 || manageChannels);
   // In an Operation's #broadcasts, posting means broadcasting: the Broadcast permission decides, not the channel.
   const opInfo = gInfo?.operation;
@@ -283,10 +285,12 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     setToast((t) => (t ? { ...t, leaving: true } : t));
     setTimeout(() => setToast(null), 220);
   };
-  // Save to Mind that didn't go through: Mind has already put it back (see updateMind), so take back "Saved".
+  // A change to Mind from here that didn't go through (moving a save, offline): Mind has put it back or refused it (see updateMind).
+  // A save itself never fails: it waits on this phone until it can send.
   useEffect(() => {
     const failed = (e: Event) => {
-      if ((e as CustomEvent<{ userId: string }>).detail.userId === me) flash(`${netFailureText()}. It wasn't saved to Mind.`);
+      const f = (e as CustomEvent<MindFailure>).detail;
+      if (f.userId === me) flash(failureText(f));
     };
     window.addEventListener(MIND_FAILED, failed);
     return () => window.removeEventListener(MIND_FAILED, failed);
@@ -478,19 +482,6 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     settle(d.dx > width * 0.4 || velocity > 0.6 ? "back" : "stay");
   };
 
-  // Pinned messages live behind the pin in the header, which shows up with the first one.
-  const pinCount = useMemo(() => messages.filter((m) => m.pinned && !m.deletedAt).length, [messages]);
-  const openPins = () => setOverlaySheet(<PinnedSheet chatId={chat.id} me={me} onClose={closeSheet} onJump={(id) => jumpTo(id)} onUnpin={(m) => togglePin(m)} />);
-  /** Pins a message, and a copy of it flies up into the header's pin (the way a save flies into Mind). */
-  const pinWithFlight = (m: Message) => {
-    togglePin(m);
-    if (m.pinned) return;
-    const screen = screenRef.current;
-    const row = screen?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(m.id)}"]`);
-    const bubble = row?.querySelector<HTMLElement>("[data-bubble]");
-    if (screen && row && bubble) fly({ el: bubble, host: screen, wrap: row.className, target: () => screen.querySelector<HTMLElement>("[data-pin-target]") });
-  };
-
   const jumpTo = useCallback((messageId: string) => {
     const el = screenRef.current?.querySelector(`[data-message-id="${messageId}"]`);
     el?.scrollIntoView({ behavior: smooth(), block: "center" });
@@ -609,9 +600,31 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     }),
     [chat, members, closeSheet, flash, ask, openMedia, openBoard, addTask, jumpTo, isOp, openZone, openRadio, openOperation, switchFromLayer],
   );
+  // Pinned messages: a bar under the header, the WhatsApp way, there once something's pinned (newest first).
+  const pins = useMemo(() => activePins(messages, minute), [messages, minute]);
+  const openPins = () => setOverlaySheet(<PinnedSheet chatId={chat.id} me={me} canPin={canPin} onClose={closeSheet} onJump={(id) => jumpTo(id)} onUnpin={(m) => togglePin(m)} />);
+  /** Asks for how long, pins, and a copy of the message flies up into the bar (the way a save flies into Mind). */
+  const pinWithFlight = (m: Message) => {
+    if (isPinned(m)) { togglePin(m); flash("Unpinned"); return; }
+    setOverlaySheet(<PinSheet message={m} chatId={chat.id} onClose={closeSheet} onPin={(forMs) => {
+      togglePin(m, forMs);
+      const screen = screenRef.current;
+      const row = screen?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(m.id)}"]`);
+      const bubble = row?.querySelector<HTMLElement>("[data-bubble]");
+      if (screen && row && bubble) fly({ el: bubble, host: screen, wrap: row.className, target: () => screen.querySelector<HTMLElement>("[data-pin-target]") });
+    }} />);
+  };
+
+  // Each pin leaves a line in the thread at the time it was made, which goes to the message.
+  const pinNotes = pins.flatMap((m) => m.pin ? [{
+    id: `pin-${m.id}`,
+    at: m.pin.at,
+    text: `${m.pin.by === me ? "You" : userById(m.pin.by).name} pinned a message`,
+    onTap: () => jumpTo(m.id),
+  }] : []);
   const firstName = identity.label.split(" ")[0];
   const presence = typing.length
-    ? chat.kind === "group" ? `${typingLine(typing)}…` : "typing…"
+    ? chat.kind === "group" ? typingLine(typing) : "typing"
     : o
       // An Operation's chat says which channel this is (it has no channel bar); the day lives on its page.
       ? (channel ? `#${channel.name}` : "")
@@ -647,7 +660,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     <ChatUiProvider value={ui}>
     <div
       ref={screenRef}
-      className={`${styles.screen} ${styles.chatScreen} ${showChannels && !isOp ? styles.chatWithChannels : ""} ${isOp && showChannels ? ps.opScreen : ""} ${instant ? styles.chatInstant : ""} ${leaving ? styles.leaving : ""}`}
+      className={`${styles.screen} ${styles.chatScreen} ${showChannels && !isOp ? styles.chatWithChannels : ""} ${isOp && showChannels ? ps.opScreen : ""} ${pins.length && !(o && showChannels) ? styles.chatWithPins : ""} ${instant ? styles.chatInstant : ""} ${leaving ? styles.leaving : ""}`}
       data-chat-screen
       onPointerDownCapture={onEdgeDown}
       onPointerMove={onEdgeMove}
@@ -659,22 +672,10 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
       <div className={styles.edgeTop} data-edge-top />
 
       <header className={styles.chatHeader}>
-        {/* The pin sits beside Back: two buttons a side, so the name keeps its room even on the smallest phones. */}
         <div className={styles.headerSide}>
           <button className={`${styles.circleBtn} ${styles.glass}`} onClick={() => onBack()} aria-label={o && chat.id !== o.group.id ? "Back to #general" : "Back to messages"}>
             <IconBack />
           </button>
-          {pinCount > 0 && (
-            <button
-              className={`${styles.circleBtn} ${styles.glass} ${styles.pinBtn}`}
-              data-pin-target
-              aria-label={`Pinned messages (${pinCount})`}
-              onClick={openPins}
-            >
-              <IconPin />
-              {pinCount > 1 && <em className={styles.pinCount}>{pinCount}</em>}
-            </button>
-          )}
         </div>
         {/* The name opens the contact page (an Operation's: its page); a blue dot means something here is still open. */}
         <button
@@ -688,7 +689,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
             {live.length > 0 && <i className={styles.openDot} aria-hidden="true" />}
             <IconChevron />
           </span>
-          <span className={`${styles.tcPresence} ${typing.length ? styles.isTyping : ""}`}>{quiet && !typing.length && <IconBellOff size={11} />} {presence}</span>
+          <span className={`${styles.tcPresence} ${typing.length ? styles.isTyping : ""}`}>{quiet && !typing.length && <IconBellOff size={11} />} {presence}{typing.length > 0 && <span className={styles.ellipsis} aria-hidden="true"><i>.</i><i>.</i><i>.</i></span>}</span>
         </button>
         <div className={`${styles.headerSide} ${styles.headerEnd}`}>
           {o ? <>
@@ -732,9 +733,16 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
         />
       )}
 
+      {pins.length > 0 && !(o && showChannels) && (
+        <div className={styles.pinSlot}>
+          <PinnedBar key={pins[0].id} pins={pins} me={me} group={chat.kind === "group"} onJump={(id) => jumpTo(id)} onOpenList={openPins} />
+        </div>
+      )}
+
       {o && showChannels && (
-        // An Operation's chat: a call on air, where I am and what to read (on #general), or the zone this channel is.
+        // An Operation's chat: pins first, then a call on air, where I am and what to read (on #general), or the zone this channel is.
         <div ref={stripsRef} className={ps.strips}>
+          {pins.length > 0 && <PinnedBar key={pins[0].id} pins={pins} me={me} group onJump={(id) => jumpTo(id)} onOpenList={openPins} />}
           {onAir && (
             <OnAirIsland by={onAir.by} where={onAirZone ? `${onAirZone.code} · ${onAirZone.name}` : null} text={onAir.text} onOpen={openRadio} />
           )}
@@ -785,6 +793,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
         typingUsers={typing}
         hasEarlier={hasEarlier(chat.id)}
         onLoadEarlier={() => loadEarlier(chat.id)}
+        notes={pinNotes}
       >
         {(row) => (
           <MessageRow
@@ -878,7 +887,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
           onReply={() => { setReplyTo(menuMessage); setEditing(null); }}
           onEdit={() => { setEditing(menuMessage); setReplyTo(null); }}
           onDelete={() => { deleteMessage(menuMessage); flash("Message deleted"); }}
-          onPin={() => pinWithFlight(menuMessage)}
+          onPin={canPin ? () => pinWithFlight(menuMessage) : undefined}
           onSave={() => {
             const m = menuMessage;
             const c = m.card;
@@ -992,55 +1001,5 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
       {alert && <PermissionAlert kind={alert.kind} onResolve={alert.resolve} />}
     </div>
     </ChatUiProvider>
-  );
-}
-
-/** One line for a pinned message: its text, or what it is when it has none. */
-function pinPreview(m: Message) {
-  if (m.kind === "voice") return "Voice message";
-  if (m.card) {
-    const c = m.card as Record<string, unknown>;
-    const name = [c.title, c.question, c.name, c.text, c.place, c.prompt].find((x) => typeof x === "string" && x);
-    return (name as string | undefined) ?? "A card";
-  }
-  const text = stripFormatting(m.body).replace(/\s+/g, " ").trim();
-  if (text) return text;
-  const a = m.attachments[0];
-  return a ? (a.kind === "image" ? "Photo" : a.name) : "Message";
-}
-
-/** Every pinned message in the chat: tap one to go to it, or unpin it. */
-function PinnedSheet({ chatId, me, onClose, onJump, onUnpin }: {
-  chatId: string;
-  me: string;
-  onClose: () => void;
-  onJump: (id: string) => void;
-  onUnpin: (m: Message) => void;
-}) {
-  // Read live, so unpinning here takes the row away.
-  const { state } = useChat();
-  const pins = (state.data.messages[chatId] ?? []).filter((m) => m.pinned && !m.deletedAt).sort((a, b) => b.createdAt - a.createdAt);
-  return (
-    <Sheet title={pins.length ? `Pinned · ${pins.length}` : "Pinned"} onClose={onClose}>
-      {(close) => (!pins.length ? <p className={styles.sheetNote}>Nothing pinned here any more.</p> : (
-        <div className={styles.listGroup}>
-          {pins.map((m) => {
-            const who = userById(m.authorId);
-            return (
-              <div key={m.id} className={styles.pinRow}>
-                <button className={styles.pinRowMain} onClick={() => close(() => setTimeout(() => onJump(m.id), 60))}>
-                  <Avatar glyph={initials(who.fullName)} tone={who.tone} photo={who.photo} size={32} shape="circle" />
-                  <span className={styles.contactText}>
-                    <b>{m.authorId === me ? "You" : who.name}</b>
-                    <small>{emojify(pinPreview(m))}</small>
-                  </span>
-                </button>
-                <button className={styles.pinRowUnpin} onClick={() => onUnpin(m)} aria-label="Unpin">Unpin</button>
-              </div>
-            );
-          })}
-        </div>
-      ))}
-    </Sheet>
   );
 }

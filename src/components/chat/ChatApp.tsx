@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { getForceFailure, getForceNetFailure, setForceFailure, setForceNetFailure } from "@/lib/chat/api";
+import { getForceFailure, getForceNetFailure, getSimulatedOffline, setForceFailure, setForceNetFailure, setSimulatedOffline } from "@/lib/chat/api";
 import { getPrefs, resetDemoData, THEME_EVENT, useAccounts, type ThemePref } from "@/lib/chat/account";
 import { groupInfo } from "@/lib/chat/groups";
 import { mindOf } from "@/lib/chat/mind";
@@ -76,6 +76,7 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
   const { state, me, setMe, peers } = useChat();
   const [failing, setFailing] = useState(getForceFailure());
   const [netFailing, setNetFailing] = useState(getForceNetFailure());
+  const [offline, setOffline] = useState(getSimulatedOffline());
   // Everyone in the demo (29 people), by their crew at EWC.
   const people = personGroups(state.data.chats);
 
@@ -142,6 +143,15 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
             onChange={(e) => { setNetFailing(e.target.checked); setForceNetFailure(e.target.checked); }}
           />
           Force Mind &amp; network failure
+        </label>
+        {/* The phone acts offline: Mind shows what's on it, new items wait, everything else is refused. */}
+        <label className={styles.devToggle}>
+          <input
+            type="checkbox"
+            checked={offline}
+            onChange={(e) => { setOffline(e.target.checked); setSimulatedOffline(e.target.checked); }}
+          />
+          Go offline
         </label>
         {/* Fresh seed for demos: conversations, drafts, identities, profiles, settings, permission answers and stored files. */}
         <button className={styles.devReset} onClick={() => { void resetDemoData(); }}>

@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { chatIdentity, initials } from "@/lib/chat/avatar";
 import { dayKey, shiftDays } from "@/lib/chat/mind";
+import { moneyShort } from "@/lib/chat/money";
 import { money } from "@/lib/chat/ops";
 import { priorityRank, PRIORITIES } from "@/lib/chat/project";
 import { userById } from "@/lib/chat/store";
@@ -12,7 +13,7 @@ import type { BoardSummary, BoardTask, DashData, NeedsCategory } from "./Analyti
 import { NEEDS_ACTION, NEEDS_INK, NEEDS_TONE, STALLED_AFTER } from "./Analytics";
 import {
   BigMoney, BLUE, ChecklistTrack, clock, DAY, dayLabel, Gauge, monthName, NeedsBlocks, people, plural, prevMonthName,
-  shortDate, Trend, until, weekday, WEEK, type Upcoming,
+  rowDetail, rowMoney, shortDate, Trend, until, weekday, WEEK, type Upcoming,
 } from "./AnalyticsParts";
 import Avatar from "./Avatar";
 import { DonutChart, PartBars, StackedBar, TrendChart, type Part, type Point, type Trend as TrendKind } from "./Charts";
@@ -118,11 +119,6 @@ function PartLegend({ parts }: { parts: Part[] }) {
 }
 
 const count = (n: number) => String(n);
-/** Whole euros for an axis: "€1.2k", "€340". */
-export const euroShort = (cents: number) => {
-  const e = cents / 100;
-  return e >= 1000 ? `€${(e / 1000).toFixed(e >= 10_000 ? 0 : 1).replace(/\.0$/, "")}k` : `€${Math.round(e)}`;
-};
 
 /**
  * This month's spending, day by day: running totals against last month's (to
@@ -152,26 +148,29 @@ const dueText = (due: number, now: number) => (due < now ? "Overdue" : due - now
 --------------------------------------------------------------------------- */
 
 function Spend({ w, d, open }: BodyProps) {
+  // Everything here is in the person's main currency; a bill in another is converted ("≈").
+  const cash = (cents: number) => money(cents, d.currency);
+  const big = <BigMoney cents={d.spent} currency={d.currency} approx={d.approx.spent} />;
   const delta = d.spentLastMonth ? d.spent - d.spentLastMonth : null;
   const deltaLine = delta !== null && (
     <p className={g.delta}>
-      <b className={delta <= 0 ? s.deltaGood : s.deltaBad}>{delta <= 0 ? "↓" : "↑"} {money(Math.abs(delta))}</b>
+      <b className={delta <= 0 ? s.deltaGood : s.deltaBad}>{delta <= 0 ? "↓" : "↑"} {cash(Math.abs(delta))}</b>
       {w.size === "small" ? ` vs ${prevMonthName(d.heroNow).slice(0, 3)}` : ` ${delta <= 0 ? "less" : "more"} than ${prevMonthName(d.heroNow)}`}
     </p>
   );
   const label = <span className={g.cap}>Spent in {monthName(d.heroNow)}</span>;
 
   if (w.view === "top") {
-    const list = [...d.spentRows.map((r) => ({ key: r.key, title: r.title, amount: r.amount, go: () => open(r.chat, r.message) })), { key: "other", title: "Everyday spending", amount: d.spentOther, go: undefined }]
+    const list = [...d.spentRows.map((r) => ({ key: r.key, title: r.title, amount: r.amount, right: rowMoney(r), go: () => open(r.chat, r.message) })), { key: "other", title: "Everyday spending", amount: d.spentOther, right: cash(d.spentOther), go: undefined }]
       .filter((r) => r.amount > 0)
       .sort((a, b) => b.amount - a.amount);
     const max = list[0]?.amount ?? 1;
     return (
       <div className={g.col}>
-        {w.size === "medium" ? <span className={g.cap}>{money(d.spent)} spent in {monthName(d.heroNow)}</span> : <>{label}<Big size={w.size}><BigMoney cents={d.spent} /></Big></>}
+        {w.size === "medium" ? <span className={g.cap}>{d.approx.spent && "≈ "}{cash(d.spent)} spent in {monthName(d.heroNow)}</span> : <>{label}<Big size={w.size}>{big}</Big></>}
         <div className={LIST}>
           {list.slice(0, rows(w.size, 2, 5)).map((r) => (
-            <Meter key={r.key} label={r.title} value={r.amount} of={max} right={money(r.amount)} onClick={r.go} />
+            <Meter key={r.key} label={r.title} value={r.amount} of={max} right={r.right} onClick={r.go} />
           ))}
         </div>
       </div>
@@ -186,9 +185,9 @@ function Spend({ w, d, open }: BodyProps) {
     return (
       <div className={g.col}>
         {label}
-        <Big><BigMoney cents={d.spent} /></Big>
+        <Big>{big}</Big>
         {deltaLine}
-        <div className={g.spark}><TrendChart mini data={data} kind={kind} format={money} names={names} /></div>
+        <div className={g.spark}><TrendChart mini data={data} kind={kind} format={cash} names={names} /></div>
       </div>
     );
   }
@@ -197,20 +196,20 @@ function Spend({ w, d, open }: BodyProps) {
       <div className={g.sideBySide}>
         <div className={`${g.col} ${g.figures}`}>
           {label}
-          <Big><BigMoney cents={d.spent} /></Big>
+          <Big>{big}</Big>
           {deltaLine}
         </div>
-        <div className={g.chartFill}><TrendChart data={data} kind={kind} format={money} names={names} /></div>
+        <div className={g.chartFill}><TrendChart data={data} kind={kind} format={cash} names={names} /></div>
       </div>
     );
   }
   return (
     <div className={g.col}>
       {label}
-      <Big size="large"><BigMoney cents={d.spent} /></Big>
+      <Big size="large">{big}</Big>
       {deltaLine}
       <div className={g.chartGrow}>
-        <TrendChart data={data} kind={kind} format={money} axisFormat={euroShort} names={names} xTicks={spendTicks(d)} xFormat={(x) => (x === "1" && kind !== "bars" ? `1 ${mon}` : x)} yAxis />
+        <TrendChart data={data} kind={kind} format={cash} axisFormat={(c) => moneyShort(c, d.currency)} names={names} xTicks={spendTicks(d)} xFormat={(x) => (x === "1" && kind !== "bars" ? `1 ${mon}` : x)} yAxis />
       </div>
     </div>
   );
@@ -222,14 +221,14 @@ function Balances({ w, d, me, sheet, open }: BodyProps) {
   const owe = (compact?: boolean) => (
     <button className={g.balance} onClick={tap(() => sheet("owe"))}>
       {labelled && <span className={s.balLabel}><i style={{ background: "var(--warn-mark)" }} />You owe</span>}
-      <b className={compact ? g.balSmall : g.balNum}><BigMoney cents={d.youOwe} /></b>
+      <b className={compact ? g.balSmall : g.balNum}><BigMoney cents={d.youOwe} currency={d.currency} approx={d.approx.owe} /></b>
       {!compact && (d.oweRows.length ? <span className={g.pill}>Settle up</span> : <span className={g.cap}>All settled</span>)}
     </button>
   );
   const owed = (compact?: boolean) => (
     <button className={g.balance} onClick={tap(() => sheet("owed"))}>
       {labelled && <span className={s.balLabel}><i style={{ background: "var(--ok-mark)" }} />Owed to you</span>}
-      <b className={compact ? g.balSmall : g.balNum}><BigMoney cents={d.owedToYou} /></b>
+      <b className={compact ? g.balSmall : g.balNum}><BigMoney cents={d.owedToYou} currency={d.currency} approx={d.approx.owed} /></b>
       {!compact && (d.owedByIds.size > 0 ? (
         <span className={`${s.faces} ${g.balFoot}`}>
           {[...d.owedByIds].slice(0, 3).map((id) => {
@@ -255,7 +254,7 @@ function Balances({ w, d, me, sheet, open }: BodyProps) {
       {mine ? owe() : owed()}
       <div className={LIST}>
         {list.length === 0 ? <Empty done>{mine ? "You don’t owe anyone." : "Nobody owes you."}</Empty> : list.slice(0, 2).map((r) => (
-          <Line key={r.key} title={r.title} sub={`${r.detail} · ${chatIdentity(r.chat, me, userById).label}`} right={money(r.amount)} onClick={() => open(r.chat, r.message)} />
+          <Line key={r.key} title={r.title} sub={rowDetail(`${r.detail} · ${chatIdentity(r.chat, me, userById).label}`, r, d.currency)} right={rowMoney(r)} onClick={() => open(r.chat, r.message)} />
         ))}
       </div>
     </div>

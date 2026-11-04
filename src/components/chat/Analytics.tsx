@@ -3,13 +3,15 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { chatIdentity, initials } from "@/lib/chat/avatar";
 import { dayKey, lastSevenDays } from "@/lib/chat/mind";
+import { usePrefs } from "@/lib/chat/account";
+import { convertCents, moneyShort } from "@/lib/chat/money";
 import { billShares, doneColumn, money, unclaimedItems } from "@/lib/chat/ops";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Card, Chat, ChatState, Message, Task } from "@/lib/chat/types";
 import { useWidgets, WIDGETS, type Widget } from "@/lib/chat/widgets";
 import {
   BLUE, BLUE_INK, ChecklistTrack, cumulative, DAY, daysInMonth, dummyBaseline, dummyMessages, euro, monthKey,
-  monthName, people, plural, prevMonthKey, prevMonthName, Row, shortDate, shortTime, SHOWN, WEEK, type Upcoming,
+  monthName, people, plural, prevMonthKey, prevMonthName, Row, rowDetail, rowMoney, shortDate, shortTime, SHOWN, WEEK, type Upcoming,
 } from "./AnalyticsParts";
 import { outcome } from "./Artifacts";
 import Avatar from "./Avatar";
@@ -22,7 +24,7 @@ import { HoldMenu } from "./MindHold";
 import { MyTasks } from "./Project";
 import { Sheet, useNow } from "./ui";
 import { TrendChart } from "./Charts";
-import { BoardsSheet, euroShort, nextUp, spendSeries, spendTicks, WidgetBody, whenText } from "./WidgetBodies";
+import { BoardsSheet, nextUp, spendSeries, spendTicks, WidgetBody, whenText } from "./WidgetBodies";
 import { AddWidgetSheet, EditWidgetSheet, WidgetBoard, widgetTitle } from "./Widgets";
 import styles from "./chat.module.css";
 import s from "./activity.module.css";
@@ -96,7 +98,8 @@ interface ActivityItem {
 }
 
 /** One line of a money breakdown — who/what, and exactly how much. */
-interface MoneyRow { key: string; title: string; detail: string; amount: number; chat: Chat; message: Message }
+/** `amount` is in the Dashboard's currency (for totals and order); `original` is what the card says, in its own. */
+interface MoneyRow { key: string; title: string; detail: string; amount: number; original: number; currency: string; chat: Chat; message: Message }
 
 
 /** One line each: what it is, and where it stands — independent of `lib/chat/open`'s
@@ -273,7 +276,7 @@ export interface NeedsEntry { key: string; category: NeedsCategory; title: strin
 type ChecklistItem = ActivityItem & { message: Message & { card: Extract<Card, { type: "checklist" }> } };
 
 /** Everything the dashboard's widgets draw from, in one pass over your chats. */
-export function buildDashboard(state: ChatState, me: string, now: number) {
+export function buildDashboard(state: ChatState, me: string, now: number, currency = "EUR") {
   const items: ActivityItem[] = [];
   const upcoming: Upcoming[] = [];
   const perDay = new Map(lastSevenDays().map((k) => [k, 0]));
@@ -313,6 +316,10 @@ export function buildDashboard(state: ChatState, me: string, now: number) {
   const polls: PollSummary[] = [];
   const plans: PlanSummary[] = [];
 
+  // Everything adds up in one currency: payments are in euros, bills in their own (see lib/chat/money.ts).
+  const inMain = (cents: number, from: string) => convertCents(cents, from, currency);
+  const row = (r: Omit<MoneyRow, "amount" | "original">, cents: number): MoneyRow => ({ ...r, original: cents, amount: inMain(cents, r.currency) });
+
   const addSpend = (cents: number, at: number) => {
     const mk = monthKey(at);
     const day = new Date(at).getDate();
@@ -343,31 +350,32 @@ export function buildDashboard(state: ChatState, me: string, now: number) {
       if (sum) items.push({ message, chat, kind: KIND_LABEL[c.type], ...sum });
 
       if (c.type === "payment") {
-        const cents = Math.round(c.amount * 100);
+        // Payments and requests are in euros. Spent rows are this month's only, so they add up to the headline.
+        const original = Math.round(c.amount * 100);
+        const cents = inMain(original, "EUR");
+        const mk = monthKey(message.createdAt);
         if (c.mode === "sent" && message.authorId === me) {
           addSpend(cents, message.createdAt);
-          const mk = monthKey(message.createdAt);
           if (mk === thisMonth) spent += cents; else if (mk === lastMonth) spentLastMonth += cents;
-          spentRows.push({ key: message.id, title: c.note || "Payment sent", detail: `To ${c.from.map((id) => userById(id).name).join(", ")}`, amount: cents, chat, message });
+          if (mk === thisMonth) spentRows.push(row({ key: message.id, title: c.note || "Payment sent", detail: `To ${c.from.map((id) => userById(id).name).join(", ")}`, currency: "EUR", chat, message }, original));
         }
         if (c.mode === "request") {
           if (c.from.includes(me) && !c.paidBy.includes(me)) {
             youOwe += cents;
-            oweRows.push({ key: message.id, title: c.note || "Payment request", detail: `To ${userById(message.authorId).name}`, amount: cents, chat, message });
+            oweRows.push(row({ key: message.id, title: c.note || "Payment request", detail: `To ${userById(message.authorId).name}`, currency: "EUR", chat, message }, original));
           }
           if (message.authorId === me) {
             const unpaid = c.from.filter((id) => !c.paidBy.includes(id));
             owedToYou += cents * unpaid.length;
             unpaid.forEach((id) => {
               owedByIds.add(id);
-              owedRows.push({ key: `${message.id}:${id}`, title: userById(id).name, detail: c.note || "Payment request", amount: cents, chat, message });
+              owedRows.push(row({ key: `${message.id}:${id}`, title: userById(id).name, detail: c.note || "Payment request", currency: "EUR", chat, message }, original));
             });
           }
           if (c.from.includes(me) && c.paidBy.includes(me)) {
             addSpend(cents, message.createdAt);
-            const mk = monthKey(message.createdAt);
             if (mk === thisMonth) spent += cents; else if (mk === lastMonth) spentLastMonth += cents;
-            spentRows.push({ key: `${message.id}:paid`, title: c.note || "Payment request", detail: `To ${userById(message.authorId).name}`, amount: cents, chat, message });
+            if (mk === thisMonth) spentRows.push(row({ key: `${message.id}:paid`, title: c.note || "Payment request", detail: `To ${userById(message.authorId).name}`, currency: "EUR", chat, message }, original));
           }
         }
       }
@@ -375,25 +383,27 @@ export function buildDashboard(state: ChatState, me: string, now: number) {
         accessRequests.push({ chat, message, title: c.title, count: c.requests.length });
       }
       if (c.type === "bill") {
+        // A bill is in its own currency.
         const shares = billShares(c);
+        const mine = inMain(shares[me] ?? 0, c.currency);
         if (c.paidBy !== me && shares[me] > 0 && !c.paid.includes(me)) {
-          youOwe += shares[me];
-          oweRows.push({ key: message.id, title: c.merchant, detail: `To ${userById(c.paidBy).name}`, amount: shares[me], chat, message });
+          youOwe += mine;
+          oweRows.push(row({ key: message.id, title: c.merchant, detail: `To ${userById(c.paidBy).name}`, currency: c.currency, chat, message }, shares[me]));
         }
         if (c.paidBy === me) {
           for (const [id, v] of Object.entries(shares)) {
             if (id !== me && v > 0 && !c.paid.includes(id)) {
               owedByIds.add(id);
-              owedRows.push({ key: `${message.id}:${id}`, title: userById(id).name, detail: c.merchant, amount: v, chat, message });
+              owedToYou += inMain(v, c.currency);
+              owedRows.push(row({ key: `${message.id}:${id}`, title: userById(id).name, detail: c.merchant, currency: c.currency, chat, message }, v));
             }
           }
-          owedToYou += Object.entries(shares).filter(([id, v]) => id !== me && v > 0 && !c.paid.includes(id)).reduce((n, [, v]) => n + v, 0);
         }
         if (c.paid.includes(me) && shares[me] > 0) {
-          addSpend(shares[me], message.createdAt);
-          spentRows.push({ key: `${message.id}:bill`, title: c.merchant, detail: `Paid to ${userById(c.paidBy).name}`, amount: shares[me], chat, message });
+          addSpend(mine, message.createdAt);
           const mk = monthKey(message.createdAt);
-          if (mk === thisMonth) spent += shares[me]; else if (mk === lastMonth) spentLastMonth += shares[me];
+          if (mk === thisMonth) spent += mine; else if (mk === lastMonth) spentLastMonth += mine;
+          if (mk === thisMonth) spentRows.push(row({ key: `${message.id}:bill`, title: c.merchant, detail: `Paid to ${userById(c.paidBy).name}`, currency: c.currency, chat, message }, shares[me]));
         }
       }
       if (c.type === "event" && c.startsAt > now && c.startsAt < horizon) {
@@ -464,9 +474,9 @@ export function buildDashboard(state: ChatState, me: string, now: number) {
   // A plausible few-euros-a-day baseline, so the hero chart is never a flat empty
   // line on a fresh account or right after the month turns over — added on top of
   // whatever's really there, and folded into the headline totals so they agree.
-  const dummyCur = spendCurDaily.map((_, i) => dummyBaseline(i));
+  const dummyCur = spendCurDaily.map((_, i) => inMain(dummyBaseline(i), "EUR"));
   // Last month gets its own shape (a few days along, a little heavier), so the comparison means something.
-  const dummyPrev = spendPrevDaily.map((_, i) => Math.round(dummyBaseline(i + 9) * 1.18));
+  const dummyPrev = spendPrevDaily.map((_, i) => inMain(Math.round(dummyBaseline(i + 9) * 1.18), "EUR"));
   const spentOther = dummyCur.reduce((a, b) => a + b, 0);
   spent += spentOther;
   spentLastMonth += dummyPrev.reduce((a, b) => a + b, 0);
@@ -494,7 +504,13 @@ export function buildDashboard(state: ChatState, me: string, now: number) {
     .sort((a, b) => b.message.createdAt - a.message.createdAt);
 
   return {
-    items, upcoming, youOwe, owedToYou, spent, spentLastMonth, lastWeekMessages: lastWeekMessages + dummyWeekTotal, owedByIds,
+    currency, items, upcoming, youOwe, owedToYou, spent, spentLastMonth, lastWeekMessages: lastWeekMessages + dummyWeekTotal, owedByIds,
+    // Which totals add up amounts converted from other currencies ("≈").
+    approx: {
+      spent: spentRows.some((r) => r.currency !== currency),
+      owe: oweRows.some((r) => r.currency !== currency),
+      owed: owedRows.some((r) => r.currency !== currency),
+    },
     byStage, overdueTasks, spendCurCum, spendPrevCum, heroNow, week, spentOther,
     spentRows: spentRows.sort((a, b) => b.amount - a.amount),
     oweRows: oweRows.sort((a, b) => b.amount - a.amount),
@@ -541,7 +557,10 @@ export default function AnalyticsTab({ onOpenChat, onSettings }: {
   const [toast, setToast] = useState<{ text: string; id: number; undo?: () => void; leaving?: boolean } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const data = useMemo(() => buildDashboard(state.data, me, now), [state.data, me, now]);
+  // Money adds up in the person's main currency (Settings › Currency).
+  const [prefs] = usePrefs(me);
+  const data = useMemo(() => buildDashboard(state.data, me, now, prefs.currency), [state.data, me, now, prefs.currency]);
+  const cash = (cents: number) => money(cents, data.currency);
 
   const flash = (text: string, undo?: () => void) => {
     const id = Date.now();
@@ -823,8 +842,8 @@ export default function AnalyticsTab({ onOpenChat, onSettings }: {
                   <TrendChart
                     data={spendSeries(data, "area")}
                     kind="area"
-                    format={money}
-                    axisFormat={euroShort}
+                    format={cash}
+                    axisFormat={(c) => moneyShort(c, data.currency)}
                     names={{ value: monthName(data.heroNow), compare: prevMonthName(data.heroNow) }}
                     xTicks={spendTicks(data)}
                     yAxis
@@ -838,8 +857,8 @@ export default function AnalyticsTab({ onOpenChat, onSettings }: {
                       key={r.key}
                       icon={cardIcon(r.message.card!)}
                       title={r.title}
-                      detail={r.detail}
-                      figure={money(r.amount)}
+                      detail={rowDetail(r.detail, r, data.currency)}
+                      figure={rowMoney(r)}
                       onOpen={() => close(() => open(r.chat, r.message))}
                     />
                   ))}
@@ -849,7 +868,7 @@ export default function AnalyticsTab({ onOpenChat, onSettings }: {
                       icon={<IconMoneySend size={15} />}
                       title="Everyday spending"
                       detail="Estimated — coffee, transport, small bills"
-                      figure={money(data.spentOther)}
+                      figure={cash(data.spentOther)}
                     />
                   )}
                 </div>
@@ -866,8 +885,9 @@ export default function AnalyticsTab({ onOpenChat, onSettings }: {
           {(close) => (
             <>
               <div className={s.money}>
-                <div><span>Total</span><b style={{ color: data.youOwe ? "var(--warn)" : undefined }}>{money(data.youOwe)}</b></div>
+                <div><span>Total</span><b style={{ color: data.youOwe ? "var(--warn)" : undefined }}>{data.approx.owe && "≈ "}{cash(data.youOwe)}</b></div>
               </div>
+              {data.approx.owe && <p className={s.fxNote}>Amounts in other currencies are converted to {data.currency} at reference rates.</p>}
               {data.oweRows.length > 0 ? (
                 <div className={s.list}>
                   {data.oweRows.map((r) => (
@@ -875,8 +895,8 @@ export default function AnalyticsTab({ onOpenChat, onSettings }: {
                       key={r.key}
                       icon={cardIcon(r.message.card!)}
                       title={r.title}
-                      detail={r.detail}
-                      figure={money(r.amount)}
+                      detail={rowDetail(r.detail, r, data.currency)}
+                      figure={rowMoney(r)}
                       onOpen={() => close(() => open(r.chat, r.message))}
                     />
                   ))}
@@ -894,8 +914,9 @@ export default function AnalyticsTab({ onOpenChat, onSettings }: {
           {(close) => (
             <>
               <div className={s.money}>
-                <div><span>Total</span><b>{money(data.owedToYou)}</b></div>
+                <div><span>Total</span><b>{data.approx.owed && "≈ "}{cash(data.owedToYou)}</b></div>
               </div>
+              {data.approx.owed && <p className={s.fxNote}>Amounts in other currencies are converted to {data.currency} at reference rates.</p>}
               {data.owedRows.length > 0 ? (
                 <div className={s.list}>
                   {data.owedRows.map((r) => (
@@ -903,8 +924,8 @@ export default function AnalyticsTab({ onOpenChat, onSettings }: {
                       key={r.key}
                       icon={cardIcon(r.message.card!)}
                       title={r.title}
-                      detail={r.detail}
-                      figure={money(r.amount)}
+                      detail={rowDetail(r.detail, r, data.currency)}
+                      figure={rowMoney(r)}
                       onOpen={() => close(() => open(r.chat, r.message))}
                     />
                   ))}

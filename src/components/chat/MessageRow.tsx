@@ -2,6 +2,7 @@
 
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { renderBody, stripFormatting } from "@/lib/chat/markdown";
+import { isPinned } from "@/lib/chat/pins";
 import { userById } from "@/lib/chat/store";
 import type { Message } from "@/lib/chat/types";
 import { initials } from "@/lib/chat/avatar";
@@ -456,7 +457,7 @@ export default memo(function MessageRow({
             {tail && <span className={styles.tail} aria-hidden="true" />}
           </div>
 
-          {message.pinned && !deleted && <span className={styles.pinBadge} title="Pinned" aria-label="Pinned"><IconPin size={10} /></span>}
+          {isPinned(message) && !deleted && <span className={styles.pinBadge} title="Pinned" aria-label="Pinned"><IconPin size={10} /></span>}
           <span ref={hintRef} className={styles.replyHint}><IconReply /></span>
 
           {(message.reactions.length > 0 || leavingReactions.length > 0) && !deleted && (

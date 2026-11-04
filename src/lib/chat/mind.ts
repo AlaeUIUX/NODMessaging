@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
-import { netDown } from "./api";
+import { isOffline, NET_CHANGED, netDown, roundTrip, uploadBytes } from "./api";
 import type { Attachment } from "./types";
 
 /**
@@ -40,6 +40,8 @@ export interface Sharing {
   copy: boolean;
   /** Asking for access (or for edit access), waiting for the owner. */
   requests: { userId: string; role: ShareRole; at: number }[];
+  /** When each person was given it (or sent it again): newest first in their Shared with you. */
+  since?: Record<string, number>;
 }
 
 /** One line of a to-do's checklist. */
@@ -94,6 +96,10 @@ export interface Block {
   note?: string;
   /** Shared on its own (a collection shared whole covers its items too). */
   sharing?: Sharing;
+  /** Made while the network was down and only on this phone so far: waiting to go up, or tried and not sent. */
+  unsent?: "waiting" | "failed";
+  /** A copy of something shared with you: the share it came from (its token), so the share reads "In your Mind". */
+  copiedFrom?: string;
 }
 
 export interface Collection {
@@ -335,6 +341,8 @@ function charlesMind(): Mind {
     },
     {
       id: "c-lumen", name: "Lumen", emoji: "📱", tone: "#86507A", chatIds: [],
+      // Shared with Alae two days ago, to edit: it's in their Shared with you.
+      sharing: { link: "off", people: { me: "edit" }, emails: {}, copy: true, requests: [], since: { me: Date.now() - 2 * DAY } },
       items: tagged("ios-app-1.4", [
         task("Sign in with Apple", "done"), task("TestFlight build 1.4", "done"), task("Onboarding flow v2", "doing"),
         task("Push notification copy", "todo"), task("App Store screenshots", "todo"),
@@ -379,7 +387,8 @@ function reemaMind(): Mind {
         { kind: "amount", title: "Furniture budget", source: "This year", amount: 2500, paid: false, at: Date.now() + 60 * DAY },
         ...tagged("living-room", [
           img("photo-1616046229478-9901c5536a45", "Sage walls and a round mirror"),
-          { kind: "palette", title: "Sage & oak", colors: ["#8A9A7B", "#C9B79C", "#EDE6DA", "#5B4636", "#2F3A2F"] },
+          // Shared with Alae on its own yesterday, to view.
+          { kind: "palette", title: "Sage & oak", colors: ["#8A9A7B", "#C9B79C", "#EDE6DA", "#5B4636", "#2F3A2F"], sharing: { link: "off", people: { me: "view" }, emails: {}, copy: true, requests: [], since: { me: Date.now() - DAY } } },
           img("photo-1493663284031-b7e3aefcae8e", "Teal cushions"),
           { kind: "link", title: "Oak side table", source: "hay.com", url: "https://hay.com" },
           img("photo-1484101403633-562f891dc89a", "A soft grey sofa"),
@@ -551,42 +560,183 @@ export function mindOf(userId: string): Mind {
   }
   return all[userId];
 }
-/** Fired on window when a save to Mind didn't go through and was put back; `detail.userId` says whose Mind. */
+/**
+ * What a change to Mind does, judged from before and after it: for saying
+ * what didn't go through, and for knowing what can wait offline. "local" never
+ * goes to the server (which collection is open, how one is laid out) or only
+ * touches items still on this phone; "add" brings new items.
+ */
+export type MindChange = "local" | "add" | "move" | "delete" | "collection" | "deleteCollection" | "share" | "publish" | "edit";
+
+export function changeOf(before: Mind, next: Mind): MindChange {
+  // Items only on this phone (new ones, and ones made offline that haven't gone up) can change freely.
+  const phoneOnly = (id: string) => !before.blocks[id] || !!before.blocks[id].unsent;
+  // Unassigned comes and goes with what's in it, so it isn't a collection of its own here.
+  const cols = (m: Mind) => new Map(m.collections.filter((c) => !isUnassigned(c)).map((c) => [c.id, c]));
+  const was = cols(before);
+  const now = cols(next);
+  if ([...was.keys()].some((id) => !now.has(id))) return "deleteCollection";
+  if ([...now.keys()].some((id) => !was.has(id))) return "collection";
+  if (Object.keys(before.blocks).some((id) => !next.blocks[id] && !phoneOnly(id))) return "delete";
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  let found: MindChange | null = null;
+  for (const [id, c] of now) {
+    const old = was.get(id)!;
+    if (old === c) continue;
+    if (!same(old.sharing, c.sharing)) return "share";
+    if (!same(old.published, c.published)) found ??= "publish";
+    // Its name, look and chats; what's in it and how it's laid out are judged apart.
+    const own = (x: Collection) => ({ ...x, items: undefined, view: undefined, sharing: undefined, published: undefined });
+    if (!same(own(old), own(c))) found ??= "edit";
+  }
+  if (found === "publish") return found;
+  // Where things are, leaving out what's only on this phone.
+  const places = (m: Mind) => m.collections.map((c) => `${c.id}:${c.items.filter((x) => !phoneOnly(x)).join(",")}`).filter((s) => !s.endsWith(":")).join("|");
+  if (places(before) !== places(next)) return "move";
+  if (found || Object.keys(next.blocks).some((id) => !phoneOnly(id) && before.blocks[id] !== next.blocks[id])) return "edit";
+  return Object.keys(next.blocks).some((id) => !before.blocks[id]) ? "add" : "local";
+}
+
+/**
+ * Fired on window when a change to Mind didn't go through: refused while
+ * offline, or tried and put back. `detail`: whose Mind (`userId`), what the
+ * change did, whether it was refused offline, and `retry` to send it again.
+ */
 export const MIND_FAILED = "nod:mind-failed";
-/** Saves waiting to fail, by Mind: what that Mind was before the first of them, and when it's put back. */
-const failing = new Map<string, { before: Mind; timer: ReturnType<typeof setTimeout> }>();
+export interface MindFailure { userId: string; change: MindChange; offline: boolean; retry?: () => void }
+/** Saves waiting to fail, by Mind: what that Mind was before the first of them, the changes since, and when it's put back. */
+const failing = new Map<string, { before: Mind; fns: ((m: Mind) => Mind)[]; timer: ReturnType<typeof setTimeout> }>();
+
+/** What a toast says about a change that didn't go through. */
+export function failureText({ change, offline }: { change: MindChange; offline: boolean }) {
+  if (offline) {
+    const needs: Partial<Record<MindChange, string>> = {
+      move: "Moving", delete: "Deleting", deleteCollection: "Deleting a collection", collection: "Making a collection",
+      share: "Sharing", publish: "Publishing",
+    };
+    return `You’re offline. ${needs[change] ?? "Changing things"} needs a connection.`;
+  }
+  const failed: Partial<Record<MindChange, string>> = {
+    move: "Couldn’t move it. It’s back where it was.",
+    delete: "Couldn’t delete it. It’s back.",
+    deleteCollection: "Couldn’t delete the collection. It’s back.",
+    collection: "Couldn’t make the collection.",
+    share: "Couldn’t change the sharing. It’s back as it was.",
+    publish: "Couldn’t update Explore. It’s back as it was.",
+  };
+  return failed[change] ?? "Couldn’t save your change. It’s back as it was.";
+}
 
 /**
  * Read, change and write in one go, from what's stored right now. The change
- * shows at once, as it will in the app; if the network is down (or failing on
- * purpose, from the developer panel) the save "fails" a moment later and Mind
- * is put back the way it was, then MIND_FAILED tells the screen to say so.
- * Copies being edited (drafts) never fail: they're only on this phone until
- * they're saved. `local` is for changes that never go to the server.
+ * shows at once, as it will in the app. While the network is down (or failing
+ * on purpose, from the developer panel):
+ * - new items stay, on this phone, marked as waiting; they go up once it's back
+ *   (see sendWaiting), or show they didn't send;
+ * - offline, anything else is refused before it's tried;
+ * - online but failing, it "fails" a moment later and Mind is put back the way
+ *   it was.
+ * MIND_FAILED tells the screen to say so. Copies being edited (drafts) never
+ * fail: they're only on this phone until they're saved. `local` is for
+ * changes that never go to the server. Returns false when it was refused, so
+ * the caller doesn't announce it.
  */
-export function updateMind(userId: string, fn: (m: Mind) => Mind, { local = false }: { local?: boolean } = {}) {
+export function updateMind(userId: string, fn: (m: Mind) => Mind, { local = false }: { local?: boolean } = {}): boolean {
   load(true);
   const before = mindOf(userId);
-  const next = fn(before);
+  let next = fn(before);
+  const change = local || userId.startsWith("draft:") ? "local" : changeOf(before, next);
+  if (isOffline() && change !== "local" && change !== "add") {
+    window.dispatchEvent(new CustomEvent<MindFailure>(MIND_FAILED, { detail: { userId, change, offline: true } }));
+    return false;
+  }
+  const fresh = change === "add" && netDown() ? Object.keys(next.blocks).filter((id) => !before.blocks[id]) : [];
+  if (fresh.length) next = { ...next, blocks: { ...next.blocks, ...Object.fromEntries(fresh.map((id) => [id, { ...next.blocks[id], unsent: "waiting" as const }])) } };
   cache = { ...cache!, [userId]: next };
   write();
   notify();
-  if (local || userId.startsWith("draft:") || !netDown()) return;
+  // Online but not getting through: new items try now, and show they didn't send.
+  if (fresh.length && !isOffline()) sendWaiting(userId);
+  if (change === "local" || change === "add" || !netDown()) return true;
   // Quick changes in a row are one failure: back to before the first, once the last has "failed".
   const pending = failing.get(userId);
   if (pending) clearTimeout(pending.timer);
   const base = pending?.before ?? before;
+  const fns = [...(pending?.fns ?? []), fn];
   failing.set(userId, {
     before: base,
+    fns,
     timer: setTimeout(() => {
       failing.delete(userId);
       load(true);
-      cache = { ...cache!, [userId]: base };
+      const now = mindOf(userId);
+      // Put back, keeping anything new made meanwhile: that's on this phone and waits on its own.
+      let out = base;
+      for (const b of Object.values(now.blocks)) {
+        if (!b.unsent || out.blocks[b.id]) continue;
+        out = place({ ...out, blocks: { ...out.blocks, [b.id]: b } }, b.id, { collectionId: locate(now, b.id)?.collection.id ?? UNASSIGNED });
+      }
+      cache = { ...cache!, [userId]: out };
       write();
       notify();
-      window.dispatchEvent(new CustomEvent(MIND_FAILED, { detail: { userId } }));
+      const detail: MindFailure = { userId, change: changeOf(base, now), offline: false, retry: () => fns.forEach((f) => updateMind(userId, f)) };
+      window.dispatchEvent(new CustomEvent<MindFailure>(MIND_FAILED, { detail }));
     }, 400 + Math.random() * 200),
   });
+  return true;
+}
+
+/** A photo or file of your own: its bytes go up when it's added, so it's sent with progress. */
+export const isUpload = (b: Block) => !!b.attachment && (b.kind === "image" || b.kind === "file");
+
+/** Photos and files going up, by item: how far (0 to 1). Only while it happens; nothing is kept. */
+const uploading = new Map<string, number>();
+const uploadListeners = new Set<() => void>();
+function setUploading(id: string, value: number | null) {
+  if (value === null) uploading.delete(id);
+  else uploading.set(id, value);
+  uploadListeners.forEach((l) => l());
+}
+/** How far an item's upload has got, or null when it isn't uploading. */
+export function useUploadProgress(id: string) {
+  return useSyncExternalStore(
+    (l) => { uploadListeners.add(l); return () => { uploadListeners.delete(l); }; },
+    () => uploading.get(id) ?? null,
+    () => null,
+  );
+}
+
+/** Items on their way up, so a second call doesn't send them twice. */
+const sending = new Set<string>();
+/** Sends a Mind's waiting items: each goes up (a photo or file with its progress), or is marked as not sent (it then offers Retry). */
+export function sendWaiting(userId: string) {
+  if (isOffline()) return;
+  for (const b of Object.values(mindOf(userId).blocks)) {
+    if (b.unsent !== "waiting" || sending.has(b.id)) continue;
+    sending.add(b.id);
+    const sent = isUpload(b) ? uploadBytes(b.attachment!.size, (p) => setUploading(b.id, p)) : roundTrip();
+    void sent.then((ok) => {
+      sending.delete(b.id);
+      setUploading(b.id, null);
+      // Deleted meanwhile, or already dealt with.
+      if (mindOf(userId).blocks[b.id]?.unsent !== "waiting") return;
+      updateMind(userId, (m) => ({ ...m, blocks: { ...m.blocks, [b.id]: { ...m.blocks[b.id], unsent: ok ? undefined : "failed" } } }), { local: true });
+    });
+  }
+}
+/** Sends an item: a photo or file just added, or one that didn't send, again. */
+export function sendItem(userId: string, id: string) {
+  updateMind(userId, (m) => (m.blocks[id] ? { ...m, blocks: { ...m.blocks, [id]: { ...m.blocks[id], unsent: "waiting" } } } : m), { local: true });
+  sendWaiting(userId);
+}
+// Back online (or no longer failing on purpose): everything waiting goes up.
+if (typeof window !== "undefined") {
+  const flush = () => {
+    if (netDown()) return;
+    for (const id of Object.keys(load(true))) if (!id.startsWith("draft:")) sendWaiting(id);
+  };
+  window.addEventListener("online", flush);
+  window.addEventListener(NET_CHANGED, flush);
 }
 /*
  * Editing a Mind that isn't yours alone (a group's) happens on a copy, kept in
@@ -600,10 +750,10 @@ export function startDraft(id: string) {
   updateMind(draftOf(id), () => copy);
   return draftOf(id);
 }
-/** Puts the edited copy back. */
+/** Puts the edited copy back. False when it was refused (offline): the copy is still there to save later. */
 export function commitDraft(id: string) {
   const draft = load(true)[draftOf(id)];
-  if (draft) updateMind(id, () => draft);
+  return draft ? updateMind(id, () => draft) : true;
 }
 /** Forgets the copy. Only once its editor is gone: nothing should be reading it, so nothing is told. */
 export function dropDraft(id: string) {
@@ -654,11 +804,11 @@ export function startShareDraft(owner: string, collectionId: string, editor: str
 export function commitShareDraft(owner: string, collectionId: string, editor: string) {
   const draft = load(true)[draftOf(shareKey(owner, collectionId, editor))] as Mind | undefined;
   const edited = draft?.collections[0];
-  if (!draft || !edited) return;
+  if (!draft || !edited) return true;
   const base = new Set(draft.draftBase ?? []);
   const saved = collectionItems(draft, edited);
   const savedIds = new Set(saved.map((b) => b.id));
-  updateMind(owner, (m) => {
+  return updateMind(owner, (m) => {
     const before = m.collections.find((c) => c.id === collectionId);
     if (!before) return m;
     const blocks = { ...m.blocks };
@@ -682,8 +832,23 @@ export function commitShareDraft(owner: string, collectionId: string, editor: st
 }
 
 /** Every person's Mind on this device, by whose it is (not group Minds, not copies being edited). */
-export function peopleMinds(): [string, Mind][] {
-  return Object.entries(load()).filter(([id, m]) => !id.startsWith("draft:") && !id.startsWith("group:") && (m as Mind)?.version === 6) as [string, Mind][];
+export function peopleMinds(all: Record<string, Mind> = load()): [string, Mind][] {
+  return Object.entries(all).filter(([id, m]) => !id.startsWith("draft:") && !id.startsWith("group:") && (m as Mind)?.version === 6) as [string, Mind][];
+}
+const NO_MINDS: Record<string, Mind> = {};
+/** Every Mind on this device, kept up to date (for what others shared with you). */
+export function useAllMinds() {
+  return useSyncExternalStore(subscribe, () => load(), () => NO_MINDS);
+}
+/** The people who share things in the demo have their Minds from the start, so what they shared can be found. */
+export function meetSharers() {
+  const all = load(true);
+  const missing = ["charles", "reema"].filter((id) => (all[id] as Mind | undefined)?.version !== 6);
+  if (!missing.length) return;
+  // A new snapshot (not a change in place), so everything reading every Mind sees them arrive.
+  cache = { ...all, ...Object.fromEntries(missing.map((id) => [id, seedMind(id)])) };
+  write();
+  notify();
 }
 
 /**

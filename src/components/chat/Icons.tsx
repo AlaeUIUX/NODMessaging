@@ -11,7 +11,7 @@ import {
   Shield01Icon, PaintBoardIcon, Database01Icon, InformationCircleIcon, HelpCircleIcon, SmartPhone01Icon, KeyboardIcon, ComputerIcon, Contact01Icon,
   MinusSignIcon, SlidersHorizontalIcon, ChartLineData01Icon, Wallet01Icon, ArrowDown02Icon,
   ClipboardPasteIcon, SquareLock01Icon, SquareUnlock01Icon, Redo02Icon, ShuffleIcon, ImageAdd01Icon, FileAddIcon, Book02Icon, Video01Icon,
-  FilterHorizontalIcon, Megaphone02Icon, Menu01Icon, RefreshIcon, CloudOffIcon,
+  FilterHorizontalIcon, Megaphone02Icon, Menu01Icon, RefreshIcon, CloudOffIcon, ViewOffSlashIcon,
 } from "@hugeicons/core-free-icons";
 
 /**
@@ -123,6 +123,7 @@ export const IconMinus = make(MinusSignIcon, 2.2);
 export const IconSliders = make(SlidersHorizontalIcon);
 export const IconChart = make(ChartLineData01Icon);
 export const IconWallet = make(Wallet01Icon);
+export const IconHide = make(ViewOffSlashIcon);
 export const IconArrowDown = make(ArrowDown02Icon, 1.8);
 export const IconPaste = make(ClipboardPasteIcon);
 export const IconPadlock = make(SquareLock01Icon);

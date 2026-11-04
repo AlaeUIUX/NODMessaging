@@ -369,6 +369,8 @@ button.row:active { background: var(--fill-2); }
 .rowValue { flex-shrink: 0; font: var(--t-subhead); color: var(--ink-3); }
 .tile { width: 30px; height: 30px; flex-shrink: 0; border-radius: 9px; color: #fff; display: grid; place-items: center; }
 .addTile { width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); display: grid; place-items: center; }
+/* A currency's flag where other rows have a tile. */
+.flag { width: 30px; height: 30px; flex-shrink: 0; display: grid; place-items: center; font-size: 22px; line-height: 1; }
 .check { width: 22px; height: 22px; flex-shrink: 0; border-radius: var(--r-pill); background: var(--accent); color: var(--bg); display: grid; place-items: center; }
 .switch { flex-shrink: 0; font: var(--t-footnote); font-weight: var(--w-emph); color: var(--accent); }
 .segRow { padding: 0; }

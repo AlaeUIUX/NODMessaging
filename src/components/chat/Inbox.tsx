@@ -309,7 +309,7 @@ export default function Inbox({ onOpen, pushed }: {
       const channel = chat.kind === "group" && threads.length > 1 && last && last.chatId !== chat.id
         ? groupInfo(chat).channels.find((c) => c.id === last!.chatId)?.name
         : undefined;
-      return { chat, last, unread, alert, mentioned, channel, quiet };
+      return { chat, threads: threads.map((t) => t.id), last, unread, alert, mentioned, channel, quiet };
     });
   }, [state.data, me, lastReadAt, rules, now]);
   // Groups that invited you: a red badge on + until you answer them (in New chat › Invitations).
@@ -417,11 +417,16 @@ export default function Inbox({ onOpen, pushed }: {
             )}
 
             <div className={styles.rows} key={`${tab}-${filter}`}>
-              {visible.map(({ chat, last, alert, mentioned, channel, quiet }, i) => {
+              {visible.map(({ chat, threads, last, alert, mentioned, channel, quiet }, i) => {
                 const id = chatIdentity(chat, me, userById);
                 const other = chat.kind === "dm" ? chat.memberIds.find((m) => m !== me) : undefined;
                 const online = !!other && isOnline(other);
-                const typing = typingUsers(chat.id).filter((u) => u !== me);
+                // Typing anywhere in a group shows on its row, with the channel when it's all in one other than #general.
+                const typingIn = threads.filter((t) => typingUsers(t).some((u) => u !== me));
+                const typing = [...new Set(typingIn.flatMap((t) => typingUsers(t)))].filter((u) => u !== me);
+                const typingChannel = chat.kind === "group" && typingIn.length === 1 && typingIn[0] !== chat.id
+                  ? groupInfo(chat).channels.find((c) => c.id === typingIn[0])?.name
+                  : undefined;
                 const isMuted = quiet;
                 const showBadge = alert > 0;
                 // An Operation's row carries its live strip (its own component: only it follows the live state).
@@ -449,7 +454,7 @@ export default function Inbox({ onOpen, pushed }: {
                           <span className={`${styles.rowPreview} ${operation ? ops.opPreview : ""}`}>
                             {typing.length > 0 ? (
                               <span className={styles.typingText}>
-                                {chat.kind === "group" ? typingLine(typing) : "typing"}
+                                {typingChannel && `#${typingChannel} · `}{chat.kind === "group" ? typingLine(typing) : "typing"}
                                 <span className={styles.ellipsis}><i>.</i><i>.</i><i>.</i></span>
                               </span>
                             ) : emojify(`${channel ? `#${channel} · ` : ""}${preview(last, me)}`)}

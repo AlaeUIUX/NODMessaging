@@ -5,7 +5,7 @@ import { Emoji } from "@/lib/chat/emoji";
 import { isIsbnQuery } from "@/lib/chat/links";
 import { findBooks, SOURCE_LABEL, type BookHit } from "@/lib/chat/lookup";
 import { MAX_ATTACHMENT_BYTES } from "@/lib/chat/media";
-import { allCurrencies, currencyFlag, currencyName } from "@/lib/chat/money";
+import { allCurrencies, currencyFlag, currencyMatches, currencyName, recentCurrencies } from "@/lib/chat/money";
 import { CURRENCIES } from "@/lib/chat/receipt";
 import FileTypeIcon from "./FileTypeIcon";
 import { IconCheck, IconChevronDown, IconClose, IconFileAdd, IconImageAdd, IconPaste, IconPlay, IconSearch } from "./Icons";
@@ -51,7 +51,7 @@ export function PasteButton({ onPaste, onRefused, label = "Paste" }: { onPaste: 
 }
 
 /** A one-line field with an icon in front and Paste at the end (a clear button once it has something). */
-export function PasteField({ value, onChange, placeholder, icon, label, type = "url", autoFocus, busy, onEnter, pick }: {
+export function PasteField({ value, onChange, placeholder, icon, label, type = "url", autoFocus, onEnter, pick }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
@@ -59,7 +59,6 @@ export function PasteField({ value, onChange, placeholder, icon, label, type = "
   label: string;
   type?: "url" | "search";
   autoFocus?: boolean;
-  busy?: boolean;
   onEnter?: () => void;
   /** What to keep from pasted text: the link in a sentence, say. */
   pick?: (text: string) => string;
@@ -87,7 +86,6 @@ export function PasteField({ value, onChange, placeholder, icon, label, type = "
           onChange={(e) => { setHint(null); onChange(e.target.value); }}
           onKeyDown={(e) => { if (e.key === "Enter") onEnter?.(); }}
         />
-        {busy && <span className={f.spin} role="status" aria-label="Looking it up" />}
         {value ? (
           <button type="button" className={f.clear} onClick={() => { onChange(""); ref.current?.focus(); }} aria-label={`Clear ${label.toLowerCase()}`}>
             <IconClose size={12} />
@@ -334,7 +332,6 @@ export function BookSearch({ picked, onPick, onManual, autoFocus, children }: {
         label="Find a book"
         placeholder="Title, author or ISBN"
         autoFocus={autoFocus}
-        busy={loading}
       />
       {picked ? (
         <>
@@ -381,8 +378,18 @@ export function AmountField({ value, currency, onChange, onCurrency, onEnter, au
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const all = useMemo(() => allCurrencies(), []);
+  // Read when the list opens, so a currency just picked is there next time.
+  const recent = useMemo(() => (open ? recentCurrencies() : []), [open]);
   const query = q.trim().toLowerCase();
-  const shown = query ? all.filter((c) => c.toLowerCase().includes(query) || currencyName(c).toLowerCase().includes(query)) : all;
+  // Recent first (once there is one), then the common ones, then everything else; a search looks through them all.
+  const groups = query
+    ? [{ label: "", list: all.filter((c) => currencyMatches(c, query)) }]
+    : [
+      { label: "Recent", list: recent },
+      { label: "Common", list: CURRENCIES.filter((c) => !recent.includes(c)) },
+      { label: "All", list: all.filter((c) => !recent.includes(c) && !CURRENCIES.includes(c)) },
+    ].filter((g) => g.list.length);
+  const shown = groups.flatMap((g) => g.list);
   const pick = (code: string) => { onCurrency(code); setOpen(false); setQ(""); };
   return (
     <div className={f.fieldWrap}>
@@ -412,19 +419,21 @@ export function AmountField({ value, currency, onChange, onCurrency, onEnter, au
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && shown.length) pick(shown[0]); }}
-              placeholder="Search currencies"
+              placeholder="Search code, name, country"
               aria-label="Search currencies"
             />
           </label>
           <div className={f.currencyList} role="listbox" aria-label="Currencies">
-            {shown.map((c, i) => (
-              <Fragment key={c}>
-                {!query && i === CURRENCIES.length && <p className={f.currencyHead}>All currencies</p>}
-                <button type="button" role="option" aria-selected={c === currency} onClick={() => pick(c)}>
-                  <Emoji char={currencyFlag(c)} />
-                  <span><b>{currencyName(c)}</b><small>{c}</small></span>
-                  {c === currency && <IconCheck size={14} />}
-                </button>
+            {groups.map((g) => (
+              <Fragment key={g.label}>
+                {g.label && <p className={f.currencyHead}>{g.label}</p>}
+                {g.list.map((c) => (
+                  <button key={c} type="button" role="option" aria-selected={c === currency} onClick={() => pick(c)}>
+                    <Emoji char={currencyFlag(c)} />
+                    <span><b>{currencyName(c)}</b><small>{c}</small></span>
+                    {c === currency && <IconCheck size={14} />}
+                  </button>
+                ))}
               </Fragment>
             ))}
             {!shown.length && <p className={f.note}>No currency matches “{q.trim()}”.</p>}

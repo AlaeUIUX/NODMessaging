@@ -1152,6 +1152,11 @@
   color: var(--ink-3);
 }
 .dayLabel b { font-weight: 500; color: var(--ink-2); }
+/* A line between messages ("Charles pinned a message"), centred like the day. */
+.threadNote { display: flex; justify-content: center; margin: 14px 0 6px; }
+.threadNote > * { padding: 3px 10px; border: none; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink-2); font: var(--t-caption1); font-weight: 500; }
+.threadNote > button { cursor: pointer; }
+.threadNote > button:active { background: color-mix(in srgb, var(--ink) 9%, transparent); }
 .newDivider {
   display: flex;
   align-items: center;
@@ -4232,6 +4237,18 @@ div.actionRow:hover { background: transparent; }
   transition: transform var(--t-fast) var(--ease-out), opacity var(--t-mid) var(--ease-out);
 }
 .mindBlockWrap:active { transform: scale(.98); }
+
+/* Shared with you: its row on Mind home (the faces of who shared, a count), and the rows inside. */
+.sharedRow { --tone: var(--accent); }
+.sharedFaces { display: flex; flex-shrink: 0; padding-left: 4px; }
+.sharedFaces > * { margin-left: -9px; box-shadow: 0 0 0 2px var(--surface); border-radius: var(--r-pill); }
+.sharedFaces > :first-child { margin-left: 0; }
+.sharedCount { min-width: 22px; height: 22px; padding: 0 7px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink-2); font: var(--t-caption1); font-style: normal; font-weight: var(--w-emph); line-height: 22px; text-align: center; }
+.sharedList { display: grid; gap: 8px; margin-bottom: 18px; }
+.sharedList .folderRowIcon img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.sharedIn { padding: 3px 8px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ok, #2f8f5b) 12%, transparent); color: var(--ok, #2f8f5b); font: var(--t-caption1); font-weight: var(--w-control); white-space: nowrap; }
+/* A photo or file still going up, from the phone's copy: dimmed under its ring, bar or retry arrow. */
+.mindUploading > :not([data-upload-mark]) { opacity: .55; transition: opacity var(--t-mid) var(--ease-out); }
 .mindBlockWrap.mindDragSource { opacity: .25; transform: scale(.96); }
 .mindDropAbove::before, .mindDropLeft::before {
   content: "";
@@ -4470,6 +4487,8 @@ figure.mb { margin: 0; }
 /* invoice */
 .mbk_invoice { flex-direction: row !important; align-items: center; justify-content: space-between; }
 .mbAmount { font: var(--t-title3) !important; font-weight: var(--w-emph) !important; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.mb_detail .mbAmount { font: var(--t-large-title) !important; font-weight: var(--w-emph) !important; }
+.mbCurrency { display: inline-flex; align-items: center; gap: 5px; }
 .mbPill { flex-shrink: 0; padding: 3px 9px; border-radius: var(--r-pill); font: var(--t-caption1); font-weight: var(--w-control); white-space: nowrap; }
 .mbPaid { background: var(--ok-soft); color: var(--ok); }
 .mbDue { background: var(--warn-soft); color: var(--warn); }
@@ -4978,12 +4997,30 @@ a.bsheetAction { text-decoration: none !important; }
    ========================================================================== */
 
 .chatWithChannels .thread { padding-top: calc(var(--inset-top) + 150px); }
-/* Pinned messages: a pin in the header, next to the board and the call, there once something's pinned.
-   Three buttons a side: both sides widen together so the name stays centred, and the buttons tighten a little. */
-.pinBtn { position: relative; animation: pinBtnIn var(--t-slow) var(--ease-spring); }
-.pinCount { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--accent); color: #fff; font: var(--t-caption2, var(--t-caption1)); font-size: 11px; line-height: 18px; font-style: normal; font-weight: var(--w-emph); text-align: center; box-shadow: 0 0 0 2px var(--bg); }
-@keyframes pinBtnIn { from { opacity: 0; transform: scale(.4); } }
-@media (prefers-reduced-motion: reduce) { .pinBtn { animation: none; } }
+/* Pinned messages, the WhatsApp way: one bar under the header (and the channel chips), there once something's pinned.
+   Several pins: steps on its left say which one it shows; tapping moves on to the next. */
+.pinSlot { position: absolute; top: calc(var(--inset-top) + 96px); left: 12px; right: 12px; z-index: 29; display: flex; justify-content: center; }
+.chatWithChannels .pinSlot { top: calc(var(--inset-top) + 142px); }
+.chatWithPins .thread { padding-top: calc(var(--inset-top) + 158px); }
+.chatWithPins.chatWithChannels .thread { padding-top: calc(var(--inset-top) + 204px); }
+.chatWithPins .edgeTop { height: calc(var(--inset-top) + 172px); }
+.chatWithPins.chatWithChannels .edgeTop { height: calc(var(--inset-top) + 218px); }
+.pinBar { width: 100%; max-width: 480px; height: 48px; flex-shrink: 0; display: flex; align-items: center; border-radius: 16px; overflow: hidden; animation: pinBarIn var(--t-slow) var(--ease-spring); }
+.pinBarMain { flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 10px; padding: 0 4px 0 14px; border: none; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.pinBarMain:active .pinBarText { opacity: .6; }
+.pinSteps { width: 3px; height: 32px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; }
+.pinSteps i { flex: 1; border-radius: 2px; background: color-mix(in srgb, var(--ink) 16%, transparent); transition: background var(--t-mid); }
+.pinSteps i.pinStepOn { background: var(--accent); }
+.pinBarText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; transition: opacity var(--t-fast, .12s); }
+.pinBarText small { font: var(--t-caption1); font-weight: var(--w-control); color: var(--accent); }
+.pinBarText > span { font: var(--t-subhead); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pinBarText b { font-weight: var(--w-control); }
+.pinBarList { width: 44px; height: 100%; flex-shrink: 0; display: grid; place-items: center; border: none; background: none; color: var(--ink-2); cursor: pointer; }
+.pinBarList:active { color: var(--ink); }
+@keyframes pinBarIn { from { opacity: 0; transform: translateY(-6px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .pinBar { animation: none; } }
+/* The pin sheet quotes what's being pinned. */
+.pinQuote { margin: 0 0 4px; padding: 10px 12px; border-left: 3px solid var(--accent); border-radius: 4px 10px 10px 4px; background: color-mix(in srgb, var(--ink) 4%, transparent); font: var(--t-subhead); color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 /* A pinned bubble wears a small pin on its outer top corner. */
 .pinBadge { position: absolute; top: -6px; z-index: 2; display: grid; place-items: center; width: 18px; height: 18px; border-radius: var(--r-pill); background: var(--surface); color: var(--accent); box-shadow: 0 0 0 1px var(--line), var(--e1); pointer-events: none; }
 .theirs .pinBadge { right: -6px; }
@@ -4991,6 +5028,7 @@ a.bsheetAction { text-decoration: none !important; }
 .pinRow { position: relative; display: flex; align-items: center; gap: 8px; padding-right: 10px; }
 .pinRowMain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 10px 4px 10px 14px; border: none; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
 .pinRowMain .contactText small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pinRowMain .contactText small.pinRowLeft { font: var(--t-caption1); color: var(--ink-3); }
 .pinRowUnpin { flex-shrink: 0; height: 30px; padding: 0 12px; border: none; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); font: var(--t-footnote); font-weight: var(--w-control); cursor: pointer; }
 .chatWithChannels .edgeTop { height: calc(var(--inset-top) + 170px); }
 /* Another channel of the same group: swapped in place, not pushed */

@@ -93,6 +93,8 @@ export interface Prefs {
   /** Return sends on a keyboard (Shift+Return for a new line); off, Return is a new line. */
   enterToSend: boolean;
   language: string;
+  /** What the Dashboard adds money up in; amounts in other currencies are converted. */
+  currency: string;
   /** Phone numbers you've invited. */
   invited: string[];
 }
@@ -108,6 +110,7 @@ export const DEFAULT_PREFS: Prefs = {
   previews: true,
   enterToSend: true,
   language: "en",
+  currency: "EUR",
   invited: [],
 };
 

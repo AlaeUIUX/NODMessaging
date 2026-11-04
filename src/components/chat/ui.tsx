@@ -151,6 +151,44 @@ const COPY: Record<PermissionKind, { title: string; body: string; allow: string[
   },
 };
 
+/** An iOS-style alert before something hard to take back: what happens, the action in red, and Cancel. */
+export function ConfirmAlert({ title, body, confirm, danger = true, onConfirm, onClose }: {
+  title: string;
+  body: string;
+  /** The action, saying what it does ("Delete 12 items"). */
+  confirm: string;
+  /** Red, for something that removes; off for a yes that only needs a second look (Allow). */
+  danger?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const [closing, setClosing] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const answered = useRef(false);
+  const done = (ok: boolean) => {
+    if (answered.current) return;
+    answered.current = true;
+    setClosing(true);
+    setTimeout(() => { onClose(); if (ok) onConfirm(); }, 180);
+  };
+  useDialog(ref, () => done(false));
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>("[data-autofocus]")?.focus({ preventScroll: true });
+  }, []);
+  return (
+    <div ref={ref} className={`${styles.alertScrim} ${closing ? styles.alertClosing : ""}`} role="alertdialog" aria-modal="true" aria-label={title}>
+      <div className={`${styles.alert} ${styles.glassStrong}`}>
+        <h4>{title}</h4>
+        <p>{body}</p>
+        <div className={styles.alertActions}>
+          <button className={danger ? styles.alertDanger : undefined} onClick={() => done(true)}>{confirm}</button>
+          <button data-autofocus onClick={() => done(false)}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** An iOS-style system alert, rendered inside the phone. */
 export function PermissionAlert({ kind, onResolve }: { kind: PermissionKind; onResolve: (granted: boolean) => void }) {
   const c = COPY[kind];

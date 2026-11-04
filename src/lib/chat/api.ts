@@ -17,8 +17,22 @@ export function getForceFailure() {
   return forceFailure;
 }
 
+/** Fired on window when going offline or online from the developer panel, or forcing failures on or off. */
+export const NET_CHANGED = "nod:net";
+const netChanged = () => { if (typeof window !== "undefined") window.dispatchEvent(new Event(NET_CHANGED)); };
+
+let simulatedOffline = false;
+/** Dev toggle: the phone acts offline, without taking the computer off the network. */
+export function setSimulatedOffline(value: boolean) {
+  simulatedOffline = value;
+  netChanged();
+}
+export function getSimulatedOffline() {
+  return simulatedOffline;
+}
+
 export function isOffline() {
-  return typeof navigator !== "undefined" && navigator.onLine === false;
+  return simulatedOffline || (typeof navigator !== "undefined" && navigator.onLine === false);
 }
 
 let forceNetFailure = false;
@@ -30,6 +44,7 @@ let forceNetFailure = false;
  */
 export function setForceNetFailure(value: boolean) {
   forceNetFailure = value;
+  netChanged();
 }
 export function getForceNetFailure() {
   return forceNetFailure;
@@ -40,6 +55,27 @@ export function netDown() {
 }
 /** What a failed request says: offline, or just didn't go through. */
 export const netFailureText = () => (isOffline() ? "You're offline" : "Couldn't reach NOD");
+
+/**
+ * Stands in for uploading a photo or a file: progress from 0 to 1 over about
+ * a second (bigger files take longer), then whether it went through. With the
+ * network down it stalls part of the way and fails.
+ */
+export function uploadBytes(bytes: number, onProgress: (p: number) => void): Promise<boolean> {
+  const ms = Math.min(2400, 700 + bytes / 4000);
+  const failAt = 0.25 + Math.random() * 0.3;
+  const start = performance.now();
+  return new Promise((resolve) => {
+    const tick = () => {
+      const p = Math.min(1, (performance.now() - start) / ms);
+      if (netDown() && p >= failAt) { resolve(false); return; }
+      // Eased, so it slows near the end the way real uploads seem to.
+      onProgress(1 - (1 - p) ** 2);
+      if (p < 1) setTimeout(tick, 50); else resolve(true);
+    };
+    tick();
+  });
+}
 
 /**
  * Stands in for a round trip to the server: a little time (with some jitter,

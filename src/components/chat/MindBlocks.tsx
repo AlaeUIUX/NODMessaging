@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { initials } from "@/lib/chat/avatar";
-import { emojify } from "@/lib/chat/emoji";
+import { Emoji, emojify } from "@/lib/chat/emoji";
 import { embedUrl, hostOf, parseVideo, videoProvider, type VideoRef } from "@/lib/chat/links";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { daysUntil, isPast, lastSevenDays, todayKey, type Block } from "@/lib/chat/mind";
-import { formatMoney } from "@/lib/chat/money";
+import { currencyFlag, currencyName, DEFAULT_CURRENCY, formatMoney } from "@/lib/chat/money";
 import { colorName, inkOn } from "@/lib/chat/palette";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Message } from "@/lib/chat/types";
@@ -164,7 +164,15 @@ export function BlockView({ block, shape, onToggle, autoPlay }: {
       const overdue = !block.paid && isPast(block.at ?? 0);
       return (
         <div className={cls}>
-          <span className={styles.mbText}><small>{block.title} · {block.source}</small><b className={styles.mbAmount}>{formatMoney(block.amount ?? 0, block.currency)}</b></span>
+          <span className={styles.mbText}>
+            <small>{block.title} · {block.source}</small>
+            <b className={styles.mbAmount}>{formatMoney(block.amount ?? 0, block.currency)}</b>
+            {/* In detail, which currency it is, spelled out under the figure. */}
+            {shape === "detail" && (() => {
+              const code = block.currency ?? DEFAULT_CURRENCY;
+              return <small className={styles.mbCurrency}><Emoji char={currencyFlag(code)} /> {code} · {currencyName(code)}</small>;
+            })()}
+          </span>
           <span className={`${styles.mbPill} ${block.paid ? styles.mbPaid : overdue ? styles.mbOverdue : styles.mbDue}`}>
             {block.paid ? "Paid" : !block.at ? "Unpaid" : overdue ? `Overdue · ${relDay(block.at)}` : `Due ${relDay(block.at)}`}
           </span>

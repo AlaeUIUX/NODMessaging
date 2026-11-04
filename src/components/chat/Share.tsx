@@ -3,11 +3,11 @@
 import { useState, type ReactNode } from "react";
 import { chatIdentity, initials } from "@/lib/chat/avatar";
 import { Emoji } from "@/lib/chat/emoji";
-import { collectionItems, isUnassigned, patchBlock, startShareDraft, useMind, type Block, type ShareRole, type Sharing } from "@/lib/chat/mind";
+import { collectionItems, isUnassigned, patchBlock, startShareDraft, UNASSIGNED, useMind, type Block, type ShareRole, type Sharing } from "@/lib/chat/mind";
 import { allPeople, usePeopleVersion } from "@/lib/chat/people";
 import {
   accessOf, answerRequest, audienceLabel, cloneCollection, copyAllowed, copyIn, copyItem, grant, refOf, requestAccess, setRole as setPersonRole,
-  resolveShare, sharedWithYou, shareLink, sharingOf, updateSharing, withdrawRequest,
+  resolveShare, shareLink, shareName, sharingOf, updateSharing, withdrawRequest,
   type Access, type Shared, type ShareRef,
 } from "@/lib/chat/share";
 import { useChat, userById } from "@/lib/chat/store";
@@ -15,9 +15,10 @@ import type { Card, Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { IconBack, IconCheck, IconClose, IconCopy, IconEdit, IconFilter, IconGlobe, IconLink, IconMail, IconPadlock, IconMessage, IconSearch, IconShare } from "./Icons";
 import { BlockEditor, KIND_EMOJI, MindEditor, toggleItem } from "./Mind";
+import { LoadFailed, SharedSkeleton, useFirstLoad } from "./Loading";
 import { BlockView, KIND_LABEL, toneFor } from "./MindBlocks";
 import { FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, type MindFilter } from "./MindFilter";
-import { Segmented, Sheet, Toggle, useChatUi } from "./ui";
+import { ConfirmAlert, Segmented, Sheet, Toggle, useChatUi } from "./ui";
 import styles from "./chat.module.css";
 import x from "./explore.module.css";
 import sh from "./share.module.css";
@@ -35,7 +36,16 @@ const ROLES: { id: ShareRole; label: string }[] = [{ id: "view", label: "Can vie
 const roleLabel = (a: Access) => (a === "owner" ? "Yours" : a === "edit" ? "Can edit" : a === "view" ? "Can view" : "No access");
 /** "Alae’s", or "your" for your own. */
 const possessive = (owner: string, me: string) => (owner === me ? "your" : `${userById(owner).name}’s`);
-const nameOf = (id: string) => userById(id).name;
+/** The best name sharing has for someone (see shareName). */
+const nameOf = (id: string) => shareName(id).name;
+
+/** Someone in Mind's sharing: their face if they're a contact, else a silhouette. */
+export function PersonAvatar({ id, size }: { id: string; size: number }) {
+  const u = userById(id);
+  return shareName(id).known
+    ? <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={size} shape="circle" />
+    : <Avatar glyph="" tone="graphite" size={size} shape="circle" />;
+}
 
 /** What a share is: its icon, its name, its kind, what's in it. */
 function describe(s: Shared) {
@@ -76,6 +86,8 @@ export function ShareSheet({ share, onClose, onSend }: { share: ShareRef; onClos
   const [q, setQ] = useState("");
   const [role, setRole] = useState<ShareRole>("view");
   const [copied, setCopied] = useState(false);
+  // Allowing someone who isn't a contact: one confirm first.
+  const [allowing, setAllowing] = useState<{ userId: string; role: ShareRole } | null>(null);
   const s = resolveShare(mind, share);
   if (!s) return null;
   const sharing = sharingOf(s);
@@ -105,6 +117,7 @@ export function ShareSheet({ share, onClose, onSend }: { share: ShareRef; onClos
   const owner = userById(share.owner);
 
   return (
+    <>
     <Sheet title="Share" onClose={onClose} action={{ label: "Done", onClick: () => {} }}>
       {(close) => (
         <>
@@ -151,13 +164,20 @@ export function ShareSheet({ share, onClose, onSend }: { share: ShareRef; onClos
               <p className={styles.sheetLabel}>Asking for access</p>
               <div className={sh.list}>
                 {sharing.requests.map((r) => {
-                  const u = userById(r.userId);
+                  // Someone we can't name says so plainly, instead of a friendly placeholder.
+                  const who = shareName(r.userId);
+                  const wants = `Wants to ${r.role === "edit" ? "edit" : "view"}`;
                   return (
                     <div key={r.userId} className={sh.row}>
-                      <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={34} shape="circle" />
-                      <span className={sh.rowText}><b>{u.fullName}</b><small>Wants to {r.role === "edit" ? "edit" : "view"}</small></span>
+                      <PersonAvatar id={r.userId} size={34} />
+                      <span className={sh.rowText}>
+                        <b>{who.known || who.handle ? who.name : "Someone not in your contacts"}</b>
+                        <small>{who.known ? wants : `${wants} · ${who.handle ? "Not in your contacts" : "You can’t see who this is yet"}`}</small>
+                      </span>
                       <button type="button" className={sh.quiet} onClick={() => answerRequest(share, r.userId, false)}>Decline</button>
-                      <button type="button" className={sh.addPill} onClick={() => answerRequest(share, r.userId, true)}>Allow</button>
+                      <button type="button" className={sh.addPill} onClick={() => (who.known ? answerRequest(share, r.userId, true) : setAllowing({ userId: r.userId, role: r.role }))}>
+                        {who.known ? "Allow" : "Allow…"}
+                      </button>
                     </div>
                   );
                 })}
@@ -173,13 +193,13 @@ export function ShareSheet({ share, onClose, onSend }: { share: ShareRef; onClos
               <span className={sh.ownerTag}>Owner</span>
             </div>
             {people.map(([id, r]) => {
-              const u = userById(id);
+              const who = shareName(id);
               return (
                 <div key={id} className={sh.row}>
-                  <Avatar glyph={initials(u.fullName)} tone={u.tone} photo={u.photo} size={34} shape="circle" />
-                  <span className={sh.rowText}><b>{u.fullName}</b><small>{r === "edit" ? "Can edit" : "Can view"}</small></span>
-                  <MiniRole value={r} onChange={(v) => setPerson(id, v)} label={`What ${u.name} can do`} />
-                  <button type="button" className={sh.remove} onClick={() => setPerson(id, null)} aria-label={`Remove ${u.name}`}><IconClose size={12} /></button>
+                  <PersonAvatar id={id} size={34} />
+                  <span className={sh.rowText}><b>{who.name}</b><small>{who.handle ? "Not in your contacts" : r === "edit" ? "Can edit" : "Can view"}</small></span>
+                  <MiniRole value={r} onChange={(v) => setPerson(id, v)} label={`What ${who.name} can do`} />
+                  <button type="button" className={sh.remove} onClick={() => setPerson(id, null)} aria-label={`Remove ${who.name}`}><IconClose size={12} /></button>
                 </div>
               );
             })}
@@ -225,6 +245,20 @@ export function ShareSheet({ share, onClose, onSend }: { share: ShareRef; onClos
         </>
       )}
     </Sheet>
+    {allowing && (() => {
+      const who = shareName(allowing.userId);
+      return (
+        <ConfirmAlert
+          title={who.handle ? `Allow ${who.name}?` : "Allow someone you can’t see?"}
+          body={`${who.handle ? "They’re not in your contacts. " : ""}They’ll be able to ${allowing.role === "edit" ? "edit" : "view"} “${what.title}”. You can remove them later.`}
+          confirm="Allow"
+          danger={false}
+          onConfirm={() => answerRequest(share, allowing.userId, true)}
+          onClose={() => setAllowing(null)}
+        />
+      );
+    })()}
+    </>
   );
 }
 
@@ -494,14 +528,17 @@ export function SharedPage({ share, onClose, onToast }: { share: ShareRef; onClo
   const [sheet, setSheet] = useState<ReactNode>(null);
   const [leaving, setLeaving] = useState(false);
   const [filter, setFilter] = useState<MindFilter>(NO_FILTER);
-  const s = resolveShare(mind, share);
+  // Someone else's collection comes from the server: the first time this session it loads, and may not.
+  const load = useFirstLoad(`share:${share.owner}:${share.collectionId}`, { canFail: true });
+  const s = load.state === "ready" ? resolveShare(mind, share) : null;
   const access = s ? accessOf(share, s, me) : null;
-  const owner = userById(share.owner);
   const back = () => { setLeaving(true); setTimeout(onClose, 220); };
   const closeSheet = () => setSheet(null);
   const tone = s?.collection.tone ?? "#3E67A6";
 
   const body = () => {
+    if (load.state === "loading") return <SharedSkeleton />;
+    if (load.state === "failed") return <LoadFailed what="the collection" onRetry={load.retry} />;
     if (!s || !access) return <NoAccess share={share} me={me} />;
     const col = s.collection;
     const sharing = sharingOf(s);
@@ -515,10 +552,10 @@ export function SharedPage({ share, onClose, onToast }: { share: ShareRef; onClo
         <MindEditor
           source={key}
           title={col.name}
-          note={`Editing ${owner.name}’s collection`}
+          note={`Editing ${nameOf(share.owner)}’s collection`}
           shared={{ owner: share.owner, collectionId: col.id }}
           onClose={closeSheet}
-          onSaved={() => onToast(`Saved for ${owner.name}`)}
+          onSaved={() => onToast(`Saved for ${nameOf(share.owner)}`)}
         />,
       );
     };
@@ -539,14 +576,14 @@ export function SharedPage({ share, onClose, onToast }: { share: ShareRef; onClo
           <span className={x.pageEmoji}><Emoji char={col.emoji} /></span>
           <h2>{col.name}</h2>
           <span className={x.byline}>
-            <Avatar glyph={initials(owner.fullName)} tone={owner.tone} photo={owner.photo} size={18} shape="circle" />
-            <span>{access === "owner" ? "Your collection" : `${owner.name}’s collection`} · {total} {total === 1 ? "item" : "items"}</span>
+            <PersonAvatar id={share.owner} size={18} />
+            <span>{access === "owner" ? "Your collection" : `${nameOf(share.owner)}’s collection`} · {total} {total === 1 ? "item" : "items"}</span>
           </span>
           <span className={sh.pageAccess}>
             <span className={`${sh.role} ${access === "view" ? "" : sh.roleEdit}`}>{access === "owner" ? audienceLabel(sharing, nameOf) : roleLabel(access)}</span>
             {access === "view" && (asked
               ? <span className={sh.note}>You asked to edit</span>
-              : <button type="button" className={sh.link} onClick={() => requestAccess(share, me, "edit")}>Ask {owner.name} to edit</button>)}
+              : <button type="button" className={sh.link} onClick={() => requestAccess(share, me, "edit")}>Ask {nameOf(share.owner)} to edit</button>)}
           </span>
           <div className={sh.pageActions}>
             {access === "owner" && <button className={`${x.addPill} ${x.addPillBar}`} onClick={settings}><IconShare size={15} /> Sharing</button>}
@@ -555,7 +592,7 @@ export function SharedPage({ share, onClose, onToast }: { share: ShareRef; onClo
               ? <button className={`${x.addPill} ${x.addPillBar}`} disabled><IconCheck size={13} /> In your Mind</button>
               : <button className={`${x.addPill} ${x.addPillBar} ${access === "edit" ? sh.second : ""}`} onClick={() => { const c = cloneCollection(share, me); if (c) onToast(`A copy is in your Mind: ${c.emoji} ${c.name}`); }}><IconCopy size={15} /> Make a copy</button>)}
           </div>
-          {access !== "owner" && <small className={x.pageHint}>{access === "edit" ? `What you change shows for ${owner.name} and everyone it’s shared with.` : `It stays ${owner.name}’s: you’re seeing it as it is now.`}{copyAllowed(s) ? " A copy is yours to change." : ""}</small>}
+          {access !== "owner" && <small className={x.pageHint}>{access === "edit" ? `What you change shows for ${nameOf(share.owner)} and everyone it’s shared with.` : `It stays ${nameOf(share.owner)}’s: you’re seeing it as it is now.`}{copyAllowed(s) ? " A copy is yours to change." : ""}</small>}
         </div>
         <div className={sh.filterBar}><FilterBar filter={filter} onChange={setFilter} /></div>
         {shown.length > 0 && <div className={`${x.masonry} ${sh.flatGrid}`}>{shown.map(tile)}</div>}
@@ -604,7 +641,7 @@ export function SharedItemSheet({ share, onClose, onToast, saving: startSaving =
   const owner = userById(share.owner).name;
   const title = b ? `${KIND_LABEL[b.kind]} · ${share.owner === me ? "Yours" : `${owner}’s`}` : "Shared";
   const action = b?.url && access ? { label: "Open", href: b.url, onClick: () => {} } : undefined;
-  const yours = (mine?.collections ?? []).filter((c) => c.from?.id !== "shared-with-you" && !isUnassigned(c));
+  const yours = (mine?.collections ?? []).filter((c) => !isUnassigned(c));
 
   return (
     <Sheet title={title} onClose={onClose} action={action}>
@@ -627,8 +664,9 @@ export function SharedItemSheet({ share, onClose, onToast, saving: startSaving =
                     <Emoji char={c.emoji} /> {c.name}
                   </button>
                 ))}
-                <button className={styles.choice} onClick={() => close(() => { copyItem(share, me, sharedWithYou(me)); onToast("Saved to 📥 Shared with you"); })}>
-                  <Emoji char="📥" /> Shared with you
+                {/* No place in mind yet: it waits in Unassigned, to sort with the rest. */}
+                <button className={styles.choice} onClick={() => close(() => { copyItem(share, me, UNASSIGNED); onToast("Saved to 🗃️ Unassigned"); })}>
+                  <Emoji char="🗃️" /> Unassigned
                 </button>
               </div>
             </>

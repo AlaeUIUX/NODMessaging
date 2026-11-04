@@ -256,7 +256,7 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
           )}
 
           {found && searching.state === "loading" ? <RowSkeleton />
-          : found && searching.state === "failed" ? <LoadFailed what="Search results" onRetry={searching.retry} />
+          : found && searching.state === "failed" ? <LoadFailed what="search results" onRetry={searching.retry} />
           : found ? (
             <div className={x.stack}>
               {found.collections.length > 0 && <Section title="Collections">{colCards(found.collections)}</Section>}

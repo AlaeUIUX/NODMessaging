@@ -32,6 +32,8 @@ interface Props {
   typingUsers: string[];
   hasEarlier: boolean;
   onLoadEarlier: () => void;
+  /** Lines in the thread between messages, at their time ("Charles pinned a message"). */
+  notes?: { id: string; at: number; text: string; onTap?: () => void }[];
   children: (args: RowArgs) => React.ReactNode;
 }
 
@@ -66,7 +68,7 @@ function gapBefore(prev: Message | undefined, message: Message, joinPrev: boolea
 const clock = (ts: number) => new Date(ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
 export default function MessageList({
-  chatId, messages, meId, isGroupChat, intro, firstUnreadId, typingUsers, hasEarlier, onLoadEarlier, children,
+  chatId, messages, meId, isGroupChat, intro, firstUnreadId, typingUsers, hasEarlier, onLoadEarlier, notes = [], children,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // Fresh thread on open: what's already there is "seen" from the first
@@ -223,6 +225,11 @@ export default function MessageList({
               showStatus: i === lastOwnIndex && (message.status === "failed" || messages.length - 1 - i < 3),
               isNew,
             })}
+            {notes.filter((n) => n.at >= message.createdAt && (!next || n.at < next.createdAt)).map((n) => (
+              <div key={n.id} className={styles.threadNote}>
+                {n.onTap ? <button onClick={n.onTap}>{n.text}</button> : <span>{n.text}</span>}
+              </div>
+            ))}
           </div>
         );
       })}

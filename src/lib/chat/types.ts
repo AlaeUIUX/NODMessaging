@@ -195,6 +195,8 @@ export interface EditRecord {
   editedAt: number;
 }
 
+export interface MessagePin { by: string; at: number; until: number }
+
 export interface Message {
   id: string;
   /** Stable across optimistic render → server ack, so retries reconcile instead of duplicating. */
@@ -210,6 +212,8 @@ export interface Message {
   editedAt: number | null;
   editHistory: EditRecord[];
   pinned: boolean;
+  /** While pinned: who pinned it, when, and until when (see lib/chat/pins.ts). */
+  pin?: MessagePin;
   deletedAt: number | null;
   attachments: Attachment[];
   /** Structured messages only. */
@@ -261,7 +265,7 @@ export interface Chat {
 --------------------------------------------------------------------------- */
 
 export type GroupPermission =
-  | "manageGroup" | "manageChannels" | "manageRoles" | "invite" | "editMind"
+  | "manageGroup" | "manageChannels" | "manageRoles" | "invite" | "pinMessages" | "editMind"
   // Operations only (see lib/chat/operation.ts): Command's powers.
   | "approveRequests" | "broadcast" | "manageZones";
 
@@ -382,7 +386,7 @@ export type TransportEvent =
   | { type: "reaction"; chatId: string; messageId: string; emoji: string; userId: string; op: "add" | "remove" }
   | { type: "edit"; chatId: string; messageId: string; body: string; editedAt: number }
   | { type: "delete"; chatId: string; messageId: string; deletedAt: number }
-  | { type: "pin"; chatId: string; messageId: string; pinned: boolean }
+  | { type: "pin"; chatId: string; messageId: string; pinned: boolean; pin?: MessagePin }
   | { type: "card"; chatId: string; messageId: string; card: Card }
   | { type: "card-op"; chatId: string; messageId: string; op: CardOp; by: string }
   | { type: "chat"; chat: Chat }

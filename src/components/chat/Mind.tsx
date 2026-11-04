@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { netDown, netFailureText } from "@/lib/chat/api";
 import { DEFAULT_CURRENCY, lastCurrency, rememberCurrency } from "@/lib/chat/money";
@@ -12,12 +12,16 @@ import { findBooks, sameTitle, unfurl, type BookHit, type LinkMeta } from "@/lib
 import { isLanding, land } from "@/lib/chat/landing";
 import { toAttachment } from "@/lib/chat/media";
 import {
-  amendBlock, collectionItems, commitDraft, commitShareDraft, draftOf, dropDraft, intoUnassigned, isUnassigned, learnChat, locate, makeCollection, MIND_FAILED, newId, nowMs,
-  patchBlock, patchCollection, place, projectCollection, removeBlock, tagOf, tagsOf, todayKey, UNASSIGNED, useMind,
-  type Block, type BlockKind, type Collection, type Mind, type MindView, type Step, type TaskStatus,
+  amendBlock, collectionItems, commitDraft, commitShareDraft, draftOf, dropDraft, failureText, intoUnassigned, isUnassigned, learnChat, locate, makeCollection, MIND_FAILED, newId, nowMs,
+  isUpload, meetSharers, patchBlock, patchCollection, peopleMinds, place, projectCollection, removeBlock, sendItem, tagOf, tagsOf, todayKey, UNASSIGNED,
+  useAllMinds, useMind, useUploadProgress,
+  type Block, type MindFailure, type BlockKind, type Collection, type Mind, type MindView, type Step, type TaskStatus,
 } from "@/lib/chat/mind";
 import { paletteName, randomPalette, swatchesOf, type Swatch } from "@/lib/chat/palette";
-import { accessOf, audienceLabel, lookUp, NO_SHARING, type ShareRef } from "@/lib/chat/share";
+import {
+  accessOf, audienceLabel, cloneCollection, copiedItem, copyIn, hideShare, lookUp, NO_SHARING, sharedWithMe, shareName, useHiddenShares,
+  type SharedEntry, type ShareRef,
+} from "@/lib/chat/share";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Chat } from "@/lib/chat/types";
 import Avatar from "./Avatar";
@@ -26,17 +30,20 @@ import { DateField } from "./DatePicker";
 import { DragScroll } from "./Composer";
 import { LAND, LandingGlow, Poof, RECEIVE } from "./Landing";
 import { AmountField, BookSearch, FilePicker, PasteButton, PasteField, PhotoPicker, VideoPreview } from "./MindFields";
-import { FolderSkeleton, LoadFailed, RetryLine, RowSkeleton, upload as sendFile, Uploading, useFirstLoad, useSettled, VideoSkeleton } from "./Loading";
+import {
+  FolderSkeleton, LoadFailed, OfflineLine, RetryLine, RowSkeleton, Unsent, UploadMark, useFirstLoad, useOffline, useOpened, useSettled, VideoSkeleton,
+} from "./Loading";
 import { ActionMenu, FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, ScopeSearch, ScopeTools, type MindFilter } from "./MindFilter";
 import PaletteEditor from "./PaletteEditor";
-import { SendSheet, ShareSheet } from "./Share";
+import { PersonAvatar, SendSheet, SharedItemSheet, SharedPage, ShareSheet } from "./Share";
 import {
   IconArrowRight, IconArrowUp, IconBack, IconBell, IconCheck, IconChevron, IconClose, IconEdit, IconGrid,
   IconFolder, IconGlobe, IconInbox, IconLink, IconListView, IconMessage, IconOpen, IconPalette, IconPlus, IconSearch, IconShare, IconShelf, IconSmile, IconTrash, IconUndo, IconUserGroup, IconVideo,
+  IconCopy, IconHide,
 } from "./Icons";
 import { HoldMenu, useHold, type HoldAction, type HoldBind, type HoldSrc } from "./MindHold";
 import Logo from "./Logo";
-import { getPermission, PermissionAlert, Segmented, setPermission, Sheet, smooth, Toggle } from "./ui";
+import { ConfirmAlert, getPermission, PermissionAlert, Segmented, setPermission, Sheet, smooth, Toggle } from "./ui";
 import styles from "./chat.module.css";
 import fieldStyles from "./mindfields.module.css";
 import tray from "./tray.module.css";
@@ -112,7 +119,8 @@ interface Ctx {
   store: string;
   /** The collection that's open, if any. */
   col: Collection | null;
-  update: (fn: (m: Mind) => Mind) => void;
+  /** False when it was refused (offline), so nothing says it happened. */
+  update: (fn: (m: Mind) => Mind) => boolean;
   me: string;
   flash: (t: string, actions?: ToastAction[]) => void;
   openFolder: (id: string) => void;
@@ -138,26 +146,34 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
     setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), stay);
     setTimeout(() => setToast((t) => (t?.id === id ? null : t)), stay + 220);
   }, []);
-  // A save that didn't go through has already been put back (see updateMind): say so.
+  // A change that didn't go through has already been put back, or was refused offline (see updateMind): say what, and offer to try again.
   useEffect(() => {
     const failed = (e: Event) => {
-      if ((e as CustomEvent<{ userId: string }>).detail.userId === me) flash(`${netFailureText()}. Your change wasn't saved.`);
+      const f = (e as CustomEvent<MindFailure>).detail;
+      if (f.userId === me) flash(failureText(f), f.retry ? [{ label: "Retry", run: f.retry }] : undefined);
     };
     window.addEventListener(MIND_FAILED, failed);
     return () => window.removeEventListener(MIND_FAILED, failed);
   }, [me, flash]);
+
+  // What others shared with you, in one place on Mind home.
+  const shared = useSharedWithMe(me);
+  const [sharedOpen, setSharedOpen] = useState<{ leaving: boolean } | null>(null);
 
   // Switching person (Developer → Signed in as) starts from their Mind.
   const [seenMe, setSeenMe] = useState(me);
   if (seenMe !== me) {
     setSeenMe(me);
     setFolder(null);
+    setSharedOpen(null);
     setSheet(null);
     setQuery("");
   }
 
   // Mind comes from the server in the real app: the first visit this session waits for it, and may not get it.
-  const home = useFirstLoad(`mind:${me}`, { canFail: true });
+  // Offline, it's read from what's on this phone.
+  const home = useFirstLoad(`mind:${me}`, { canFail: true, cached: true });
+  const offline = useOffline();
 
   if (!mind) return <div className={styles.inboxBody} />;
   const col = folder ? mind.collections.find((c) => c.id === folder.id) ?? null : null;
@@ -202,7 +218,7 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
             </button>
             <div className={styles.profileText}>
               <b>{me === "me" ? "Your Mind" : `${meUser.name}'s Mind`}</b>
-              <span>{mind.collections.length ? `${kept} collection${kept === 1 ? "" : "s"} · ${itemCount} items` : "Empty for now"}</span>
+              <span>{offline ? <OfflineLine /> : mind.collections.length ? `${kept} collection${kept === 1 ? "" : "s"} · ${itemCount} items` : "Empty for now"}</span>
             </div>
           </div>
           <button className={styles.plusBtn} aria-label="Add something" onClick={() => setSheet(<MindAddSheet ctx={ctx} collectionId={UNASSIGNED} />)}>
@@ -220,14 +236,26 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
 
       <div className={styles.inboxBody}>
         <div className={styles.inboxScroll} key={me}>
-          {home.state === "loading" ? <FolderSkeleton />
-            : home.state === "failed" ? <LoadFailed what="Your Mind" onRetry={home.retry} />
+          {home.state === "loading" ? <FolderSkeleton count={kept || 6} />
+            : home.state === "failed" ? <LoadFailed what="your Mind" onRetry={home.retry} />
             : q ? <SearchResults ctx={ctx} q={q} />
-            : mind.collections.length ? <FolderGrid ctx={ctx} />
+            : mind.collections.length ? <FolderGrid ctx={ctx} shared={shared} onOpenShared={() => setSharedOpen({ leaving: false })} />
             : <EmptyMind ctx={ctx} />}
         </div>
       </div>
 
+      {/* Under a collection opened from it (your copy of a share), which slides in on top. */}
+      {sharedOpen && (
+        <SharedScreen
+          ctx={ctx}
+          entries={shared}
+          leaving={sharedOpen.leaving}
+          onBack={() => {
+            setSharedOpen({ leaving: true });
+            setTimeout(() => setSharedOpen((x) => (x?.leaving ? null : x)), 220);
+          }}
+        />
+      )}
       {folder && col && <FolderScreen ctx={ctx} col={col} leaving={folder.leaving} onBack={leave} />}
       {sheet}
       {toast && (
@@ -281,11 +309,12 @@ export function MindEditor({ source, title, note = "Editing for everyone", share
   const dirty = !!mind && !!saved && content(mind) !== content(saved);
 
   // The copy is forgotten once the screen has slid away, when nothing reads it any more.
+  // Saving offline is refused: the editor stays open with everything in it, and says so.
   const finish = (save: boolean, after?: () => void) => {
     if (leaving) return;
-    if (save) {
-      if (shared) commitShareDraft(shared.owner, shared.collectionId, me);
-      else commitDraft(source);
+    if (save && !(shared ? commitShareDraft(shared.owner, shared.collectionId, me) : commitDraft(source))) {
+      flash(failureText({ change: "edit", offline: true }));
+      return;
     }
     setLeaving(true);
     setTimeout(() => {
@@ -359,7 +388,7 @@ export function MindEditor({ source, title, note = "Editing for everyone", share
    Collections, shown as folders
    =========================================================================== */
 
-function FolderGrid({ ctx }: { ctx: Ctx }) {
+function FolderGrid({ ctx, shared, onOpenShared }: { ctx: Ctx; shared: SharedEntry[]; onOpenShared: () => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
   // Unassigned isn't one of them: it waits in the tray above until it's sorted away.
   const cols = ctx.mind.collections.filter((c) => !isUnassigned(c));
@@ -400,6 +429,7 @@ function FolderGrid({ ctx }: { ctx: Ctx }) {
   });
   return (
     <div className={styles.mindStack} ref={rootRef} style={{ position: "relative" }} {...hold.rootHandlers}>
+      {shared.length > 0 && <SharedRow entries={shared} onOpen={onOpenShared} />}
       <TraySlot ctx={ctx} />
       <div className={styles.mindSectionBar}>
         <p className={styles.sheetLabel}>Collections</p>
@@ -424,6 +454,175 @@ function FolderGrid({ ctx }: { ctx: Ctx }) {
       )}
       {hold.ghost}
     </div>
+  );
+}
+
+/* ===========================================================================
+   Shared with you: one place on Mind home for everything others shared with you
+   =========================================================================== */
+
+/** What's been shared with you, kept up to date. The people who share in the demo are met first, so theirs can be found. */
+function useSharedWithMe(me: string) {
+  const all = useAllMinds();
+  const hidden = useHiddenShares(me);
+  useEffect(() => { meetSharers(); }, []);
+  return useMemo(() => sharedWithMe(me, peopleMinds(all), hidden), [me, all, hidden]);
+}
+
+/** "Charles and Reema", "Charles, Reema and Maya". */
+const namesOf = (ids: string[]) => {
+  const names = ids.map((id) => shareName(id).name);
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0] ?? "";
+};
+
+/** On Mind home, once something has been shared with you: the faces of the last few people who did, and how many things. */
+function SharedRow({ entries, onOpen }: { entries: SharedEntry[]; onOpen: () => void }) {
+  const people = [...new Set(entries.map((e) => e.owner))];
+  return (
+    <button className={`${styles.folderRow} ${styles.sharedRow}`} onClick={onOpen} aria-label={`Shared with you: ${entries.length} from ${namesOf(people)}`}>
+      <span className={styles.sharedFaces} aria-hidden="true">
+        {people.slice(0, 3).map((id) => <PersonAvatar key={id} id={id} size={28} />)}
+      </span>
+      <span className={styles.mindPageText}>
+        <b>Shared with you</b>
+        <small>From {namesOf(people.slice(0, 3))}{people.length > 3 ? " and others" : ""}</small>
+      </span>
+      <span className={styles.mindPageSide}>
+        <em className={styles.sharedCount}>{entries.length}</em>
+        <IconChevron size={14} />
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Everything shared with you: collections first, then single items, newest
+ * first, each with who shared it. Opening one opens the share, or your copy
+ * once you've made one. Swipe or hold a row for Save a copy and Hide.
+ */
+function SharedScreen({ ctx, entries, leaving, onBack }: { ctx: Ctx; entries: SharedEntry[]; leaving: boolean; onBack: () => void }) {
+  const collections = entries.filter((e) => !e.block);
+  const items = entries.filter((e) => e.block);
+  const name = (e: SharedEntry) => shareName(e.owner).name;
+  const copyOfIt = (e: SharedEntry) => (e.block ? copiedItem(ctx.mind, e.ref) : copyIn(ctx.mind, e.ref));
+  const open = (e: SharedEntry) => {
+    const copy = copyOfIt(e);
+    if (e.block) ctx.openSheet(copy ? <BlockSheet ctx={ctx} id={copy.id} /> : <SharedItemSheet share={e.ref} onClose={ctx.closeSheet} onToast={ctx.flash} />);
+    else if (copy) ctx.openFolder(copy.id);
+    else ctx.openSheet(<SharedPage share={e.ref} onClose={ctx.closeSheet} onToast={ctx.flash} />);
+  };
+  const actions = (e: SharedEntry): SwipeAction[] => {
+    const sharing = e.block ? e.block.sharing : e.collection.sharing;
+    const copyable = (sharing?.copy ?? true) && e.block?.kind !== "chat" && !copyOfIt(e);
+    return [
+      ...(copyable ? [{
+        id: "copy", label: "Save a copy", icon: <IconCopy size={18} />, tone: "accent" as const,
+        run: () => {
+          if (e.block) { ctx.openSheet(<SharedItemSheet share={e.ref} onClose={ctx.closeSheet} onToast={ctx.flash} saving />); return; }
+          const c = cloneCollection(e.ref, ctx.me);
+          if (c) ctx.flash(`A copy is in your Mind: ${c.emoji} ${c.name}`);
+        },
+      }] : []),
+      {
+        id: "hide", label: "Hide", icon: <IconHide size={18} />, tone: "ink",
+        run: () => {
+          hideShare(ctx.me, e.ref);
+          ctx.flash(`Hidden. It’s still in ${name(e)}’s Mind.`, [{ label: "Undo", run: () => hideShare(ctx.me, e.ref, false) }]);
+        },
+      },
+    ];
+  };
+  const row = (e: SharedEntry) => {
+    const b = e.block;
+    const copied = !!copyOfIt(e);
+    const role = e.role === "edit" ? "Can edit" : "Can view";
+    return (
+      <SwipeItem key={`${e.ref.collectionId}:${b?.id ?? ""}:${e.owner}`} actions={actions(e)}>
+        <SharedEntryRow
+          tone={e.collection.tone}
+          icon={b ? (peekImage(b)
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={peekImage(b)} alt="" />
+            : <Emoji char={KIND_EMOJI[b.kind] ?? "📌"} />) : <Emoji char={e.collection.emoji} />}
+          title={b ? b.title || KIND_LABEL[b.kind] : e.collection.name}
+          sub={b ? `${KIND_LABEL[b.kind]} · from ${name(e)}` : `${name(e)} · ${role}`}
+          copied={copied}
+          onOpen={() => open(e)}
+          onHold={(el) => ctx.openSheet(<ActionMenu anchor={el} title={b ? b.title || KIND_LABEL[b.kind] : e.collection.name} actions={actions(e).map((a) => ({ id: a.id, label: a.label, icon: a.icon, run: a.run }))} onClose={ctx.closeSheet} />)}
+        />
+      </SwipeItem>
+    );
+  };
+  return (
+    <div className={`${styles.screen} ${styles.chatScreen} ${styles.mindPageScreen} ${leaving ? styles.leaving : ""}`}>
+      <div className={styles.edgeTop} />
+      <header className={styles.chatHeader}>
+        <div className={styles.headerSide}>
+          <button className={`${styles.circleBtn} ${styles.glass}`} onClick={onBack} aria-label="Back to Mind"><IconBack /></button>
+        </div>
+        <div className={styles.titleCapsule}>
+          <span className={styles.mindPageBadge}><IconUserGroup size={18} /></span>
+          <div className={`${styles.tcName} ${styles.glass}`}><span>Shared with you</span></div>
+          <span className={styles.tcPresence}>{entries.length} {entries.length === 1 ? "thing" : "things"}</span>
+        </div>
+        <div className={`${styles.headerSide} ${styles.headerEnd}`} />
+      </header>
+      <div className={styles.mindPageScroll}>
+        {!entries.length && <p className={styles.emptyInbox}>Nothing shared with you right now.</p>}
+        {collections.length > 0 && (
+          <>
+            <p className={styles.sheetLabel}>Collections</p>
+            <div className={styles.sharedList}>{collections.map(row)}</div>
+          </>
+        )}
+        {items.length > 0 && (
+          <>
+            <p className={styles.sheetLabel}>Items</p>
+            <div className={styles.sharedList}>{items.map(row)}</div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One thing shared with you, as a row. Held for a moment, it offers what a swipe does. */
+function SharedEntryRow({ tone, icon, title, sub, copied, onOpen, onHold }: {
+  tone: string;
+  icon: React.ReactNode;
+  title: string;
+  sub: string;
+  copied: boolean;
+  onOpen: () => void;
+  onHold: (el: HTMLElement) => void;
+}) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const held = useRef(false);
+  const cancel = () => { if (timer.current) clearTimeout(timer.current); timer.current = null; start.current = null; };
+  return (
+    <button
+      className={styles.folderRow}
+      style={{ ["--tone" as string]: tone }}
+      onPointerDown={(e) => {
+        held.current = false;
+        start.current = { x: e.clientX, y: e.clientY };
+        const el = e.currentTarget;
+        timer.current = setTimeout(() => { held.current = true; onHold(el); }, 450);
+      }}
+      onPointerMove={(e) => { if (start.current && Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) > 8) cancel(); }}
+      onPointerUp={cancel}
+      onPointerCancel={cancel}
+      onContextMenu={(e) => { e.preventDefault(); cancel(); onHold(e.currentTarget); }}
+      onClick={() => { if (held.current) { held.current = false; return; } onOpen(); }}
+    >
+      <span className={styles.folderRowIcon}>{icon}</span>
+      <span className={styles.mindPageText}><b>{emojify(title)}</b><small>{sub}</small></span>
+      <span className={styles.mindPageSide}>
+        {copied && <span className={styles.sharedIn}>In your Mind</span>}
+        <IconChevron size={14} />
+      </span>
+    </button>
   );
 }
 
@@ -598,6 +797,9 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
   edit?: { title: string; note: string; dirty: boolean; onCancel: () => void; onSave: () => void };
 }) {
   const [filter, setFilter] = useState<MindFilter>(NO_FILTER);
+  // Opening a collection reads its items in the real app: the first time this session, NOD may not answer. An editor works on a copy.
+  const opened = useOpened(`mind:${ctx.store}:${col.id}`);
+  const offline = useOffline();
   /** Searching inside: null when the field is closed. */
   const [search, setSearch] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -688,12 +890,14 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
       className={[
         styles.mindBlockWrap,
         landing ? LAND : "",
+        isUpload(b) && b.unsent ? styles.mindUploading : "",
         hold.isDragging("item", b.id) ? styles.mindDragSource : "",
         target?.t === "rootBefore" && target.before === b.id ? (axis === "x" ? styles.mindDropLeft : styles.mindDropAbove) : "",
       ].filter(Boolean).join(" ")}
       {...hold.bind({ kind: "item", id: b.id })}
     >
       {body}
+      {b.unsent && <SendingState block={b} store={ctx.store} />}
       {landing && <LandingGlow />}
     </div>
     );
@@ -790,7 +994,7 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
           <div className={styles.titleCapsule}>
             <span className={styles.mindPageBadge}><Emoji char={col.emoji} /></span>
             <div className={`${styles.tcName} ${styles.glass}`}><span>{col.name}</span></div>
-            <span className={styles.tcPresence}>{countLabel(col, all.length)}</span>
+            <span className={styles.tcPresence}>{offline ? "Offline · " : ""}{countLabel(col, all.length)}</span>
           </div>
           <div className={`${styles.headerSide} ${styles.headerEnd} ${styles.mindHeadSide}`}>
             <ScopeTools
@@ -807,7 +1011,9 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
 
       <div className={styles.mindPageScroll} ref={scrollRef}>
         {search !== null && <ScopeSearch value={search} placeholder={`Search ${col.name}`} onChange={setSearch} onCancel={() => setSearch(null)} />}
-        {q ? <SearchResults ctx={ctx} q={q} within={col} keep={filtering ? has : undefined} /> : contents}
+        {!edit && opened.state === "failed" ? <LoadFailed what={col.name} onRetry={opened.retry} />
+          : !edit && opened.state === "loading" ? <RowSkeleton />
+          : q ? <SearchResults ctx={ctx} q={q} within={col} keep={filtering ? has : undefined} /> : contents}
       </div>
 
       <div className={styles.mindCompose}>
@@ -839,6 +1045,20 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
       {hold.ghost}
     </div>
   );
+}
+
+/**
+ * An item only on this phone: a photo or file going up shows its ring or bar
+ * (a retry arrow if it didn't make it); anything else, or an upload waiting for
+ * the network, says so in a line under it.
+ */
+function SendingState({ block: b, store }: { block: Block; store: string }) {
+  const progress = useUploadProgress(b.id);
+  const retry = () => sendItem(store, b.id);
+  if (isUpload(b) && (progress !== null || b.unsent === "failed")) {
+    return <UploadMark kind={b.kind === "image" ? "image" : "file"} value={progress} failed={b.unsent === "failed"} onRetry={retry} />;
+  }
+  return <Unsent state={b.unsent!} onRetry={retry} />;
 }
 
 /** The part of a name that matches, marked. */
@@ -885,7 +1105,7 @@ function SearchResults({ ctx, q, within, keep }: {
   // Search runs on the server in the real app: a moment of placeholder rows first.
   const run = useSettled(q);
   if (run.state === "loading") return <RowSkeleton />;
-  if (run.state === "failed") return <LoadFailed what="Search results" onRetry={run.retry} />;
+  if (run.state === "failed") return <LoadFailed what="search results" onRetry={run.retry} />;
   return (
     <div className={styles.mindStack}>
       {total === 0 ? (
@@ -1041,7 +1261,7 @@ function NewFolderSheet({ ctx }: { ctx: Ctx }) {
  * until you turn it off. A collection added from someone else's isn't yours
  * to publish.
  */
-function PublishField({ ctx, col, onChange }: { ctx: Ctx; col: Collection; onChange: (p: Collection["published"]) => void }) {
+function PublishField({ ctx, col, onChange }: { ctx: Ctx; col: Collection; onChange: (p: Collection["published"]) => boolean }) {
   const theirs = col.from && col.from.by !== ctx.me;
   return (
     <>
@@ -1061,7 +1281,7 @@ function PublishField({ ctx, col, onChange }: { ctx: Ctx; col: Collection; onCha
             <Toggle
               on={!!col.published}
               onChange={(v) => {
-                onChange(v ? { at: Date.now(), description: "" } : undefined);
+                if (!onChange(v ? { at: Date.now(), description: "" } : undefined)) return;
                 ctx.flash(v ? `${col.emoji} ${col.name} is on Explore` : `${col.emoji} ${col.name} is private again`);
               }}
               label="Publish to Explore"
@@ -1116,8 +1336,7 @@ function FolderSheet({ ctx, colId, onDeleted }: { ctx: Ctx; colId: string; onDel
           <button
             className={styles.mindDanger}
             onClick={() => close(() => {
-              deleteCollection(ctx, colId);
-              onDeleted();
+              if (deleteCollection(ctx, colId)) onDeleted();
             })}
           >
             Delete {col.name}
@@ -1229,7 +1448,7 @@ const isShared = (s: Collection["sharing"]) => !!s && (s.link !== "off" || Objec
 /** Remove an item, with an Undo that puts it back exactly where it was. */
 function removeItem(update: Ctx["update"], flash: Ctx["flash"], id: string) {
   let back: ((m: Mind) => Mind) | null = null;
-  update((m) => {
+  const done = update((m) => {
     const b = m.blocks[id];
     const at = locate(m, id);
     if (b) back = (n) => {
@@ -1243,6 +1462,7 @@ function removeItem(update: Ctx["update"], flash: Ctx["flash"], id: string) {
     };
     return removeBlock(m, id);
   });
+  if (!done) return;
   const undo = back as ((m: Mind) => Mind) | null;
   flash("Removed from Mind", undo ? [{ label: "Undo", run: () => update(undo) }] : undefined);
 }
@@ -1369,16 +1589,17 @@ function afterHalf(el: HTMLElement, x: number, y: number) {
   return el.dataset.axis === "x" ? x > r.left + r.width / 2 : y > r.top + r.height / 2;
 }
 
-/** Delete a collection and everything in it, with an Undo that puts it back where it was. */
+/** Delete a collection and everything in it, with an Undo that puts it back where it was. False when it was refused. */
 function deleteCollection(ctx: Ctx, colId: string) {
   let back: ((m: Mind) => Mind) | null = null;
   let name = "";
-  ctx.update((m) => {
+  const done = ctx.update((m) => {
     const at = m.collections.findIndex((c) => c.id === colId);
     const gone = m.collections[at];
     if (!gone) return m;
-    name = gone.name;
     const ids = collectionItems(m, gone).map((b) => b.id);
+    // Unassigned isn't a collection to name: say what went.
+    name = isUnassigned(gone) ? `${ids.length} ${ids.length === 1 ? "item" : "items"}` : gone.name;
     const kept = Object.fromEntries(ids.map((id) => [id, m.blocks[id]]));
     const wasCurrent = m.current === colId;
     back = (n) => (n.collections.some((c) => c.id === colId) ? n : {
@@ -1392,8 +1613,10 @@ function deleteCollection(ctx: Ctx, colId: string) {
     const collections = m.collections.filter((c) => c.id !== colId);
     return { ...m, blocks, collections, current: collections[0]?.id ?? null };
   });
+  if (!done) return false;
   const undo = back as ((m: Mind) => Mind) | null;
   ctx.flash(`${name} deleted`, undo ? [{ label: "Undo", run: () => ctx.update(undo) }] : undefined);
+  return true;
 }
 
 const renameAction = (ctx: Ctx, what: string, value: string, save: (v: string) => void) => () => ctx.openSheet(<RenameSheet ctx={ctx} what={what} value={value} onSave={save} />);
@@ -1403,7 +1626,23 @@ function collectionActions(ctx: Ctx, c: Collection, onDeleted?: () => void): Hol
   if (isUnassigned(c)) return [
     { id: "sort", label: "Sort…", icon: <IconFolder />, run: () => ctx.openSheet(<SortSheet ctx={ctx} onDone={onDeleted} />) },
     "sep",
-    { id: "delete", label: "Delete everything in it", icon: <IconTrash />, danger: true, run: () => { deleteCollection(ctx, c.id); onDeleted?.(); } },
+    {
+      id: "delete", label: "Delete everything in it", icon: <IconTrash />, danger: true,
+      run: () => {
+        // The count on the button: "everything" is only your own things now (shared ones live in Shared with you).
+        const n = collectionItems(ctx.mind, c).length;
+        const things = `${n} ${n === 1 ? "item" : "items"}`;
+        ctx.openSheet(
+          <ConfirmAlert
+            title="Delete everything in Unassigned?"
+            body={`${things[0].toUpperCase()}${things.slice(1)}. You can undo for a few seconds.`}
+            confirm={`Delete ${things}`}
+            onConfirm={() => { if (deleteCollection(ctx, c.id)) onDeleted?.(); }}
+            onClose={ctx.closeSheet}
+          />,
+        );
+      },
+    },
   ];
   return [
     { id: "rename", label: "Rename", icon: <IconEdit />, run: renameAction(ctx, "collection", c.name, (name) => ctx.update((m) => patchCollection(m, c.id, (x) => ({ ...x, name })))) },
@@ -1414,12 +1653,12 @@ function collectionActions(ctx: Ctx, c: Collection, onDeleted?: () => void): Hol
       label: c.published ? "Remove from Explore" : "Publish to Explore",
       icon: <IconGlobe />,
       run: () => {
-        ctx.update((m) => patchCollection(m, c.id, (x) => ({ ...x, published: c.published ? undefined : { at: Date.now(), description: "" } })));
+        if (!ctx.update((m) => patchCollection(m, c.id, (x) => ({ ...x, published: c.published ? undefined : { at: Date.now(), description: "" } })))) return;
         ctx.flash(c.published ? `${c.emoji} ${c.name} is private again` : `${c.emoji} ${c.name} is on Explore`);
       },
     }]),
     "sep",
-    { id: "delete", label: "Delete collection", icon: <IconTrash />, danger: true, run: () => { deleteCollection(ctx, c.id); onDeleted?.(); } },
+    { id: "delete", label: "Delete collection", icon: <IconTrash />, danger: true, run: () => { if (deleteCollection(ctx, c.id)) onDeleted?.(); } },
   ];
 }
 
@@ -1447,7 +1686,7 @@ function openHoldMenu(ctx: Ctx, src: HoldSrc, el: HTMLElement) {
       id: "move", label: where?.unsorted ? "Sort into…" : "Move to…", icon: <IconFolder />,
       run: () => ctx.openSheet(<MoveSheet me={ctx.store} id={b.id} onClose={ctx.closeSheet} onMoved={ctx.flash} />),
     },
-    ...(canShare(ctx) && where && !where.unsorted && b.kind !== "chat"
+    ...(canShare(ctx) && where && !where.unsorted && b.kind !== "chat" && !b.unsent
       ? [{ id: "share", label: "Share…", icon: <IconShare />, run: () => openShare(ctx, { owner: ctx.me, collectionId: where.collection.id, blockId: b.id }) }]
       : []),
     ...(b.ref ? (ctx.openChat ? [{ id: "chat", label: "Show in chat", icon: <IconMessage />, run: () => ctx.openChat?.(b.ref!.chatId) }] : [])
@@ -1716,9 +1955,6 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
   const [swatches, setSwatches] = useState<Swatch[]>(() => randomPalette(5));
   const [image, setImage] = useState<string>(SAMPLE_IMAGES[0]);
   const [upload, setUpload] = useState<File | null>(null);
-  // How far a photo or file has got on its way up, and whether it didn't make it.
-  const [sent, setSent] = useState<number | null>(null);
-  const [unsent, setUnsent] = useState(false);
   const [asking, setAsking] = useState<{ host: HTMLElement; answer: (ok: boolean) => void } | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const stepRef = useRef<HTMLInputElement>(null);
@@ -1771,19 +2007,6 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
     setAsking({ host, answer: (ok) => { setPermission("photos", ok ? "granted" : "denied"); setAsking(null); resolve(ok); } });
   });
 
-  // A photo or file goes up first; the item is only added once it's there.
-  const sending = kind === "file" ? upload : kind === "image" ? photo : null;
-  const sendUp = async () => {
-    if (!sending || sent !== null) return !sending;
-    setUnsent(false);
-    setSent(0);
-    const ok = await sendFile(sending.size, setSent);
-    setSent(null);
-    setUnsent(!ok);
-    return ok;
-  };
-  const submit = () => { void sendUp().then((ok) => { if (ok) void create(); }); };
-
   const create = async () => {
     const id = newId();
     const t = a.trim();
@@ -1831,33 +2054,37 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
       const colors = swatches.map((s) => s.hex);
       block = { ...base, title: t || paletteName(colors), colors };
     }
+    // A photo or file lands at once from the phone's copy and goes up from there (see sendItem).
+    // An editor's copy isn't sent: it goes up with the rest when it's saved.
+    const sends = !ctx.store.startsWith("draft:");
     if (kind === "image") {
       if (photo) {
         const att = await toAttachment(photo);
-        block = { ...base, title: "", attachment: att ?? undefined, source: "Uploaded by you" };
+        block = { ...base, title: "", attachment: att ?? undefined, source: "Uploaded by you", unsent: att && sends ? "waiting" : undefined };
       } else {
         block = { ...base, title: "", image: `https://images.unsplash.com/${image}?w=700&q=70&fm=jpg`, source: "Saved by you" };
       }
     }
     if (kind === "file" && upload) {
       const att = await toAttachment(upload);
-      block = { ...base, title: t || upload.name, size: upload.size, attachment: att ?? undefined };
+      block = { ...base, title: t || upload.name, size: upload.size, attachment: att ?? undefined, unsent: att && sends ? "waiting" : undefined };
     }
     land(id);
     ctx.update((m) => place({ ...m, blocks: { ...m.blocks, [id]: block } }, id, { collectionId }));
+    if (block.unsent) sendItem(ctx.store, id);
     // Added before the link answered: its title and still follow when they come.
     if (block.url && (kind === "link" || kind === "video") && (standIn || !meta)) enrich(ctx.store, id, block, standIn);
     // No toast: the item landing in its collection says it was added.
     ctx.closeSheet();
   };
-  const enter = (e: React.KeyboardEvent) => { if (e.key === "Enter" && ready) submit(); };
+  const enter = (e: React.KeyboardEvent) => { if (e.key === "Enter" && ready) void create(); };
 
   return (
     <Sheet
       title={`${info.label} · ${where}`}
       onClose={ctx.closeSheet}
       onBack={() => ctx.openSheet(<MindAddSheet ctx={ctx} collectionId={collectionId} />)}
-      action={{ label: sent !== null ? "Adding…" : "Add", disabled: !ready || sent !== null, onClick: () => { void create(); }, first: sending ? sendUp : undefined }}
+      action={{ label: "Add", disabled: !ready, onClick: () => { void create(); } }}
     >
 
       {(kind === "link" || kind === "video") && (
@@ -1870,9 +2097,9 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
             label={kind === "video" ? "Video link" : "Link"}
             placeholder={kind === "video" ? "Paste a YouTube or Vimeo link" : "Paste a link, e.g. dw.com"}
             autoFocus
-            busy={looking}
             onEnter={() => { if (ready) void create(); }}
           />
+          {kind === "link" && looking && <RowSkeleton rows={1} />}
           {kind === "video" && link && (looking && !still ? <VideoSkeleton /> : <VideoPreview image={still} duration={meta?.duration} site={video ? videoProvider(video) : meta?.site} />)}
           {unread && <RetryLine onRetry={reread}>{netFailureText()}, so the link couldn’t be read. Type the title yourself, or try again.</RetryLine>}
           {(kind === "link" || link) && (
@@ -1916,8 +2143,6 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
         <>
           {/* No title: a picture speaks for itself. Tags find it again. */}
           <PhotoPicker file={photo} onFile={setUpload} before={askPhotos} />
-          {photo && sent !== null && <Uploading name="your photo" value={sent} />}
-          {photo && unsent && <RetryLine onRetry={submit}>{netFailureText()}, so the photo didn’t upload.</RetryLine>}
           {!photo && (
             <>
               <p className={styles.sheetLabel}>Or use a sample</p>
@@ -1936,9 +2161,7 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
 
       {kind === "file" && (
         <>
-          <FilePicker file={upload} onFile={(file) => { setUpload(file); setUnsent(false); }} />
-          {upload && sent !== null && <Uploading name={upload.name} value={sent} />}
-          {upload && unsent && <RetryLine onRetry={submit}>{netFailureText()}, so {upload.name} didn’t upload.</RetryLine>}
+          <FilePicker file={upload} onFile={setUpload} />
           <input className={`${styles.plainInput} ${styles.mindTitleInput}`} placeholder="Name (optional)" value={a} onChange={(e) => setA(e.target.value)} onKeyDown={enter} aria-label="Name" />
         </>
       )}
@@ -2058,7 +2281,7 @@ function BlockSheet({ ctx, id }: { ctx: Ctx; id: string }) {
           <div className={styles.mindSectionBar}>
             <p className={styles.sheetLabel}>Lives in</p>
             <span className={styles.mindBarEnd}>
-              {canShare(ctx) && at && !at.unsorted && b.kind !== "chat" && (
+              {canShare(ctx) && at && !at.unsorted && b.kind !== "chat" && !b.unsent && (
                 <button className={styles.mindPill} onClick={() => close(() => openShare(ctx, { owner: ctx.me, collectionId: at.collection.id, blockId: id }))}>
                   <IconShare size={14} /> Share
                 </button>
@@ -2684,13 +2907,13 @@ export function MoveSheet({ me, id, onClose, onMoved, title }: { me: string; id:
   const places = mind.collections.filter((c) => !isUnassigned(c));
   const move = (col: Collection, isNew = false) => {
     land(id);
-    update((m) => {
+    const done = update((m) => {
       let next = isNew ? { ...m, collections: [...m.collections, col] } : m;
       next = place(next, id, { collectionId: col.id });
       if (b.ref && current?.collection.id !== col.id) next = learnChat(next, col.id, b.ref.chatId);
       return next;
     });
-    onMoved?.(`${sorting ? "Sorted into" : "Moved to"} ${col.emoji} ${col.name}`);
+    if (done) onMoved?.(`${sorting ? "Sorted into" : "Moved to"} ${col.emoji} ${col.name}`);
   };
 
   return (

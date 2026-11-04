@@ -45,6 +45,15 @@
 .heading { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
 .strip { display: flex; gap: 10px; overflow: hidden; }
 
+/* A skeleton in its first moments: there, holding its place, but not shown yet. */
+.waiting { visibility: hidden; }
+.waiting * { animation: none; }
+
+/* A shared collection: cover, icon over its edge, name and owner, the grid. */
+.shared { display: grid; gap: 10px; padding-bottom: 24px; }
+.sharedIcon { margin: -40px 0 0 10px; box-shadow: 0 0 0 4px var(--bg); }
+.sharedGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; align-items: start; }
+
 /* A video's still while the link is read. */
 .video { aspect-ratio: 16 / 9; height: auto; }
 
@@ -85,6 +94,29 @@
 }
 .retry:active { transform: scale(.96); }
 
+/* Offline: one quiet line in place of the counts, no colour, no dismiss. */
+.offline { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-3); }
+.offline svg { flex-shrink: 0; }
+
+/* An item only on this phone: a line under it, the way a message says "Not delivered". Waiting is quiet; not sent asks to be tried again. */
+.unsent {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 100%;
+  margin: 5px 0 2px;
+  padding: 0 6px;
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  font: var(--t-caption1);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.unsentFailed { color: var(--bad, #c4342d); cursor: pointer; }
+.unsentFailed:active { opacity: .6; }
+
 /* A lookup that didn't answer, on one line. */
 .retryLine {
   display: flex;
@@ -112,26 +144,36 @@
   cursor: pointer;
 }
 
-/* An upload on its way: a ring that fills, with how far inside. */
-.uploading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: var(--r-md);
-  background: var(--fill);
-  font: var(--t-footnote);
-  color: var(--ink-2);
+/* Over an uploading tile: a ring in the middle (a photo), a bar along the bottom (a file), or a retry arrow. */
+.uploadRing, .uploadRetry {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  translate: -50% -50%;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--e1);
 }
-.uploading span:last-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uploadRetry { border: none; color: var(--ink); cursor: pointer; }
+.uploadRetry:active { scale: .94; }
+.uploadBar { position: absolute; left: 12px; right: 12px; bottom: 6px; z-index: 2; height: 3px; border-radius: 3px; background: color-mix(in srgb, var(--ink) 10%, transparent); overflow: hidden; }
+.uploadBar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .1s linear; }
+
 .ring { position: relative; display: inline-grid; place-items: center; flex-shrink: 0; }
 .ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
 .ring circle { fill: none; stroke-width: 3; }
 .ringTrack { stroke: color-mix(in srgb, var(--ink) 10%, transparent); }
-.ringFill { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .1s linear; }
+/* No transition: a change to the dash attribute never animates, and the ring would stay empty. Progress comes in small steps anyway. */
+.ringFill { stroke: var(--accent); stroke-linecap: round; }
 .ring b { font-size: 11px; font-weight: var(--w-emph); color: var(--ink); font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) {
   .bone { animation: none; }
-  .ringFill { transition: none; }
 }

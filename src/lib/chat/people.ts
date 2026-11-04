@@ -75,6 +75,11 @@ export function allPeople(): User[] {
 }
 
 export const findByPhone = (phone: string) => allPeople().find((u) => u.phone === phone) ?? null;
+/** Whether someone is in this phone's address book (see ADDRESS_BOOK). */
+export function isContact(id: string) {
+  const phone = personById(id).phone;
+  return !!phone && ADDRESS_BOOK.some((e) => e.phone === phone);
+}
 
 /** Null when it's a good username (or, since usernames are optional, none at all); otherwise what's wrong with it. */
 export function usernameProblem(name: string, exceptId?: string): string | null {

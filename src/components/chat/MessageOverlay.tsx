@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { isPinned } from "@/lib/chat/pins";
 import type { Message } from "@/lib/chat/types";
 import { IconBookmark, IconCopy, IconEdit, IconPin, IconPlus, IconReply, IconTask, IconTrash } from "./Icons";
 import { BubbleBody, bubbleClass, haptic, type BubblePos } from "./MessageRow";
@@ -40,7 +41,8 @@ interface Props {
   onReply: () => void;
   onCopy: () => void;
   onEdit: () => void;
-  onPin: () => void;
+  /** Left out where this person can't pin (a group role without it). */
+  onPin?: () => void;
   onSave: () => void;
   onTask: () => void;
   onDelete: () => void;
@@ -79,7 +81,7 @@ export default function MessageOverlay({
     { id: "reply", label: "Reply", icon: <IconReply />, run: onReply },
     ...(message.kind === "text" && message.body ? [{ id: "copy", label: "Copy", icon: <IconCopy />, run: onCopy }] : []),
     ...(isMine && message.kind === "text" ? [{ id: "edit", label: "Edit", icon: <IconEdit />, run: onEdit }] : []),
-    { id: "pin", label: message.pinned ? "Unpin" : "Pin", icon: <IconPin />, run: onPin },
+    ...(onPin ? [{ id: "pin", label: isPinned(message) ? "Unpin" : "Pin", icon: <IconPin />, run: onPin }] : []),
     { id: "save", label: "Save to Mind", icon: <IconBookmark />, run: onSave },
     ...(message.card?.type !== "project" ? [{ id: "task", label: "Make a task", icon: <IconTask />, run: onTask }] : []),
     ...(isMine ? ["sep" as const, { id: "delete", label: "Delete", icon: <IconTrash />, danger: true, run: onDelete }] : []),
