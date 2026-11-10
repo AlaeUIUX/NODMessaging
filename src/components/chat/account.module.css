@@ -11,7 +11,7 @@
 .textBtn { padding: 8px 10px; border: none; background: none; color: var(--accent); font: var(--t-subhead); font-weight: var(--w-control); cursor: pointer; border-radius: var(--r-sm); }
 .textBtn:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .noteBad { color: var(--danger) !important; }
-.noteOk { color: #1FA855 !important; }
+.noteOk { color: var(--ok) !important; }
 .danger { color: var(--danger) !important; }
 .rowText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; text-align: left; }
 .rowText b { font: var(--t-body); font-weight: var(--w-control); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -35,7 +35,7 @@
 }
 .pill:active { transform: scale(.95); }
 .pillAccent { background: var(--ink); color: var(--bg); }
-.pillDone { background: transparent; color: #1FA855; cursor: default; }
+.pillDone { background: transparent; color: var(--ok); cursor: default; }
 
 /* ------------------------------------------------------------ onboarding */
 
@@ -186,15 +186,15 @@
 }
 .artFolder b { margin-top: 8px; font: var(--t-headline); }
 .artFolder small { font: var(--t-footnote); color: var(--ink-3); }
-.artFolder em { align-self: flex-start; margin-top: 6px; padding: 3px 9px; border-radius: var(--r-pill); background: var(--accent); color: var(--bg); font: var(--t-caption1); font-weight: var(--w-emph); font-style: normal; }
+.artFolder em { align-self: flex-start; margin-top: 6px; padding: 3px 9px; border-radius: var(--r-pill); background: var(--accent-fill); color: var(--on-accent); font: var(--t-caption1); font-weight: var(--w-emph); font-style: normal; }
 .artFolderBack { top: 22px; margin-left: -124px; transform: rotate(-6deg); opacity: .75; }
 .artSaved { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: var(--r-pill); background: var(--surface); box-shadow: var(--e2); font: var(--t-footnote); font-weight: var(--w-control); white-space: nowrap; }
-.artSaved svg { color: #1FA855; }
+.artSaved svg { color: var(--ok); }
 .artTiles { position: absolute; inset: 40px 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .artTiles span { display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; padding: 12px; border-radius: 18px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--e1); }
 .artTiles b { font: var(--t-title2); font-weight: var(--w-emph); letter-spacing: -.02em; }
 .artTiles small { font: var(--t-footnote); color: var(--ink-2); }
-.artTiles .artTileOn { background: var(--accent); box-shadow: var(--e1); color: var(--bg); }
+.artTiles .artTileOn { background: var(--accent-fill); box-shadow: var(--e1); color: var(--on-accent); }
 .artTiles .artTileOn small { color: color-mix(in srgb, var(--bg) 82%, transparent); }
 
 /* phone */
@@ -244,8 +244,8 @@
 .codeBad span { box-shadow: 0 0 0 1.5px var(--danger), var(--e1); }
 .codeBad { animation: shake .36s var(--ease-out); }
 @keyframes shake { 20% { transform: translateX(-8px); } 40% { transform: translateX(7px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(2px); } }
-.codeOk span { background: color-mix(in srgb, #1FA855 10%, var(--surface)); box-shadow: 0 0 0 1.5px #1FA855, var(--e1); color: #1FA855; }
-.codeNote { min-height: 20px; margin: 4px 0 0; display: flex; align-items: center; gap: 6px; font: var(--t-footnote); color: #1FA855; text-align: center; }
+.codeOk span { background: color-mix(in srgb, var(--ok) 10%, var(--surface)); box-shadow: 0 0 0 1.5px var(--ok), var(--e1); color: var(--ok); }
+.codeNote { min-height: 20px; margin: 4px 0 0; display: flex; align-items: center; gap: 6px; font: var(--t-footnote); color: var(--ok); text-align: center; }
 .codeLinks { display: flex; align-items: center; gap: 4px; font: var(--t-footnote); color: var(--ink-3); }
 .codeLinks > span { padding: 8px 10px; }
 .sms {
@@ -367,11 +367,14 @@ button.row:active { background: var(--fill-2); }
 .row > svg { flex-shrink: 0; color: var(--ink-3); }
 .groupBody > * + *::before { content: ""; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: var(--line); }
 .rowValue { flex-shrink: 0; font: var(--t-subhead); color: var(--ink-3); }
-.tile { width: 30px; height: 30px; flex-shrink: 0; border-radius: 9px; color: #fff; display: grid; place-items: center; }
+/* A row's icon: plain and quiet, in the tertiary grey, so the words lead (like WhatsApp's Settings). */
+.tile { width: 30px; height: 30px; flex-shrink: 0; color: var(--ink-3); display: grid; place-items: center; }
+.tile svg { width: 20px; height: 20px; }
+.tileDanger { color: var(--danger); }
 .addTile { width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); display: grid; place-items: center; }
 /* A currency's flag where other rows have a tile. */
 .flag { width: 30px; height: 30px; flex-shrink: 0; display: grid; place-items: center; font-size: 22px; line-height: 1; }
-.check { width: 22px; height: 22px; flex-shrink: 0; border-radius: var(--r-pill); background: var(--accent); color: var(--bg); display: grid; place-items: center; }
+.check { width: 22px; height: 22px; flex-shrink: 0; border-radius: var(--r-pill); background: var(--accent-fill); color: var(--on-accent); display: grid; place-items: center; }
 .switch { flex-shrink: 0; font: var(--t-footnote); font-weight: var(--w-emph); color: var(--accent); }
 .segRow { padding: 0; }
 .dimmed { opacity: .45; pointer-events: none; display: flex; flex-direction: column; gap: 22px; }

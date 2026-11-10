@@ -330,8 +330,8 @@ div.row { cursor: default; }
   border-radius: var(--r-pill);
   display: grid;
   place-items: center;
-  background: var(--accent);
-  color: var(--bg);
+  background: var(--accent-fill);
+  color: var(--on-accent);
   font: var(--t-caption2);
   font-weight: var(--w-emph);
   font-style: normal;

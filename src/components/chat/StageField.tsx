@@ -110,7 +110,7 @@ export default function StageField({ dark }: { dark: boolean }) {
       if (!ctx) return;
       const isDark = darkRef.current;
       const ink = isDark ? "255, 255, 255" : "28, 25, 23";
-      const glowInk = isDark ? "150, 180, 255" : "0, 53, 158";
+      const glowInk = isDark ? "91, 147, 255" : "47, 107, 224";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
       const t = now / 1000;

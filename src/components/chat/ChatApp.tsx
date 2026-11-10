@@ -578,7 +578,7 @@ export default function ChatApp() {
   // The page sits inside the global <body>; keep its backdrop and scrollbars in step.
   useEffect(() => {
     document.documentElement.style.colorScheme = theme;
-    document.body.style.background = theme === "dark" ? "#0C0A09" : "#FAFAF9";
+    document.body.style.background = theme === "dark" ? "#141210" : "#FAFAF9";
   }, [theme]);
 
   const flipTheme = () => {

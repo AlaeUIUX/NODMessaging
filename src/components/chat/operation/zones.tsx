@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { PackageIcon } from "@hugeicons/core-free-icons";
 import { initials } from "@/lib/chat/avatar";
 import { can, canSee } from "@/lib/chat/groups";
 import { RequestSheet } from "./OpCards";
@@ -16,7 +14,7 @@ import type { AvatarTone, Chat, GroupInfo, OperationInfo, OperationZone, Priorit
 import { DonutChart, PartBars, StackedBar, TrendChart, type Part, type Point } from "../Charts";
 import {
   IconAlert, IconArrowDown, IconArrowUp, IconBack, IconBell, IconCheck, IconChevron, IconClock, IconClose, IconEdit, IconFlag, IconLocation,
-  IconMegaphone, IconQr, IconRoute, IconTask, IconUserGroup,
+  IconMegaphone, IconPackage, IconQr, IconRoute, IconTask, IconUserGroup,
 } from "../Icons";
 import StatusBar from "../StatusBar";
 import { reducedMotion, Segmented, Sheet, useChatUi, useDialog, useNow } from "../ui";
@@ -84,10 +82,8 @@ export function zoneTone(live: OpLive, z: OperationZone): Tone {
   return "ok";
 }
 
-/** Supplies: Hugeicons' package, at the app's stroke. */
-export function IconPackage({ size = 20 }: { size?: number }) {
-  return <HugeiconsIcon icon={PackageIcon} size={size} strokeWidth={1.6} color="currentColor" aria-hidden="true" />;
-}
+/** Supplies: the shared package icon, kept here for the files that import it from zones. */
+export { IconPackage };
 
 /* ---------------------------------------------------------------------------
    A full-screen layer over the chat: status bar, a bar with a back button

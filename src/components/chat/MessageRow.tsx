@@ -2,6 +2,8 @@
 
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { renderBody, stripFormatting } from "@/lib/chat/markdown";
+import { haptic } from "@/lib/chat/haptics";
+import { animateSpring, VelocityTracker } from "@/lib/chat/motion";
 import { isPinned } from "@/lib/chat/pins";
 import { userById } from "@/lib/chat/store";
 import type { Message } from "@/lib/chat/types";
@@ -23,11 +25,8 @@ const SWIPE_MAX = 84;
 const DOUBLE_TAP_MS = 320;
 const VOICE_BARS = 28;
 
-export function haptic(ms = 8) {
-  // Chrome logs an error for vibrate() before the first real user gesture.
-  if (!navigator.userActivation?.hasBeenActive) return;
-  try { navigator.vibrate?.(ms); } catch { /* unsupported */ }
-}
+// One haptic for the whole app (it also reaches iPhone Safari): see lib/chat/haptics.ts.
+export { haptic } from "@/lib/chat/haptics";
 
 /** Up to three emoji and nothing else renders large, without a bubble. */
 function isEmojiOnly(body: string) {
@@ -198,26 +197,51 @@ export default memo(function MessageRow({
   const author = userById(message.authorId);
   const deleted = message.deletedAt !== null;
 
-  const setSwipe = (x: number) => {
+  // Where the bubble is now, the finger's speed, and the spring bringing it home.
+  const swipeX = useRef(0);
+  const track = useRef(new VelocityTracker());
+  const homing = useRef<(() => { x: number; v: number }) | null>(null);
+  useEffect(() => () => { homing.current?.(); }, []);
+
+  const setSwipe = (x: number, quiet = false) => {
+    swipeX.current = x;
     const el = bubbleRef.current;
-    if (el) el.style.transform = x ? `translateX(${x}px)` : "";
+    if (el) el.style.transform = Math.abs(x) < .01 ? "" : `translate3d(${x}px,0,0)`;
     const p = Math.min(1, Math.abs(x) / SWIPE_TRIGGER);
     rowRef.current?.style.setProperty("--p", String(p));
     const armed = Math.abs(x) >= SWIPE_TRIGGER;
     if (armed !== g.current.armed) {
       g.current.armed = armed;
       hintRef.current?.classList.toggle(styles.armed, armed);
-      if (armed) haptic(6);
+      if (armed && !quiet) haptic(6);
     }
   };
 
-  const reset = () => {
+  /** Lets go: the bubble springs home from the finger's own speed (no fixed easing). */
+  const reset = (velocity = 0) => {
     clearTimeout(g.current.timer);
     setPressing(false);
-    bubbleRef.current?.classList.remove(styles.dragging);
-    setSwipe(0);
     g.current.mode = "idle";
-    g.current.armed = false;
+    homing.current?.();
+    homing.current = null;
+    const from = swipeX.current;
+    if (Math.abs(from) < .5) {
+      bubbleRef.current?.classList.remove(styles.dragging);
+      setSwipe(0, true);
+      g.current.armed = false;
+      return;
+    }
+    // While it springs, the bubble's own CSS transition stays off, as during the drag.
+    homing.current = animateSpring({
+      from,
+      to: 0,
+      velocity,
+      onFrame: (x) => setSwipe(x, true),
+      onDone: () => {
+        homing.current = null;
+        bubbleRef.current?.classList.remove(styles.dragging);
+      },
+    });
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -259,8 +283,13 @@ export default memo(function MessageRow({
         suppressClick.current = true;
         bubbleRef.current?.setPointerCapture(e.pointerId);
         bubbleRef.current?.classList.add(styles.dragging);
+        // Caught while springing home: it stops under the finger.
+        homing.current?.();
+        homing.current = null;
+        track.current.reset(e.timeStamp, e.clientX);
       } else return;
     }
+    track.current.add(e.timeStamp, e.clientX);
     // Replies pull toward the centre of the screen: right for theirs, left for mine.
     const raw = isMine ? Math.min(0, dx) : Math.max(0, dx);
     const mag = Math.abs(raw);
@@ -270,6 +299,7 @@ export default memo(function MessageRow({
 
   const onPointerUp = () => {
     const s = g.current;
+    const releaseV = s.mode === "swipe" ? track.current.velocity() : 0;
     if (s.mode === "swipe" && s.armed) onReply(message);
     if (s.mode === "pending") {
       const now = Date.now();
@@ -283,7 +313,8 @@ export default memo(function MessageRow({
         lastTap.current = now;
       }
     }
-    reset();
+    // Past the trigger the bubble only gives a third of the finger's travel, so a third of its speed too.
+    reset(releaseV * (Math.abs(swipeX.current) > SWIPE_TRIGGER ? .3 : 1));
   };
 
   useEffect(() => () => clearTimeout(g.current.timer), []);
@@ -426,7 +457,7 @@ export default memo(function MessageRow({
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
-            onPointerCancel={reset}
+            onPointerCancel={() => reset()}
             onClickCapture={(e) => {
               if (suppressClick.current) {
                 e.stopPropagation();

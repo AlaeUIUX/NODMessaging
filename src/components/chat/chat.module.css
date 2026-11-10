@@ -58,10 +58,19 @@
   --line-2: #D7D3D0;
   --fill: #EFEDEA;
   --fill-2: #E7E5E4;
-  --sent: #1C1917;
-  --sent-ink: #FAFAF9;
-  --accent: #00359E;
-  --accent-soft: rgba(0, 53, 158, .08);
+  /* Your own messages are the accent, like iMessage's (the Send button too). */
+  --sent: #2F6BE0;
+  --sent-ink: #FFFFFF;
+  /* One blue, mid-light like every big messaging app's (iOS, Telegram, Signal sit at 50–63%
+     lightness), a touch less saturated so it sits on the warm stone. White reads on it (4.9:1).
+     --accent-ink is the same blue, deeper, for links and small accent text. */
+  --accent: #2F6BE0;
+  --accent-ink: #1F55CF;
+  --accent-soft: rgba(47, 107, 224, .10);
+  /* A blue shape with text or an icon on it (unread counts, badges, ticked boxes, swipe actions):
+     the fill and what goes on it. Same blue in light; dark mode uses a deeper one so white reads. */
+  --accent-fill: #2F6BE0;
+  --on-accent: #FFFFFF;
   --danger: #D92D20;
 
   --glass: rgba(253, 253, 252, .62);
@@ -94,36 +103,49 @@
   --e3: 0 2px 4px -2px rgba(0, 0, 0, .35), 0 12px 24px -8px rgba(0, 0, 0, .55);
   --e4: 0 4px 8px -4px rgba(0, 0, 0, .40), 0 24px 48px -12px rgba(0, 0, 0, .65);
 
-  --page: #0C0A09;
-  --bg: #0F0E0D;
-  --bg-sunk: #0C0A09;
-  --surface: #1C1917;
+  /* A warm near-black, lifted off pure black so cards don't float on a void (WhatsApp lifts its
+     dark page too); the cards and fills rise by the same step, so the gap between them stays. */
+  --page: #141210;
+  --bg: #141210;
+  --bg-sunk: #110F0E;
+  --surface: #1E1B18;
   --ink: #F5F5F4;
-  --ink-2: #A8A29E;
-  --ink-3: #78716C;
+  /* Greys made for the dark (they used to be light mode's mid grey): the faint one reads at
+     7:1 like WhatsApp's and Instagram's (6:1 on cards), and the brighter one keeps its step above it. */
+  --ink-2: #C2BCB6;
+  --ink-3: #A29B95;
   --line: rgba(255, 255, 255, .08);
   --line-2: rgba(255, 255, 255, .14);
-  --fill: #1F1D1B;
-  --fill-2: #292524;
-  --sent: #F5F5F4;
-  --sent-ink: #1C1917;
-  --accent: #8AAAFF;
-  --accent-soft: rgba(138, 170, 255, .14);
+  --fill: #221F1C;
+  --fill-2: #2C2825;
+  /* The bubble keeps the light-mode blue so white text still reads on it. */
+  --sent: #2F6BE0;
+  --sent-ink: #FFFFFF;
+  /* The same blue, lifted to read on the dark background (not a different, paler colour). */
+  --accent: #5B93FF;
+  --accent-ink: #8DB3FF;
+  --accent-soft: rgba(91, 147, 255, .16);
+  /* Shapes with numbers or icons on them keep the deeper blue, so white stays on top (4.9:1),
+     like iMessage's and WhatsApp's badges; it's the same blue as your own bubbles. */
+  --accent-fill: #2F6BE0;
+  --on-accent: #FFFFFF;
   --danger: #FF5A4E;
-  --glass: rgba(40, 40, 44, .52);
-  --glass-strong: rgba(46, 46, 50, .78);
+  /* Dark glass is mixed from the same warm stone as everything else (it used to be blue-grey,
+     the one cool thing in a warm app). The blur still lets colour from behind glow through. */
+  --glass: rgba(46, 42, 38, .52);
+  --glass-strong: rgba(52, 47, 43, .78);
   --glass-rim: inset 0 1px 0 rgba(255, 255, 255, .12), inset 0 -1px 0 rgba(0, 0, 0, .2);
   --glass-edge: rgba(255, 255, 255, .08);
   --glass-shadow: var(--e3);
-  --scrim: rgba(8, 8, 10, .45);
-  --liquid-bg: linear-gradient(180deg, rgba(58, 58, 64, .62), rgba(34, 34, 38, .5));
-  --liquid-sheen: rgba(255, 255, 255, .1);
+  --scrim: rgba(10, 9, 8, .45);
+  --liquid-bg: linear-gradient(180deg, rgba(66, 60, 54, .62), rgba(38, 34, 31, .5));
+  --liquid-sheen: rgba(255, 250, 244, .1);
   --liquid-shadow:
     inset 0 1px 0 rgba(255, 255, 255, .16),
     inset 0 -1px 1px rgba(0, 0, 0, .3),
     0 0 0 .5px rgba(255, 255, 255, .1),
     var(--e3);
-  --lens-bg: rgba(255, 255, 255, .13);
+  --lens-bg: rgba(255, 248, 240, .13);
   --lens-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), var(--e1);
   color-scheme: dark;
 }
@@ -519,7 +541,7 @@
   width: 12px;
   height: 12px;
   border-radius: var(--r-pill);
-  background: #1FA855;
+  background: var(--ok-mark);
   box-shadow: 0 0 0 2.5px var(--bg);
 }
 
@@ -698,10 +720,12 @@
 .chip:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .chip:has(.chipBadge) { padding-right: 6px; }
 .chip:active { transform: scale(.94); }
+/* The chosen chip: a tint of the blue with deeper blue text, the way WhatsApp marks its chosen
+   filter. Clearly picked, and quieter than the unread counts below it. */
 .chip.chipOn {
-  background: var(--ink);
-  color: var(--bg);
-  box-shadow: var(--e1);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent-ink);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .chipBadge {
   min-width: 22px;
@@ -718,7 +742,7 @@
   font-variant-numeric: tabular-nums;
   transition: background var(--t-mid), color var(--t-mid);
 }
-.chipOn .chipBadge { background: var(--bg); color: var(--ink); }
+.chipOn .chipBadge { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent-ink); }
 
 /* ReactionSheet tabs reuse these */
 .segment {
@@ -832,8 +856,8 @@
   height: 26px;
   padding: 0 7px;
   border-radius: var(--r-pill);
-  background: var(--accent);
-  color: var(--bg);
+  background: var(--accent-fill);
+  color: var(--on-accent);
   font-size: 12px;
   font-weight: 500;
   display: flex;
@@ -1270,7 +1294,7 @@
   font-size: var(--fs-sub);
 }
 .bubble strong { font-weight: 600; }
-.bubble :global(.mention) { font-weight: 600; color: var(--accent); }
+.bubble :global(.mention) { font-weight: 600; color: var(--accent-ink); }
 .mine .bubble :global(.mention) { color: inherit; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 .edited { font-size: var(--fs-meta); opacity: .55; margin-left: 6px; }
 /* :where() keeps this reset at class-level specificity so spacing rules can win. */
@@ -1959,7 +1983,7 @@
   max-width: calc(100% - 24px);
   animation: toastIn var(--t-slow) var(--ease-spring) both;
 }
-.toast svg { width: 15px; height: 15px; color: #1FA855; }
+.toast svg { width: 15px; height: 15px; color: var(--ok); }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px) scale(.9); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 /* ==========================================================================
@@ -1981,7 +2005,7 @@
 }
 .dev summary::-webkit-details-marker { display: none; }
 .devDot { width: 7px; height: 7px; border-radius: var(--r-pill); background: var(--ink-3); }
-.devDot.live { background: #1FA855; }
+.devDot.live { background: var(--ok-mark); }
 .devPanel {
   position: absolute;
   right: 0;
@@ -2077,24 +2101,27 @@
   --bubble-glass: rgba(255, 255, 255, .62);
   --bubble-rim: inset 0 1px 0 rgba(255, 255, 255, .95), inset 0 0 0 .5px rgba(255, 255, 255, .6), 0 0 0 .5px rgba(28, 25, 23, .05);
   --bubble-lift: var(--e2);
-  --bubble-smoke: linear-gradient(180deg, rgba(48, 44, 41, .94), rgba(28, 25, 23, .92));
-  --bubble-smoke-rim: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 0 0 .5px rgba(255, 255, 255, .06);
+  /* Your own bubble: the accent as glass, a shade lighter at the top, like iMessage's. */
+  --bubble-smoke: linear-gradient(180deg, rgba(62, 122, 236, .98), rgba(47, 107, 224, .97));
+  --bubble-smoke-rim: inset 0 1px 0 rgba(255, 255, 255, .22), inset 0 0 0 .5px rgba(255, 255, 255, .08);
   --bubble-smoke-lift: var(--e2);
   --bubble-sheen: rgba(255, 255, 255, .5);
   --bubble-shine: rgba(255, 255, 255, .55);
 }
-.mine .bubble { --bubble-sheen: rgba(255, 255, 255, .12); --bubble-shine: rgba(255, 255, 255, .22); }
+.mine .bubble { --bubble-sheen: rgba(255, 255, 255, .16); --bubble-shine: rgba(255, 255, 255, .26); }
 .theme[data-theme="dark"] {
-  --bubble-glass: rgba(60, 60, 66, .46);
+  /* Other people's bubbles: warm glass, like the rest of dark mode. */
+  --bubble-glass: rgba(66, 62, 58, .46);
   --bubble-rim: inset 0 1px 0 rgba(255, 255, 255, .1), inset 0 0 0 .5px rgba(255, 255, 255, .06);
   --bubble-lift: var(--e2);
-  --bubble-smoke: linear-gradient(180deg, rgba(250, 250, 249, .96), rgba(231, 229, 228, .92));
-  --bubble-smoke-rim: inset 0 1px 0 rgba(255, 255, 255, .9);
+  /* The same blue in the dark, so white text keeps reading on it. */
+  --bubble-smoke: linear-gradient(180deg, rgba(62, 122, 236, .98), rgba(47, 107, 224, .97));
+  --bubble-smoke-rim: inset 0 1px 0 rgba(255, 255, 255, .18), inset 0 0 0 .5px rgba(255, 255, 255, .06);
   --bubble-smoke-lift: var(--e2);
   --bubble-sheen: rgba(255, 255, 255, .08);
   --bubble-shine: rgba(255, 255, 255, .18);
 }
-.theme[data-theme="dark"] .mine .bubble { --bubble-sheen: rgba(255, 255, 255, .6); --bubble-shine: rgba(255, 255, 255, .7); }
+.theme[data-theme="dark"] .mine .bubble { --bubble-sheen: rgba(255, 255, 255, .14); --bubble-shine: rgba(255, 255, 255, .22); }
 
 .bubble.emojiOnly, .bubble.deleted, .bubble.cardBubble {
   -webkit-backdrop-filter: none;
@@ -2335,7 +2362,7 @@
   transition: background var(--t-mid), box-shadow var(--t-mid), transform var(--t-fast);
 }
 .checkItem:active .checkBox { transform: scale(.85); }
-.checkDone .checkBox { background: var(--accent); box-shadow: none; animation: reactionIn var(--t-slow) var(--ease-spring); }
+.checkDone .checkBox { background: var(--accent-fill); box-shadow: none; animation: reactionIn var(--t-slow) var(--ease-spring); }
 .checkLabel { flex: 1; min-width: 0; transition: color var(--t-mid); }
 .checkDone .checkLabel { color: var(--ink-3); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--ink-3) 60%, transparent); }
 .checkAdd {
@@ -2411,7 +2438,7 @@
 .theme[data-theme="dark"] .mapWater { fill: #1E2A38; }
 .theme[data-theme="dark"] .mapPark { fill: #23302A; }
 .theme[data-theme="dark"] .mapRoad path, .theme[data-theme="dark"] .mapRoadWide path { stroke: #3A3A40; }
-.liveDot { width: 8px; height: 8px; border-radius: var(--r-pill); background: #1FA855; display: inline-block; animation: dot 1.4s infinite; }
+.liveDot { width: 8px; height: 8px; border-radius: var(--r-pill); background: var(--ok-mark); display: inline-block; animation: dot 1.4s infinite; }
 
 /* event */
 .eventHead { display: flex; gap: 12px; align-items: center; }
@@ -2457,7 +2484,7 @@
   width: 40px;
   height: 40px;
   border-radius: var(--r-pill);
-  background: #1FA855;
+  background: var(--ok);
   color: #fff;
   display: flex;
   align-items: center;
@@ -2469,7 +2496,7 @@
 .payList li { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sub); }
 .payList li span { flex: 1; }
 .payList em { font-style: normal; font-size: var(--fs-meta); color: var(--ink-3); }
-.payList em.paidTag { color: #1FA855; font-weight: 600; }
+.payList em.paidTag { color: var(--ok); font-weight: 600; }
 
 /* ==========================================================================
    Sheets, builders, permission alerts, notification banner
@@ -2495,6 +2522,9 @@
   padding: 8px 0 calc(var(--inset-bottom) + 2px);
   animation: sheetIn var(--t-slow) var(--ease-out) both;
 }
+/* What you pull a sheet down by: the grabber (with room around it to catch) and the header. */
+.sheetHandle { margin-top: -8px; padding-top: 8px; cursor: grab; touch-action: none; }
+.bsheetHead[data-sheet-handle] { touch-action: none; }
 .bsheetScrim.bsheetClosing { animation: fadeOut var(--t-mid) var(--ease-out) both; pointer-events: none; }
 .bsheet.bsheetClosing { animation: sheetOut var(--t-mid) var(--ease-out) both; pointer-events: none; }
 @keyframes sheetOut { to { transform: translateY(105%); } }
@@ -2814,8 +2844,8 @@
   width: 18px;
   height: 18px;
   border-radius: var(--r-pill);
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2844,7 +2874,7 @@
   border-top-color: var(--accent);
   animation: spin .9s linear infinite;
 }
-.faceRing.faceOk { background: #1FA855; color: #fff; box-shadow: none; animation: reactionIn var(--t-slow) var(--ease-spring); }
+.faceRing.faceOk { background: var(--ok); color: #fff; box-shadow: none; animation: reactionIn var(--t-slow) var(--ease-spring); }
 .faceRing.faceOk::before { display: none; }
 .faceGlyph { font-size: 26px; }
 
@@ -3085,8 +3115,8 @@
   height: 22px;
   padding: 0 8px;
   border-radius: var(--r-pill);
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
   display: inline-flex;
   align-items: center;
   font: var(--t-caption1);
@@ -3318,11 +3348,12 @@
 /* The last bubble of a run grows a tail, and gives up its round corner. */
 .theme {
   --tail-theirs: #F1F0EE;
-  --tail-mine: rgb(46, 43, 42);
+  /* The bottom of your bubble's blue, so the tail joins it seamlessly. */
+  --tail-mine: rgb(47, 107, 224);
 }
 .theme[data-theme="dark"] {
-  --tail-theirs: rgb(40, 39, 42);
-  --tail-mine: rgb(214, 212, 211);
+  --tail-theirs: rgb(45, 42, 39);
+  --tail-mine: rgb(47, 107, 224);
 }
 .withTail.theirs .bubble { border-bottom-left-radius: 2px; }
 .withTail.mine .bubble { border-bottom-right-radius: 2px; }
@@ -3518,8 +3549,11 @@
 .viewerMeta { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .viewerMeta b { font: var(--t-headline); }
 .viewerMeta span { font: var(--t-footnote); opacity: .7; }
-.viewerStage { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: pan-y; cursor: grab; }
-.viewerTrack { display: flex; height: 100%; transition: transform var(--t-slow) var(--ease-out); }
+/* Swipes and the pull-down are the viewer's own (springs in MediaViewer.tsx), so the browser takes none. */
+.viewerStage { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none; cursor: grab; transform-origin: 50% 40%; }
+.viewerTrack { display: flex; height: 100%; will-change: transform; }
+/* Pulled down, the buttons and thumbnails fade out first, leaving the photo. */
+.viewerTop, .viewerThumbs { opacity: var(--chrome, 1); }
 .viewerSlide { flex: 0 0 100%; display: flex; align-items: center; justify-content: center; }
 .viewerImg { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
 .viewerImg.photoLoading { width: 70%; aspect-ratio: 1; background: rgba(255, 255, 255, .08); border-radius: var(--r-sm); }
@@ -3914,8 +3948,8 @@
   height: 36px;
   flex-shrink: 0;
   border-radius: var(--r-pill);
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3964,7 +3998,7 @@ div.actionRow:hover { background: transparent; }
   transition: background var(--t-fast), color var(--t-fast), transform var(--t-mid) var(--ease-spring);
 }
 .voteBtn:active { transform: scale(.9); }
-.voteBtn.voteOn { background: color-mix(in srgb, #E5484D 14%, transparent); color: #D13438; }
+.voteBtn.voteOn { background: var(--bad-soft); color: var(--danger); }
 
 /* ==========================================================================
    Landing: the living field behind the phone
@@ -3990,32 +4024,33 @@ div.actionRow:hover { background: transparent; }
   --ok-soft: color-mix(in srgb, #30A46C 14%, transparent);
   --warn: #C2410C;
   --warn-soft: color-mix(in srgb, #F97316 13%, transparent);
-  --bad: #DC2626;
+  /* One red for everything that's wrong: delete, overdue, failed (it was two, a hair apart). */
+  --bad: var(--danger);
   --bad-soft: color-mix(in srgb, #EF4444 12%, transparent);
   --ok-mark: #10B981;
   --warn-mark: #F97316;
   --bad-mark: #EF4444;
 
-  /* Priority: high and medium are the bad and warn marks, low a calm blue, none recedes. */
+  /* Priority: high and medium are the bad and warn marks, low a calm step of the accent, none recedes. */
   --prio-high: var(--bad-mark);
   --prio-medium: var(--warn-mark);
-  --prio-low: #3B82F6;
-  --prio-low-ink: #1D4ED8;
+  --prio-low: #6A97F0;
+  --prio-low-ink: var(--accent-ink);
   --prio-none: #D6D3D1;
 
-  /* One blue in four steps, 1 the strongest: stages, needs-you kinds, anything ranked.
-     Each has the ink that reads on it. */
+  /* The accent in four steps, 1 the strongest: stages, needs-you kinds, anything ranked.
+     Each has the ink that reads on it (all 4.5:1 or more). */
   --chart-1: var(--accent);
-  --chart-2: #2563EB;
-  --chart-3: #60A5FA;
-  --chart-4: #BFDBFE;
+  --chart-2: #6A97F0;
+  --chart-3: #A8C2F7;
+  --chart-4: #D5E1FB;
   --chart-1-ink: #fff;
-  --chart-2-ink: #fff;
-  --chart-3-ink: #172554;
-  --chart-4-ink: #172554;
+  --chart-2-ink: #10275E;
+  --chart-3-ink: #10275E;
+  --chart-4-ink: #10275E;
 
-  /* The Dashboard's widget groups (Money is ink). */
-  --tone-work: #2563EB;
+  /* The Dashboard's widget groups (Money is ink). Work is the accent itself. */
+  --tone-work: var(--accent);
   --tone-together: #0D9488;
   --tone-time: #7C3AED;
 }
@@ -4023,23 +4058,23 @@ div.actionRow:hover { background: transparent; }
   --ok: #4CC38A;
   --warn: #FB923C;
   --warn-soft: color-mix(in srgb, #F97316 18%, transparent);
-  --bad: #F87171;
+  --bad: var(--danger);
   --bad-soft: color-mix(in srgb, #EF4444 18%, transparent);
   --ok-mark: #34D399;
   --warn-mark: #FB923C;
   --bad-mark: #F87171;
-  --prio-low: #60A5FA;
-  --prio-low-ink: #93C5FD;
+  --prio-low: #5B93FF;
+  --prio-low-ink: var(--accent-ink);
   --prio-none: #44403C;
   /* On a dark surface the light end stands out, so the scale runs the other way. */
-  --chart-2: #3B82F6;
-  --chart-3: #1D4ED8;
-  --chart-4: #1E3A8A;
+  --chart-2: #3F72D9;
+  --chart-3: #2C55A8;
+  --chart-4: #1F3A73;
   --chart-1-ink: #0C1A3D;
   --chart-2-ink: #fff;
   --chart-3-ink: #fff;
-  --chart-4-ink: #DBEAFE;
-  --tone-work: #3B82F6;
+  --chart-4-ink: #fff;
+  --tone-work: var(--accent);
   --tone-together: #14B8A6;
   --tone-time: #8B5CF6;
 }
@@ -4394,7 +4429,7 @@ figure.mb { margin: 0; }
   transition: background var(--t-fast), box-shadow var(--t-fast), transform var(--t-mid) var(--ease-spring);
 }
 .mbCheck:active { transform: scale(.85); }
-.mbCheck.mbCheckOn { background: #30A46C; box-shadow: none; }
+.mbCheck.mbCheckOn { background: var(--ok-mark); box-shadow: none; }
 .mbDone .mbText b { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; }
 
 /* progress */
@@ -4512,7 +4547,7 @@ figure.mb { margin: 0; }
 .mbMiniList li { display: flex; align-items: center; gap: 6px; font: var(--t-footnote); color: var(--ink-2); }
 .mbMiniList li span { width: 14px; height: 14px; flex-shrink: 0; border-radius: var(--r-pill); box-shadow: inset 0 0 0 1.2px var(--line-2); color: #fff; display: flex; align-items: center; justify-content: center; }
 .mbMiniList li.mbMiniDone { color: var(--ink-3); text-decoration: line-through; }
-.mbMiniList li.mbMiniDone span { background: #30A46C; box-shadow: none; }
+.mbMiniList li.mbMiniDone span { background: var(--ok-mark); box-shadow: none; }
 .mbPollRow { position: relative; display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: var(--r-xs); overflow: hidden; background: color-mix(in srgb, var(--ink) 4%, transparent); font: var(--t-footnote); }
 .mbPollRow > span:not(.mbPollFill), .mbPollRow em { position: relative; }
 .mbPollRow em { font-style: normal; color: var(--ink-2); font-variant-numeric: tabular-nums; }
@@ -4666,7 +4701,7 @@ button.mindPickOn { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ink) !impor
 
 /* new item kinds */
 .mbk_date { flex-direction: row !important; align-items: center; }
-.mbCal { width: 44px; height: 48px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: var(--r-sm); background: color-mix(in srgb, #E5484D 8%, var(--card-bg)); box-shadow: inset 0 0 0 1px var(--line); }
+.mbCal { width: 44px; height: 48px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: var(--r-sm); background: color-mix(in srgb, var(--bad-mark) 8%, var(--card-bg)); box-shadow: inset 0 0 0 1px var(--line); }
 .mbCal em { font-style: normal; font: var(--t-caption2); font-weight: var(--w-emph); text-transform: uppercase; color: var(--bad); }
 .mbCal b { font: var(--t-title3); font-weight: var(--w-emph); line-height: 1; }
 .mbk_habit { flex-direction: column; align-items: stretch; gap: 8px; }
@@ -4834,7 +4869,7 @@ a.secondaryWide, a.primaryWide { display: flex; align-items: center; justify-con
 .folderCard:active { transform: scale(.97); }
 .folderTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
 .folderIcon { width: 40px; height: 40px; border-radius: var(--r-sm); background: var(--card-bg); box-shadow: var(--e1); display: flex; align-items: center; justify-content: center; font-size: 20px; }
-.folderBadge { padding: 2px 8px; border-radius: var(--r-pill); background: var(--accent); color: #fff; font-style: normal; font: var(--t-caption1); font-weight: var(--w-emph); white-space: nowrap; }
+.folderBadge { padding: 2px 8px; border-radius: var(--r-pill); background: var(--accent-fill); color: var(--on-accent); font-style: normal; font: var(--t-caption1); font-weight: var(--w-emph); white-space: nowrap; }
 .folderText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .folderText b { font: var(--t-headline); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .folderText small { font: var(--t-footnote); color: var(--ink-3); }
@@ -4974,7 +5009,7 @@ a.bsheetAction { text-decoration: none !important; }
 .mindSection.mindSectionBefore { box-shadow: 0 -4px 0 -1px var(--accent); border-radius: 2px; }
 
 /* the back button takes a drop: out one level */
-.circleBtn.mindDropUp { background: var(--accent); color: #fff; transform: scale(1.12); box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent); }
+.circleBtn.mindDropUp { background: var(--accent-fill); color: var(--on-accent); transform: scale(1.12); box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent); }
 
 /* the lifted copy over the menu scrim */
 .focus.mindHoldFocus { display: block; pointer-events: auto; cursor: pointer; }
@@ -5272,13 +5307,13 @@ img.spaceAvatar { object-fit: cover; }
   display: grid;
   place-items: center;
   border-radius: var(--r-pill);
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
 }
 
 .mindPublish { display: flex; flex-direction: column; gap: 8px; }
 .mindPublishRow { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r-md); background: color-mix(in srgb, var(--accent) 6%, transparent); }
-.mindPublishIcon { width: 36px; height: 36px; flex-shrink: 0; display: grid; place-items: center; border-radius: 11px; background: var(--accent); color: #fff; }
+.mindPublishIcon { width: 36px; height: 36px; flex-shrink: 0; display: grid; place-items: center; border-radius: 11px; background: var(--accent-fill); color: var(--on-accent); }
 
 .searchCount { margin: 0 2px; font: var(--t-footnote); color: var(--ink-3); }
 .searchGroup { display: flex; flex-direction: column; gap: 8px; }

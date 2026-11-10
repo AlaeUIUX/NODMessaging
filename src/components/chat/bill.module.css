@@ -6,7 +6,7 @@
 
 .flow, .bill {
   /* The app's settled green, and a quiet amber for "needs a look". */
-  --bill-ok: #1FA855;
+  --bill-ok: var(--ok);
   --bill-warn: #A15C07;
   --bill-warn-soft: rgba(161, 92, 7, .09);
 }
@@ -384,8 +384,8 @@
   width: 16px;
   height: 16px;
   border-radius: var(--r-pill);
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -496,6 +496,6 @@ button.item:active { opacity: .7; }
   justify-content: center;
   transition: background var(--t-fast), box-shadow var(--t-fast);
 }
-.itemCheckOn { background: var(--accent); box-shadow: none; color: #fff; }
+.itemCheckOn { background: var(--accent-fill); box-shadow: none; color: var(--on-accent); }
 .extrasLine { padding: 8px 2px 2px; font: var(--t-caption1); color: var(--ink-3); display: flex; flex-direction: column; gap: 1px; }
 .extrasLine span { opacity: .85; }

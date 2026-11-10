@@ -74,6 +74,6 @@
 .chatText b { font: var(--t-subhead); font-weight: var(--w-control); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chatText small { font: var(--t-caption1); color: var(--ink-3); }
 .keep { flex-shrink: 0; height: 30px; padding: 0 12px; border: none; border-radius: var(--r-pill); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font: var(--t-footnote); font-weight: var(--w-emph); cursor: pointer; }
-.kept { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; font: var(--t-footnote); font-weight: var(--w-emph); color: var(--ok, #1FA855); }
+.kept { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; font: var(--t-footnote); font-weight: var(--w-emph); color: var(--ok); }
 
 .rowBtn.rowBtn { flex-direction: row; gap: 8px; }

@@ -1,0 +1,330 @@
+/* The chat list's WhatsApp-style gestures and rows: swipe actions, drafts,
+   ticks, the hold peek, Archived, and the favourites / lists sheets. */
+
+/* ---- swipe actions ----
+   The iPhone's way: the row slides, and its actions grow out of the edge into
+   exactly the space it leaves, full height, so nothing shows behind the row.
+   The wrap reaches up over the gap above, so a row's cell runs from the line
+   above it to its own line, with the content in the middle. */
+/* The wrap also reaches 12px past each side, and the row pads itself back in:
+   at rest nothing moves, but slid open there's air between the avatar (or the
+   time) and the actions. */
+.swipeWrap { touch-action: pan-y; margin: -12px -12px 0; padding-top: 12px; }
+.swipeRow { box-sizing: border-box; padding: 0 12px; will-change: transform; }
+.acts {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  display: flex;
+  overflow: hidden;
+}
+.actsL { left: 0; }
+.actsR { right: 0; }
+/* Widths come from the swipe itself, frame by frame (InboxRow.tsx). */
+.act {
+  flex: none;
+  width: 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font: inherit;
+  color: #fff;
+  cursor: pointer;
+}
+/* The outermost action keeps its icon beside the row as it grows over the others. */
+.actsL .act[data-outer] { justify-content: flex-end; }
+.actsR .act[data-outer] { justify-content: flex-start; }
+.act[data-tone="accent"] { background: var(--accent-fill); }
+.act[data-tone="ink"] { background: #48484A; }
+.act[data-tone="grey"] { background: #8E8E93; }
+.actInner { width: 76px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; white-space: nowrap; }
+/* Icons and labels wait until there's room for them, then fade in. */
+.actsL .actInner { opacity: clamp(0, calc((var(--p-l, 0) - .3) * 2.2), 1); }
+.actsR .actInner { opacity: clamp(0, calc((var(--p-r, 0) - .3) * 2.2), 1); }
+.actIcon { display: flex; }
+.actIcon svg { width: 22px; height: 22px; }
+.actLabel { font-size: 12px; line-height: 14px; font-weight: 500; letter-spacing: -.005em; }
+.act:active { filter: brightness(.9); }
+/* Holding still: the row sinks in a little before its menu opens, and eases back after. */
+.swipeWrap[data-pressing] .swipeRow { transform: scale(.97); transition: transform 300ms var(--ease-out); }
+.swipeWrap[data-unpressing] .swipeRow { transition: transform 260ms var(--ease-out); }
+
+/* ---- what the row says ---- */
+.draftLabel { color: var(--accent-ink); font-weight: 500; }
+.who { color: var(--ink-2); }
+.kindIcon { display: inline-flex; vertical-align: -2px; margin-right: 3px; color: var(--ink-3); }
+.kindIcon svg { width: 14px; height: 14px; }
+.ticks {
+  display: inline-block;
+  vertical-align: -1px;
+  margin-right: 4px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--ink-3);
+}
+.ticksRead { color: var(--accent); }
+.tickIcon { display: inline-flex; vertical-align: -2px; margin-right: 4px; color: var(--ink-3); }
+.tickIcon svg { width: 12px; height: 12px; }
+.tickFailed { color: var(--danger); }
+.quietText { font-style: italic; }
+/* A muted chat keeps its count, in grey; a chat marked unread shows a dot. */
+.badge[data-quiet] { background: color-mix(in srgb, var(--ink) 28%, transparent); }
+.badge[data-dot] { min-width: 12px; width: 12px; height: 12px; padding: 0; margin-top: 7px; }
+
+/* A row leaving the list (archived, unarchived) folds away. */
+.rowOut { animation: rowOut 280ms var(--ease-out) forwards; overflow: hidden; pointer-events: none; }
+@keyframes rowOut {
+  from { max-height: 120px; opacity: 1; }
+  to { max-height: 0; opacity: 0; margin-bottom: -12px; }
+}
+
+/* ---- Archived ---- */
+.archivedRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 40px;
+  margin-bottom: 2px;
+  padding: 0 4px 0 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+/* The icon sits in the avatars' column, so the row lines up with the chats under it. */
+.archivedIcon { width: 56px; flex-shrink: 0; display: flex; justify-content: center; color: var(--ink-2); }
+.archivedIcon svg { width: 22px; height: 22px; }
+.archivedRow b { flex: 1; font-size: 16px; font-weight: 500; }
+.archivedRow span { font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.archivedRow span[data-unread] { color: var(--accent); font-weight: 600; }
+.archivedRow:active b { opacity: .6; }
+
+.archived {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  animation: pushIn var(--t-slow) var(--ease-out) both;
+}
+.archived.archivedLeaving { animation: pushOut var(--t-mid) var(--ease-out) both; }
+@keyframes pushIn { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes pushOut { to { transform: translateX(100%); } }
+.archivedHead {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  /* Below the status bar, like every other screen's header. */
+  padding: calc(var(--inset-top) + 8px) 16px 6px;
+}
+.archivedHead h2 { margin: 0; text-align: center; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.archivedNote { margin: 0; padding: 4px 28px 14px; text-align: center; font-size: 12.5px; line-height: 18px; color: var(--ink-3); }
+.archivedScroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 120px; scrollbar-width: none; }
+.archivedScroll::-webkit-scrollbar { display: none; }
+
+/* ---- the hold: a peek at the chat, and its menu ---- */
+.peek {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  background: var(--bg);
+  box-shadow: var(--e4);
+  cursor: pointer;
+  transform-origin: top center;
+  animation: peekIn var(--t-slow) var(--ease-spring) both;
+}
+@keyframes peekIn {
+  from { opacity: 0; transform: translateY(var(--from-y, 0)) scale(.92); }
+  to { opacity: 1; transform: none; }
+}
+.holdClosing .peek { animation: peekOut var(--t-mid) var(--ease-out) both; }
+@keyframes peekOut { to { opacity: 0; transform: scale(.96); } }
+.peekHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.peekAvatar { width: 34px; height: 34px; border-radius: var(--r-pill); flex-shrink: 0; display: flex; align-items: center; justify-content: center; object-fit: cover; }
+.peekName { display: block; font-size: 15px; line-height: 20px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.peekSub { display: block; font-size: 12px; line-height: 16px; color: var(--ink-3); }
+.peekBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 3px;
+  padding: 10px 12px 12px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 3%, var(--bg));
+}
+.peekMsg { display: flex; flex-shrink: 0; }
+.peekMine { justify-content: flex-end; }
+.peekBubble {
+  max-width: 80%;
+  padding: 6px 10px;
+  border-radius: 16px;
+  background: var(--fill);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 19px;
+  word-break: break-word;
+}
+.peekMine .peekBubble { background: var(--sent); color: var(--sent-ink); }
+.peekMine .kindIcon, .peekMine .ticks { color: inherit; }
+/* On your own (dark) bubble, read ticks need a lighter blue to show. */
+.peekMine .ticksRead { color: color-mix(in srgb, var(--accent) 45%, var(--sent-ink)); }
+.peekWho { display: block; font-size: 12px; line-height: 16px; font-weight: 600; color: var(--ink-2); }
+.peekTime { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; font-size: 10.5px; opacity: .6; white-space: nowrap; float: right; margin-top: 4px; }
+.peekTime .ticks { margin: 0; }
+.peekUnread {
+  align-self: center;
+  flex-shrink: 0;
+  margin: 6px 0;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.peekEmpty { margin: auto; color: var(--ink-3); font-size: 13px; }
+
+/* ---- sheets: More, Add to list, Favourites / a list ---- */
+.sheetList { display: grid; padding: 2px 0 8px; }
+.sheetItem {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  height: 52px;
+  padding: 0 4px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  font: inherit;
+  font-size: 16px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.sheetItem:last-child { border-bottom: none; }
+.sheetItem[data-danger] { color: var(--danger); }
+.sheetItem:active { opacity: .6; }
+.sheetIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink-2);
+}
+.sheetIcon svg { width: 18px; height: 18px; }
+.sheetItem[data-danger] .sheetIcon { color: var(--danger); }
+.sheetItem em { margin-left: auto; font-style: normal; font-size: 13px; color: var(--ink-3); }
+
+.check {
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  box-shadow: inset 0 0 0 1.5px var(--line-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bg);
+  transition: background var(--t-fast), box-shadow var(--t-fast);
+}
+.check svg { width: 14px; height: 14px; opacity: 0; }
+[aria-checked="true"] > .check { background: var(--accent); box-shadow: none; }
+[aria-checked="true"] > .check svg { opacity: 1; }
+
+.pickRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 2px;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.pickRow > b { flex: 1; min-width: 0; font-size: 16px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pickAvatar { width: 36px; height: 36px; border-radius: var(--r-pill); flex-shrink: 0; display: flex; align-items: center; justify-content: center; object-fit: cover; }
+.pickList { display: grid; padding-bottom: 12px; }
+.nameRow { padding: 4px 0 14px; }
+.deleteList {
+  display: block;
+  width: 100%;
+  margin: 4px 0 8px;
+  padding: 12px;
+  border: none;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* ---- chips: lists, and a + to make one ---- */
+.chipAdd { padding: 0 11px !important; }
+.chipAdd svg { width: 16px; height: 16px; }
+
+/* ---- empty favourites / lists ---- */
+.emptyList { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 56px 32px 0; text-align: center; }
+.emptyList p { margin: 0 0 14px; max-width: 260px; font-size: 14px; line-height: 20px; color: var(--ink-3); text-wrap: pretty; }
+.emptyList b { font-size: 17px; line-height: 24px; font-weight: 600; color: var(--ink); }
+.emptyBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 18px 0 15px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: var(--bg);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--e1);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.emptyBtn:active { transform: scale(.96); }
+.listEdit {
+  justify-self: center;
+  margin-top: 4px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+  cursor: pointer;
+}

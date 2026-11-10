@@ -429,7 +429,7 @@ function nodTeamMind(): Mind {
       id: "c-shared", name: "NOD Team", emoji: "🗂️", tone: "#C99432", chatIds: [],
       items: [
         ...tagged("brand-kit", [
-          { kind: "palette", title: "NOD colours", colors: ["#1C1917", "#FAFAF9", "#00359E", "#C99432", "#5B8A6B"] },
+          { kind: "palette", title: "NOD colours", colors: ["#1C1917", "#FAFAF9", "#2F6BE0", "#C99432", "#5B8A6B"] },
           { kind: "file", title: "NOD-logo-pack.zip", size: 2_400_000 },
           { kind: "file", title: "Type scale v2.fig", size: 860_000 },
           { kind: "image", title: "Spaces launch moodboard", image: photo("photo-1618221195710-dd6b41faaea6"), source: "Reema" },

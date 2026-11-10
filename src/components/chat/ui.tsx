@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Chat, Message, User } from "@/lib/chat/types";
+import { animateSpring, project, SPRINGS, VelocityTracker } from "@/lib/chat/motion";
 import { IconBack, IconBell, IconCamera, IconImage, IconLocation, IconMic, IconUserGroup } from "./Icons";
 import styles from "./chat.module.css";
 
@@ -271,9 +272,88 @@ export function Sheet({
     setTimeout(() => { onClose(); after?.(); }, 220);
   };
   useDialog(sheetRef, () => close());
+
+  /*
+   * Pull it down to dismiss, the way iOS sheets go: by the grabber or the
+   * header, or (with a mouse) anywhere once its content is scrolled to the
+   * top. It follows the finger, resists being pulled up, and on release
+   * either springs back or carries on down from the flick's own speed.
+   */
+  const scrimRef = useRef<HTMLDivElement>(null);
+  const pull = useRef<{ y0: number; x0: number; dy: number; active: boolean; head: boolean; mouse: boolean; track: VelocityTracker } | null>(null);
+  const spring = useRef<(() => { x: number; v: number }) | null>(null);
+  const pulled = useRef(0);
+  const paintPull = (dy: number) => {
+    pulled.current = dy;
+    const el = sheetRef.current;
+    if (!el) return;
+    el.style.transform = Math.abs(dy) < .01 ? "" : `translate3d(0,${dy}px,0)`;
+    if (scrimRef.current) scrimRef.current.style.opacity = String(1 - Math.min(1, Math.max(0, dy) / Math.max(1, el.offsetHeight)));
+  };
+  useEffect(() => () => { spring.current?.(); }, []);
+  const dismissFrom = (velocity: number) => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    onClosing?.();
+    if (scrimRef.current) scrimRef.current.style.pointerEvents = "none";
+    const h = (sheetRef.current?.offsetHeight ?? 600) + 24;
+    spring.current = animateSpring({ from: pulled.current, to: h, velocity: Math.max(velocity, 900), spring: SPRINGS.exit, onFrame: paintPull, onDone: onClose });
+  };
+  const swallowClick = () => {
+    const swallow = (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); window.removeEventListener("click", swallow, true); };
+    window.addEventListener("click", swallow, true);
+    setTimeout(() => window.removeEventListener("click", swallow, true), 0);
+  };
+  const onPullDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (closingRef.current || e.button > 0) return;
+    const t = e.target as HTMLElement;
+    if (t.closest("input, textarea, select, [contenteditable='true'], [data-no-pull]")) return;
+    const track = new VelocityTracker();
+    track.reset(e.timeStamp, e.clientY);
+    pull.current = { y0: e.clientY, x0: e.clientX, dy: 0, active: false, head: !!t.closest("[data-sheet-handle]"), mouse: e.pointerType === "mouse", track };
+  };
+  const onPullMove = (e: React.PointerEvent<HTMLElement>) => {
+    const d = pull.current;
+    const el = sheetRef.current;
+    if (!d || !el) return;
+    const dy = e.clientY - d.y0;
+    if (!d.active) {
+      if (Math.abs(dy) < 6) return;
+      const body = el.querySelector<HTMLElement>(`.${styles.bsheetBody}`);
+      // Sideways, upwards in the content, or content that can still scroll up: not a pull.
+      const fromBody = !d.head;
+      if (Math.abs(e.clientX - d.x0) > Math.abs(dy) || (fromBody && (dy < 0 || !d.mouse || (body?.scrollTop ?? 0) > 0))) {
+        pull.current = null;
+        return;
+      }
+      d.active = true;
+      // Caught mid-spring (or mid-entrance): it stops where it is and follows from there.
+      const caught = spring.current?.();
+      spring.current = null;
+      el.style.animation = "none";
+      d.y0 = e.clientY - (caught?.x ?? pulled.current);
+      try { el.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+    }
+    d.track.add(e.timeStamp, e.clientY);
+    const raw = e.clientY - d.y0;
+    // Down follows the finger; up gives a little and resists.
+    paintPull(raw > 0 ? raw : raw * .15);
+    d.dy = raw;
+  };
+  const onPullUp = () => {
+    const d = pull.current;
+    pull.current = null;
+    if (!d?.active) return;
+    swallowClick();
+    const v = d.track.velocity();
+    const h = sheetRef.current?.offsetHeight ?? 600;
+    if (project(pulled.current, v) > h * .4 || v > 1100) dismissFrom(v);
+    else spring.current = animateSpring({ from: pulled.current, to: 0, velocity: v, onFrame: paintPull });
+  };
+
   return (
     <>
-      <div className={`${styles.bsheetScrim} ${closing ? styles.bsheetClosing : ""}`} onClick={() => close()} />
+      <div ref={scrimRef} className={`${styles.bsheetScrim} ${closing ? styles.bsheetClosing : ""}`} onClick={() => close()} />
       <section
         ref={sheetRef}
         className={`${styles.bsheet} ${styles.glassStrong} ${closing ? styles.bsheetClosing : ""}`}
@@ -281,9 +361,13 @@ export function Sheet({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
+        onPointerDown={onPullDown}
+        onPointerMove={onPullMove}
+        onPointerUp={onPullUp}
+        onPointerCancel={onPullUp}
       >
-        <div className={styles.grabber} />
-        <header className={styles.bsheetHead}>
+        <div className={styles.sheetHandle} data-sheet-handle><div className={styles.grabber} /></div>
+        <header className={styles.bsheetHead} data-sheet-handle>
           {onBack
             ? <button className={styles.bsheetBack} onClick={() => close(onBack)}><IconBack size={18} />Back</button>
             : <button onClick={() => close()}>Cancel</button>}

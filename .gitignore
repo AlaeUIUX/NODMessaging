@@ -43,3 +43,7 @@ next-env.d.ts
 # local tooling (Claude worktrees, Playwright screenshots)
 /.claude/worktrees/
 /.playwright-mcp/
+
+# WhatsApp comparison: screen recordings and the frames cut from them stay local
+/docs/whatsapp-gap/raw/
+/docs/whatsapp-gap/frames/

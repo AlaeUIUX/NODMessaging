@@ -172,11 +172,31 @@ export const localStorageAdapter: ChatStorage = {
   },
   saveDraft(chatId, userId, draft) {
     if (typeof window === "undefined") return;
+    const key = DRAFT_KEY(chatId, userId);
     try {
-      if (draft) window.localStorage.setItem(DRAFT_KEY(chatId, userId), draft);
-      else window.localStorage.removeItem(DRAFT_KEY(chatId, userId));
+      if (draft) {
+        // When it was last changed: the inbox lists a chat with a draft by that time, like WhatsApp.
+        if (window.localStorage.getItem(key) !== draft) window.localStorage.setItem(`${key}.at`, String(Date.now()));
+        window.localStorage.setItem(key, draft);
+      } else {
+        window.localStorage.removeItem(key);
+        window.localStorage.removeItem(`${key}.at`);
+      }
     } catch {
       // ignore
     }
   },
 };
+
+/** An unsent draft and when it was last changed, for the inbox row. */
+export function draftOf(chatId: string, userId: string): { text: string; at: number } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const key = DRAFT_KEY(chatId, userId);
+    const text = window.localStorage.getItem(key);
+    if (!text?.trim()) return null;
+    return { text, at: Number(window.localStorage.getItem(`${key}.at`)) || 0 };
+  } catch {
+    return null;
+  }
+}

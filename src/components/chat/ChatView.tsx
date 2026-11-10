@@ -7,6 +7,8 @@ import { effectiveRule, isQuiet, useMutes } from "@/lib/chat/mutes";
 import { stripFormatting } from "@/lib/chat/markdown";
 import { allPeople } from "@/lib/chat/people";
 import { typingLine, useChat, userById } from "@/lib/chat/store";
+import { clearUnreadMark } from "@/lib/chat/chatFlags";
+import { animateSpring, project, SPRINGS, VelocityTracker } from "@/lib/chat/motion";
 import { TONES } from "@/lib/chat/avatar";
 import {
   canBroadcast, emptyLive, isCommand, isOnAir, reaches, staffing, zoneByChannel, zoneById,
@@ -245,6 +247,10 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   useEffect(() => {
     if (document.visibilityState === "visible") markRead(chat.id);
   }, [chat.id, me, messages.length, markRead]);
+  // Opening a chat by any way in (the list, a banner, the Dashboard) takes off a "mark as unread".
+  useEffect(() => {
+    clearUnreadMark(me, chat.groupId ?? chat.id);
+  }, [chat.id, chat.groupId, me]);
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState === "visible") markRead(chat.id);
@@ -425,7 +431,9 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   }, [closeSheet]);
 
   // Interactive swipe back: drag from the left edge and the inbox follows.
-  const edge = useRef<{ x: number; dx: number; t: number } | null>(null);
+  const edge = useRef<{ x: number; dx: number; t: number; track: VelocityTracker } | null>(null);
+  const edgeSpring = useRef<(() => { x: number; v: number }) | null>(null);
+  useEffect(() => () => { edgeSpring.current?.(); }, []);
   const inboxEl = () => screenRef.current?.parentElement?.querySelector<HTMLElement>("[data-inbox-screen]") ?? null;
   const paint = (dx: number) => {
     const el = screenRef.current;
@@ -438,22 +446,25 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
       inbox.style.filter = `brightness(${0.94 + 0.06 * p})`;
     }
   };
-  const settle = (to: "back" | "stay") => {
+  /** Springs from where the finger let go, at its speed: off to the right (back), or home (stay). */
+  const settle = (to: "back" | "stay", from: number, velocity: number) => {
     const el = screenRef.current;
     const inbox = inboxEl();
-    [el, inbox].forEach((x) => { if (x) x.style.transition = "transform 340ms cubic-bezier(.22, 1, .36, 1), filter 340ms cubic-bezier(.22, 1, .36, 1)"; });
-    if (to === "back") {
-      paint(el?.offsetWidth ?? 400);
-      setTimeout(() => {
-        [el, inbox].forEach((x) => { if (x) { x.style.transition = ""; x.style.transform = ""; x.style.filter = ""; } });
-        onBack(true);
-      }, 340);
-    } else {
-      paint(0);
-      setTimeout(() => {
-        [el, inbox].forEach((x) => { if (x) { x.style.transition = ""; x.style.transform = ""; x.style.filter = ""; } });
-      }, 340);
-    }
+    const clear = () => [el, inbox].forEach((x) => { if (x) { x.style.transition = ""; x.style.transform = ""; x.style.filter = ""; } });
+    const width = el?.offsetWidth ?? 400;
+    edgeSpring.current = animateSpring({
+      from,
+      to: to === "back" ? width : 0,
+      velocity,
+      // Leaving never bounces past the edge; staying gets a breath of bounce.
+      spring: to === "back" ? SPRINGS.exit : SPRINGS.settle,
+      onFrame: (x) => paint(Math.max(0, x)),
+      onDone: () => {
+        edgeSpring.current = null;
+        clear();
+        if (to === "back") onBack(true);
+      },
+    });
   };
   const onEdgeDown = (e: React.PointerEvent) => {
     const el = screenRef.current;
@@ -464,13 +475,19 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     if (x > EDGE) return;
     // Claim edge drags before a bubble underneath starts its own gesture.
     e.stopPropagation();
-    edge.current = { x: e.clientX, dx: 0, t: performance.now() };
+    // Caught while springing home: carry on from where it is.
+    const caught = edgeSpring.current?.();
+    edgeSpring.current = null;
+    const track = new VelocityTracker();
+    track.reset(e.timeStamp, e.clientX);
+    edge.current = { x: e.clientX - (caught?.x ?? 0), dx: caught?.x ?? 0, t: performance.now(), track };
     el.setPointerCapture(e.pointerId);
     el.style.animation = "none";
   };
   const onEdgeMove = (e: React.PointerEvent) => {
     if (!edge.current) return;
     edge.current.dx = Math.max(0, e.clientX - edge.current.x);
+    edge.current.track.add(e.timeStamp, e.clientX);
     paint(edge.current.dx);
   };
   const onEdgeUp = () => {
@@ -478,8 +495,9 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     edge.current = null;
     if (!d) return;
     const width = screenRef.current?.offsetWidth ?? 400;
-    const velocity = d.dx / Math.max(1, performance.now() - d.t);
-    settle(d.dx > width * 0.4 || velocity > 0.6 ? "back" : "stay");
+    const v = d.track.velocity();
+    // Where the flick was heading decides it: a quick short flick goes back, a slow drag past half does too.
+    settle(project(d.dx, v) > width * .5 ? "back" : "stay", d.dx, v);
   };
 
   const jumpTo = useCallback((messageId: string) => {

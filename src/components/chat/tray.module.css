@@ -75,8 +75,8 @@
   height: 20px;
   padding: 0 6px;
   border-radius: var(--r-pill);
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
   box-shadow: 0 0 0 2px var(--bg);
   font: var(--t-caption1);
   line-height: 20px;
@@ -84,7 +84,6 @@
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
-[data-theme="dark"] .count, [data-theme="dark"] .sort { color: #0F0E0D; }
 
 .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .text b { font: var(--t-headline); letter-spacing: -.01em; }
@@ -99,8 +98,8 @@
   padding: 0 16px;
   border: none;
   border-radius: var(--r-pill);
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
   font: var(--t-subhead);
   font-weight: var(--w-emph);
   cursor: pointer;

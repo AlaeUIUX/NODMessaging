@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { PackageIcon } from "@hugeicons/core-free-icons";
 import {
-  IconAlert, IconBell, IconCamera, IconCheck, IconClose, IconCloud, IconFlag, IconInfo, IconMegaphone, IconMinus, IconPlus, IconRoute, IconUserGroup,
+  IconAlert, IconBell, IconCamera, IconCheck, IconClose, IconCloud, IconFlag, IconInfo, IconMegaphone, IconMinus, IconPackage, IconPlus, IconRoute, IconUserGroup,
 } from "@/components/chat/Icons";
 import { Segmented, Sheet, useChatUi, useNow, type ChatUi } from "@/components/chat/ui";
 import {
@@ -37,11 +35,6 @@ const useOpUi = () => useChatUi() as OpUi;
 /* ---------------------------------------------------------------------------
    Small pieces
 --------------------------------------------------------------------------- */
-
-/** Hugeicons' package, drawn the way components/chat/Icons.tsx draws every icon. */
-function IconPackage({ size = 20 }: { size?: number }) {
-  return <HugeiconsIcon icon={PackageIcon} size={size} strokeWidth={1.6} color="currentColor" aria-hidden="true" />;
-}
 
 export const KIND_LABEL: Record<RequestKind, string> = { staff: "Need people", move: "Move", supplies: "Supplies", issue: "Issue" };
 

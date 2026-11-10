@@ -28,6 +28,6 @@
   background: color-mix(in srgb, var(--ink) 6%, transparent);
   color: var(--ink-2);
 }
-.on .icon { background: var(--accent); color: var(--bg); }
+.on .icon { background: var(--accent-fill); color: var(--on-accent); }
 .follow { font-size: 18px; line-height: 1; }
 .calls { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 16px; background: color-mix(in srgb, var(--ink) 4%, transparent); }

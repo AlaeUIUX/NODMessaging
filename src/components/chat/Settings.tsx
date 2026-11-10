@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { chatIdentity, initials, TONES } from "@/lib/chat/avatar";
+import { chatIdentity, initials } from "@/lib/chat/avatar";
 import {
   accountIds, LANGUAGES, readThemePref, removeAccount, requestTheme, resetDemoData, usePrefs, type ThemePref,
 } from "@/lib/chat/account";
@@ -33,10 +33,13 @@ import s from "./account.module.css";
 
 type Page = "profile" | "notifications" | "privacy" | "chats" | "language" | "currency" | "storage" | "about";
 
+/**
+ * A settings row's icon. Neutral, the way WhatsApp's settings are: a plain line icon in the text
+ * colour, no coloured square, so the rows read as one calm list. Only a row that removes or ends
+ * something (Log out) keeps the warning red. `tone` is kept so callers don't change; only "danger" shows.
+ */
 export function Tile({ tone, children }: { tone: AvatarTone | "accent" | "danger"; children: React.ReactNode }) {
-  const bg = tone === "accent" ? "var(--accent)" : tone === "danger" ? "var(--danger)" : TONES[tone];
-  // The accent turns light in dark mode, so its icon takes the background colour instead of white.
-  return <span className={s.tile} style={{ background: bg, color: tone === "accent" ? "var(--bg)" : undefined }}>{children}</span>;
+  return <span className={`${s.tile} ${tone === "danger" ? s.tileDanger : ""}`}>{children}</span>;
 }
 
 export function Row({ icon, title, sub, value, onClick, trailing, danger }: {

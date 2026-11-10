@@ -2542,11 +2542,8 @@ function NewPlace({ chip, onCreate }: { chip?: boolean; onCreate: (name: string)
   return chip ? field : <div className={styles.actionRow}><span className={styles.mindEmoji}><Emoji char={firstEmoji(name) ?? "📁"} /></span>{field}</div>;
 }
 
-/** How long a sorted card takes to fly off, or into the place it went. */
+/** How long a sorted card takes to fly into the collection it went to. */
 const FLY_MS = 440;
-/** How far a card is dragged sideways before letting go sorts it. */
-const SWIPE_PX = 96;
-const FLY_CLASS = { right: "flyRight", left: "flyLeft", place: "flyPlace" } as const;
 
 /** Words too common to say where something belongs. */
 const STOP = new Set(["about", "with", "from", "into", "this", "that", "your", "what", "when", "find", "have", "will", "there", "their"]);
@@ -2601,15 +2598,14 @@ type Sorted = {
 };
 
 /**
- * Sorting Unassigned like Tinder: one card, most of the sheet. Swipe right
- * and it goes to the best guess, written on the card (a stamp with its name
- * grows as you drag); swipe left and it's for Later, still in Unassigned.
- * Any other collection is in the row under the card, likeliest first: tap
- * it, or drag the card onto it. The row's search finds one among many, or
- * makes a new one. Undo puts the last card back. With no real guess there's
- * no swipe right: the card says to pick one below. When the last card has a
- * place a check pops, the sheet closes and Unassigned goes away behind it.
- * Saves from a chat teach Mind where that chat's saves go next time.
+ * Sorting Unassigned: one item in the middle, and every collection in a row
+ * under it that scrolls sideways (likeliest first, with momentum). Tap one and
+ * the item flies into it; the next comes up off the pile. A search on its own
+ * line above the row finds a collection among many, or makes a new one. Undo
+ * puts the last one back. No swiping: you always choose where it goes (closing
+ * the sheet leaves the rest in Unassigned). When the last item has a place a
+ * check pops, the sheet closes and Unassigned goes away behind it. Saves from
+ * a chat teach Mind where that chat's saves go next time.
  */
 function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
   const { mind, update } = useMind(ctx.store);
@@ -2623,10 +2619,8 @@ function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
   /** Places picked this time round: they move up the row. */
   const [used, setUsed] = useState<Record<string, number>>({});
   const [query, setQuery] = useState("");
-  /** Where the card is being dragged, and the place in the row it's over. */
-  const [drag, setDrag] = useState<{ dx: number; dy: number; over: string | null } | null>(null);
-  const [fly, setFly] = useState<{ how: "right" | "left" | "place"; x: number; y: number; to: string | null; from: { dx: number; dy: number } } | null>(null);
-  const grab = useRef<{ x: number; y: number } | null>(null);
+  /** The card flying into the collection it went to. */
+  const [fly, setFly] = useState<{ x: number; y: number; to: string } | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   /** The last move waits for the sheet to close, so Unassigned is seen going away. */
   const last = useRef<(() => void) | null>(null);
@@ -2634,7 +2628,7 @@ function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
   const rest = mind ? queue.slice(at).filter((id) => mind.blocks[id]) : [];
   const b = mind && rest.length ? mind.blocks[rest[0]] : null;
   const places = mind ? mind.collections.filter((c) => !isUnassigned(c)) : [];
-  const { ranked, guess } = mind && b ? rankPlaces(mind, b, places, used) : { ranked: places, guess: null };
+  const ranked = mind && b ? rankPlaces(mind, b, places, used).ranked : places;
   const sorted = history.filter((h) => h.to).length;
   const later = history.length - sorted;
   const total = history.length + rest.length;
@@ -2643,23 +2637,19 @@ function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
   const row = q ? ranked.filter((c) => c.name.toLowerCase().includes(q)) : ranked;
   const offerNew = !!q && !places.some((c) => c.name.toLowerCase() === q);
 
-  /** Sorts the card: into `col`, or Later. It flies off the side it was swiped to, or into the place it was dropped on. */
-  const go = (col: Collection | null, { el, made }: { el?: Element | null; made?: boolean } = {}) => {
+  /** Sorts the card into `col`: it flies into the collection's chip in the row. */
+  const go = (col: Collection, { el, made }: { el?: Element | null; made?: boolean } = {}) => {
     if (!b || !mind || fly) return;
-    const from = { dx: drag?.dx ?? 0, dy: drag?.dy ?? 0 };
     const card = cardRef.current?.getBoundingClientRect();
     const target = el?.getBoundingClientRect();
-    // From the card's resting place: the drag offset is added back in the animation.
-    const x = card && target ? target.left + target.width / 2 - (card.left + card.width / 2) + from.dx : 0;
-    const y = card && target ? target.top + target.height / 2 - (card.top + card.height / 2) + from.dy : 0;
-    setDrag(null);
-    setFly({ how: !col ? "left" : target ? "place" : "right", x, y, to: col?.id ?? null, from });
+    const x = card && target ? target.left + target.width / 2 - (card.left + card.width / 2) : 0;
+    const y = card && target ? target.top + target.height / 2 - (card.top + card.height / 2) : 0;
+    setFly({ x, y, to: col.id });
     const { id, ref } = b;
     const isLast = rest.length === 1;
-    const entry: Sorted = { id, to: col?.id ?? null, made: made ? col?.id : undefined, deferred: isLast && !!col };
-    if (col && ref) entry.chats = Object.fromEntries(mind.collections.filter((c) => c.id === col.id || c.chatIds.includes(ref.chatId)).map((c) => [c.id, c.chatIds]));
+    const entry: Sorted = { id, to: col.id, made: made ? col.id : undefined, deferred: isLast };
+    if (ref) entry.chats = Object.fromEntries(mind.collections.filter((c) => c.id === col.id || c.chatIds.includes(ref.chatId)).map((c) => [c.id, c.chatIds]));
     const move = () => {
-      if (!col) return;
       land(id);
       update((m) => {
         let out = made && !m.collections.some((c) => c.id === col.id) ? { ...m, collections: [...m.collections, col] } : m;
@@ -2668,7 +2658,7 @@ function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
         return out;
       });
     };
-    if (col) setUsed((u) => ({ ...u, [col.id]: (u[col.id] ?? 0) + 1 }));
+    setUsed((u) => ({ ...u, [col.id]: (u[col.id] ?? 0) + 1 }));
     if (entry.deferred) last.current = move;
     setTimeout(() => {
       if (!entry.deferred) move();
@@ -2698,41 +2688,11 @@ function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
     setAt(queue.indexOf(e.id));
   };
 
-  /* ---- dragging the card ---- */
-  const placeAt = (x: number, y: number) => {
-    const el = document.elementsFromPoint(x, y).map((n) => n.closest<HTMLElement>("[data-sort-place]")).find(Boolean);
-    return el?.dataset.sortPlace ?? null;
-  };
-  const onDown = (e: React.PointerEvent) => {
-    if (fly || e.button !== 0) return;
-    grab.current = { x: e.clientX, y: e.clientY };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-  const onMove = (e: React.PointerEvent) => {
-    if (!grab.current) return;
-    setDrag({ dx: e.clientX - grab.current.x, dy: e.clientY - grab.current.y, over: placeAt(e.clientX, e.clientY) });
-  };
-  const onUp = () => {
-    if (!grab.current) return;
-    grab.current = null;
-    const d = drag;
-    if (!d) return;
-    const chip = d.over ? document.querySelector(`[data-sort-place="${d.over}"]`) : null;
-    if (d.over === "new" && offerNew) go(quickCollection(query.trim(), places.length), { el: chip, made: true });
-    else if (d.over && d.over !== "new") go(places.find((c) => c.id === d.over) ?? null, { el: chip });
-    else if (d.dx > SWIPE_PX && guess) go(guess.c);
-    else if (d.dx < -SWIPE_PX) go(null);
-    else setDrag(null);
-  };
-
-  // On a keyboard: → the best guess, ← Later, ⌘Z undo.
+  // On a keyboard: ⌘Z undo.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement | null)?.closest("input, textarea")) return;
-      if ((e.metaKey || e.ctrlKey) && e.key === "z") { e.preventDefault(); undo(); return; }
-      if (!b || fly) return;
-      if (e.key === "ArrowRight" && guess) { e.preventDefault(); go(guess.c); }
-      if (e.key === "ArrowLeft") { e.preventDefault(); go(null); }
+      if ((e.metaKey || e.ctrlKey) && e.key === "z") { e.preventDefault(); undo(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -2748,12 +2708,7 @@ function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
 
   if (!mind) return null;
   const allDone = finished && !later;
-  const dx = fly ? fly.from.dx : drag?.dx ?? 0;
-  const pull = Math.min(1, Math.abs(dx) / SWIPE_PX);
   const cardStyle = {
-    ["--dx" as string]: `${dx}px`,
-    ["--dy" as string]: `${fly ? fly.from.dy : drag?.dy ?? 0}px`,
-    ["--rot" as string]: `${dx / 18}deg`,
     ["--fx" as string]: `${fly?.x ?? 0}px`,
     ["--fy" as string]: `${fly?.y ?? 0}px`,
   };
@@ -2788,47 +2743,40 @@ function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
             {undoBtn}
           </div>
 
+          {/* A pile of the items themselves, like post: the next ones peek out behind the top one. */}
           <div className={sortCss.stage}>
-            {rest.length > 2 && <span className={`${sortCss.under} ${sortCss.under2}`} aria-hidden="true" />}
-            {rest.length > 1 && <span className={sortCss.under} aria-hidden="true" />}
-            <div
-              key={b.id}
-              ref={cardRef}
-              className={`${sortCss.card} ${drag ? sortCss.dragging : ""} ${drag?.over ? sortCss.overPlace : ""} ${fly ? sortCss[FLY_CLASS[fly.how]] : ""}`}
-              style={cardStyle}
-              onPointerDown={onDown}
-              onPointerMove={onMove}
-              onPointerUp={onUp}
-              onPointerCancel={() => { grab.current = null; setDrag(null); }}
-              aria-roledescription="card"
-            >
-              {guess && (
-                <span className={`${sortCss.stamp} ${sortCss.stampYes}`} style={{ opacity: dx > 0 ? pull : 0, ["--s" as string]: 0.7 + pull * 0.4, ["--tone" as string]: guess.c.tone }} aria-hidden="true">
-                  <Emoji char={guess.c.emoji} /> {guess.c.name}
-                </span>
-              )}
-              <span className={`${sortCss.stamp} ${sortCss.stampNo}`} style={{ opacity: dx < 0 ? pull : 0, ["--s" as string]: 0.7 + pull * 0.4 }} aria-hidden="true">Later</span>
-              <div className={sortCss.cardBody}>
-                <span className={sortCss.cardKind}>{KIND_LABEL[b.kind]}</span>
-                <BlockView block={b} shape="detail" />
-              </div>
-              <div className={`${sortCss.cardGuess} ${guess ? "" : sortCss.noGuess}`} style={guess ? { ["--tone" as string]: guess.c.tone } : undefined}>
-                {guess ? (
-                  <>
-                    <span className={sortCss.guessIcon}><Emoji char={guess.c.emoji} /></span>
-                    <span className={sortCss.guessText}><b>{guess.c.name}</b><small>{guess.why}</small></span>
-                    <em aria-hidden="true">Swipe <IconArrowRight size={13} /></em>
-                  </>
-                ) : (
-                  <span className={sortCss.guessText}><b>No clear place for this</b><small>Pick a collection below</small></span>
-                )}
-              </div>
+            <span className={sortCss.kind}>{KIND_LABEL[b.kind]}</span>
+            {/* Each item is one object for its whole time in the pile (kept by its id), so moving up is
+                that same thing sliding forward, never a fresh copy drawn in its place. The moment one
+                flies into a collection, the rest step forward together. */}
+            <div className={sortCss.pile}>
+              {rest.slice(0, 4).map((id, i) => {
+                const item = mind.blocks[id];
+                if (!item) return null;
+                const leaving = !!fly && id === b.id;
+                const depth = fly ? i - 1 : i;
+                return (
+                  <div
+                    key={id}
+                    ref={id === b.id ? cardRef : undefined}
+                    className={`${sortCss.letter} ${leaving ? sortCss.flyPlace : ""}`}
+                    data-depth={leaving ? undefined : Math.min(3, depth)}
+                    style={leaving ? cardStyle : undefined}
+                    aria-hidden={depth !== 0 && !leaving ? true : undefined}
+                    aria-roledescription={depth === 0 ? "card" : undefined}
+                  >
+                    <BlockView block={item} shape="detail" />
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          <div className={sortCss.row} aria-label="Collections, likeliest first">
+          <div className={sortCss.choose}>
+            <p className={sortCss.chooseLabel}>Move to</p>
+            {/* Search on its own line: the row under it is only collections. */}
             <label className={sortCss.find}>
-              <IconSearch size={15} />
+              <IconSearch size={16} />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -2837,44 +2785,36 @@ function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
                   if (row.length === 1 && !offerNew) go(row[0], { el: document.querySelector(`[data-sort-place="${row[0].id}"]`) });
                   else if (offerNew) go(quickCollection(query.trim(), places.length), { el: document.querySelector('[data-sort-place="new"]'), made: true });
                 }}
-                placeholder="Find or make"
+                placeholder="Find a collection, or name a new one"
                 aria-label="Find a collection, or name a new one"
                 enterKeyHint="go"
               />
             </label>
-            {row.map((c) => (
-              <button
-                key={c.id}
-                data-sort-place={c.id}
-                className={`${sortCss.place} ${guess?.c.id === c.id ? sortCss.placeGuess : ""} ${drag?.over === c.id ? sortCss.placeOver : ""} ${fly?.to === c.id ? sortCss.took : ""}`}
-                style={{ ["--tone" as string]: c.tone }}
-                onClick={(e) => go(c, { el: e.currentTarget })}
-                disabled={!!fly}
-              >
-                <Emoji char={c.emoji} /> {c.name}
-              </button>
-            ))}
-            {offerNew && (
-              <button
-                data-sort-place="new"
-                className={`${sortCss.place} ${sortCss.placeNew} ${drag?.over === "new" ? sortCss.placeOver : ""}`}
-                onClick={(e) => go(quickCollection(query.trim(), places.length), { el: e.currentTarget, made: true })}
-                disabled={!!fly}
-              >
-                <IconPlus size={14} /> Create “{query.trim()}”
-              </button>
-            )}
-          </div>
-
-          <div className={sortCss.actions}>
-            <button className={sortCss.later} onClick={() => go(null)} disabled={!!fly}>
-              <IconBack size={16} /> Later
-            </button>
-            {guess && (
-              <button className={sortCss.yes} style={{ ["--tone" as string]: guess.c.tone }} onClick={() => go(guess.c)} disabled={!!fly}>
-                <Emoji char={guess.c.emoji} /> {guess.c.name} <IconArrowRight size={16} />
-              </button>
-            )}
+            <DragScroll className={sortCss.row} aria-label="Collections, likeliest first">
+              {row.map((c) => (
+                <button
+                  key={c.id}
+                  data-sort-place={c.id}
+                  className={`${sortCss.place} ${fly?.to === c.id ? sortCss.took : ""}`}
+                  style={{ ["--tone" as string]: c.tone }}
+                  onClick={(e) => go(c, { el: e.currentTarget })}
+                  disabled={!!fly}
+                >
+                  <Emoji char={c.emoji} /> {c.name}
+                </button>
+              ))}
+              {offerNew && (
+                <button
+                  data-sort-place="new"
+                  className={`${sortCss.place} ${sortCss.placeNew}`}
+                  onClick={(e) => go(quickCollection(query.trim(), places.length), { el: e.currentTarget, made: true })}
+                  disabled={!!fly}
+                >
+                  <IconPlus size={14} /> Create “{query.trim()}”
+                </button>
+              )}
+              {!row.length && !offerNew && <span className={sortCss.noMatch}>No collection called that</span>}
+            </DragScroll>
           </div>
         </div>
       )}
