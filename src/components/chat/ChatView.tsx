@@ -433,7 +433,13 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
   // Interactive swipe back: drag from the left edge and the inbox follows.
   const edge = useRef<{ x: number; dx: number; t: number; track: VelocityTracker } | null>(null);
   const edgeSpring = useRef<(() => { x: number; v: number }) | null>(null);
-  useEffect(() => () => { edgeSpring.current?.(); }, []);
+  // Closing mid-swipe (Safari's own back gesture, a tap on Back while it springs) stops the spring
+  // before it can tidy up, so the inbox it was moving is put back here: otherwise it stays shifted.
+  useEffect(() => () => {
+    edgeSpring.current?.();
+    const inbox = document.querySelector<HTMLElement>("[data-inbox-screen]");
+    if (inbox) { inbox.style.transition = ""; inbox.style.transform = ""; inbox.style.filter = ""; }
+  }, []);
   const inboxEl = () => screenRef.current?.parentElement?.querySelector<HTMLElement>("[data-inbox-screen]") ?? null;
   const paint = (dx: number) => {
     const el = screenRef.current;
@@ -498,6 +504,12 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     const v = d.track.velocity();
     // Where the flick was heading decides it: a quick short flick goes back, a slow drag past half does too.
     settle(project(d.dx, v) > width * .5 ? "back" : "stay", d.dx, v);
+  };
+  /** The browser took the touch (on iPhone, Safari's own back swipe): spring home; its Back closes the chat. */
+  const onEdgeCancel = () => {
+    const d = edge.current;
+    edge.current = null;
+    if (d) settle("stay", d.dx, 0);
   };
 
   const jumpTo = useCallback((messageId: string) => {
@@ -683,7 +695,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
       onPointerDownCapture={onEdgeDown}
       onPointerMove={onEdgeMove}
       onPointerUp={onEdgeUp}
-      onPointerCancel={onEdgeUp}
+      onPointerCancel={onEdgeCancel}
       style={{ ["--chat-tone" as string]: TONES[identity.tone] }}
     >
       <StatusBar />

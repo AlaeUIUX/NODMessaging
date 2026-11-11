@@ -163,6 +163,8 @@ const SLOT = 76;
 const HOLD_MS = 380;
 /** A finger that stays down this long starts to press the row in, before the hold. */
 const PRESS_MS = 110;
+/** The strip at the screen's left edge that iOS keeps for its back swipe. */
+const EDGE_KEEP = 20;
 
 /*
  * Motion, the way UIKit does it: while the finger is down the row is exactly
@@ -377,6 +379,9 @@ export function SwipeRow({ children, onTap, onHold, leading, trailing, open, onO
           if (e.button !== 0) return;
           swallow.current = false;
           clearTimers();
+          // iOS keeps the screen's left edge for going back: a touch that starts there doesn't swipe the row.
+          const screen = rowRef.current?.closest("[data-inbox-screen]")?.getBoundingClientRect();
+          if (e.pointerType === "touch" && screen && e.clientX - screen.left < EDGE_KEEP) { drag.current = null; return; }
           const s = m.current;
           drag.current = { x: e.clientX, y: e.clientY, base: s.x, active: false, width: rowRef.current?.offsetWidth ?? 360, samples: [{ t: e.timeStamp, x: e.clientX }] };
           // Holding still on a resting, closed row presses it in, then opens its menu.
