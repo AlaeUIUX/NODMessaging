@@ -80,6 +80,11 @@
 @keyframes intoPlace {
   to { transform: translate(var(--fx), var(--fy)) scale(.1) rotate(-8deg); opacity: 0; }
 }
+/* Skipped: set aside to the left, still whole, while the next one steps forward. */
+.skipPlace { z-index: 4; animation: setAside 320ms cubic-bezier(.4, 0, .9, .4) forwards; pointer-events: none; }
+@keyframes setAside {
+  to { transform: translateX(-115%) rotate(-7deg); opacity: 0; }
+}
 
 /* Where it goes: a label, the search on its own line, then the collections. */
 .choose { display: grid; gap: 10px; }
@@ -167,5 +172,5 @@
 @media (prefers-reduced-motion: reduce) {
 
   .letter { transition: none; }
-  .flyPlace, .took, .doneMark, .done b, .done small { animation-duration: 1ms; animation-delay: 0ms; }
+  .flyPlace, .skipPlace, .took, .doneMark, .done b, .done small { animation-duration: 1ms; animation-delay: 0ms; }
 }

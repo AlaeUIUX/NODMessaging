@@ -1,5 +1,6 @@
 import { buildSeedState, CURRENT_VERSION } from "./seed";
 import { EWC_ID } from "./seed-ops";
+import { syncChannels } from "./groups";
 import type { ChatState, ChatStorage, Message } from "./types";
 
 const STATE_KEY = "nod.chat.state";
@@ -91,16 +92,27 @@ export function migrate(stored: unknown): ChatState {
 
   let raw = stored as Partial<ChatState> & { version?: number };
   if ((raw.version ?? 0) < 5) raw = renameCast(raw);
-  // v11 -> v12 only adds the EWC Operation, and v13 a day of talk in its
-  // channels: keep everything as it is (edits to seeded groups, read
+  // v11 -> v12 only adds the EWC Operation, v13 a day of talk in its
+  // channels, and v14 channels (with descriptions) for the public groups on
+  // Explore: keep everything as it is (edits to seeded groups, read
   // receipts), add the chats that are new, and merge in the EWC messages
   // that aren't there yet, read up to where the seed has them read.
   if (
-    (raw.version === 11 || raw.version === 12)
+    (raw.version === 11 || raw.version === 12 || raw.version === 13)
     && Array.isArray(raw.chats) && isRecord(raw.messages) && isRecord(raw.archive) && isRecord(raw.lastReadAt)
   ) {
-    const chats = raw.chats as ChatState["chats"];
-    const added = seed.chats.filter((c) => !chats.some((x) => x.id === c.id));
+    const chats = (raw.chats as ChatState["chats"]).map((c) => {
+      const s = c.group?.discover && seed.chats.find((x) => x.id === c.id);
+      if (!s?.group || !c.group) return c;
+      return {
+        ...c,
+        memberIds: [...new Set([...c.memberIds, ...s.memberIds])],
+        group: c.group.channels.length < 2 ? { ...c.group, channels: s.group.channels } : c.group,
+      };
+    });
+    // Public groups' new channels need their channel chats (for anyone who had already joined).
+    const channelChats = chats.filter((c) => c.group?.discover).flatMap((g) => syncChannels(g, chats));
+    const added = [...seed.chats, ...channelChats].filter((c) => !chats.some((x) => x.id === c.id));
     const messages = { ...Object.fromEntries(added.map((c) => [c.id, seed.messages[c.id] ?? []])), ...(raw.messages as ChatState["messages"]) };
     for (const c of seed.chats.filter((x) => x.id === EWC_ID || x.groupId === EWC_ID)) {
       const have = messages[c.id] ?? [];

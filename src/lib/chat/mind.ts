@@ -116,7 +116,7 @@ export interface Collection {
   /** Added from Explore: the public collection it came from, and who made it. */
   from?: { id: string; by: string };
   /** Published to Explore: when, and the line people see under its name. It stays in step with what's in it. */
-  published?: { at: number; description: string };
+  published?: { at: number; description: string; /** Picked when publishing; else Explore guesses them. */ topics?: string[] };
   /** Shared with people, or with anyone who has the link. */
   sharing?: Sharing;
 }
@@ -687,7 +687,7 @@ export function updateMind(userId: string, fn: (m: Mind) => Mind, { local = fals
 }
 
 /** A photo or file of your own: its bytes go up when it's added, so it's sent with progress. */
-export const isUpload = (b: Block) => !!b.attachment && (b.kind === "image" || b.kind === "file");
+export const isUpload = (b: Block) => !!b.attachment && (b.kind === "image" || b.kind === "file" || b.kind === "video");
 
 /** Photos and files going up, by item: how far (0 to 1). Only while it happens; nothing is kept. */
 const uploading = new Map<string, number>();

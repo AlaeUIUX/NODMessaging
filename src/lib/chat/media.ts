@@ -11,6 +11,8 @@ import type { Attachment } from "./types";
 const DB = "nod-media";
 const STORE = "blobs";
 export const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+/** A video from the phone may be bigger than other files. */
+export const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
 
 /** One connection per tab, opened on first use. */
 let connection: Promise<IDBDatabase> | null = null;
@@ -101,8 +103,8 @@ export async function clearMedia() {
 }
 
 /** Turns a picked/pasted/dropped file into an attachment, storing its bytes. */
-export async function toAttachment(file: File): Promise<Attachment | null> {
-  if (file.size > MAX_ATTACHMENT_BYTES) return null;
+export async function toAttachment(file: File, max = MAX_ATTACHMENT_BYTES): Promise<Attachment | null> {
+  if (file.size > max) return null;
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   urls.set(id, URL.createObjectURL(file));
   const dims = await naturalSize(file);

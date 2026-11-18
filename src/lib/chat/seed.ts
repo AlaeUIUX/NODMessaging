@@ -64,27 +64,33 @@ const VIENNA: Chat = {
 };
 
 /** Public groups, found on Explore. Nobody in the demo has invited Alae; anyone can join. */
-const publicGroup = (id: string, name: string, tone: Chat["tone"], members: string[], admin: string, description: string, photo: string, topics: string[], total: number): Chat => ({
+/** Each channel as [name, description]; the first is #general, the channel the group opens to. */
+const publicGroup = (id: string, name: string, tone: Chat["tone"], members: string[], admin: string, description: string, photo: string, topics: string[], total: number, channels: [string, string][]): Chat => ({
   id, name, kind: "group", memberIds: members, tone, photo: picture(photo),
   group: {
     description,
     roles: baseRoles(), memberRoles: { [admin]: [ADMIN] },
-    channels: [{ id, name: "general", roles: [], postRoles: [] }],
+    channels: channels.map(([ch, topic], i) => ({ id: i ? `${id}--${ch}` : id, name: ch, topic, roles: [], postRoles: [] })),
     invites: [], inviteCode: id, createdBy: admin, createdAt: Date.now() - 120 * DAY,
     discover: { topics, members: total },
   },
 });
 const PUBLIC_GROUPS: Chat[] = [
   publicGroup("pub-german", "German Learners Vienna", "sage", ["jamshad", "salman"], "salman",
-    "Stammtisch on Thursdays, flashcard swaps every day. All levels welcome.", "photo-1512820790803-83ca734da794", ["german", "language", "vienna"], 1240),
-  publicGroup("pub-design", "Product Designers DACH", "plum", ["reema", "charles"], "reema",
-    "Crits, jobs and the odd meetup for product designers in Germany, Austria and Switzerland.", "photo-1497366216548-37526070297c", ["design", "work"], 3400),
+    "Stammtisch on Thursdays, flashcard swaps every day. All levels welcome.", "photo-1512820790803-83ca734da794", ["german", "language", "vienna"], 1240,
+    [["general", "Say hallo and find a practice partner"], ["stammtisch", "Thursday meetups: where and when"], ["flashcards", "Swap decks and quiz each other"]]),
+  publicGroup("pub-design", "Product Designers DACH", "plum", ["reema", "charles", "jamshad", "salman"], "reema",
+    "Crits, jobs and the odd meetup for product designers in Germany, Austria and Switzerland.", "photo-1497366216548-37526070297c", ["design", "work"], 3400,
+    [["general", "Introductions and anything design"], ["crits", "Post your work, get honest feedback"], ["jobs", "Roles in DACH, freelance and full-time"]]),
   publicGroup("pub-coffee", "Vienna Coffee Club", "ochre", ["salman"], "salman",
-    "One new café a week, and a Saturday walk to try it together.", "photo-1495474472287-4d71bcdd2085", ["coffee", "vienna", "food"], 860),
+    "One new café a week, and a Saturday walk to try it together.", "photo-1495474472287-4d71bcdd2085", ["coffee", "vienna", "food"], 860,
+    [["general", "This week's café and the Saturday walk"], ["finds", "Cafés worth the detour"]]),
   publicGroup("pub-founders", "Indie Founders", "denim", ["charles"], "charles",
-    "Small teams shipping real things. Weekly wins, honest numbers.", "photo-1522071820081-009f0129c71c", ["startups", "work"], 2100),
+    "Small teams shipping real things. Weekly wins, honest numbers.", "photo-1522071820081-009f0129c71c", ["startups", "work"], 2100,
+    [["general", "Weekly wins and honest numbers"], ["help", "Stuck on something? Ask here"]]),
   publicGroup("pub-hikers", "Alps Weekend Hikers", "graphite", ["jamshad"], "jamshad",
-    "Day hikes and hut weekends from Vienna. Routes for every pace.", "photo-1506905925346-21bda4d32df4", ["hiking", "travel"], 540),
+    "Day hikes and hut weekends from Vienna. Routes for every pace.", "photo-1506905925346-21bda4d32df4", ["hiking", "travel"], 540,
+    [["general", "Plans for this weekend"], ["routes", "Trails, huts and how to get there"]]),
 ];
 
 export const CHATS: Chat[] = [
@@ -380,4 +386,5 @@ export function buildSeedState(now = Date.now()): ChatState {
 // v10 groups: NOD Team's roles and channels, and the Vienna invitation. v11 public groups for Explore.
 // v12 the EWC Operation and its crew (added on top of what's there; see storage.ts migrate).
 // v13 fills the EWC channels with a day of talk (merged into what is there; see storage.ts migrate).
-export const CURRENT_VERSION = 13;
+// v14 gives the public groups channels with descriptions, and Product Designers DACH more friends.
+export const CURRENT_VERSION = 14;

@@ -425,3 +425,12 @@
 .currencyList b { font: var(--t-subhead); font-weight: var(--w-emph); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .currencyList small { font: var(--t-caption1); color: var(--ink-3); }
 .currencyHead { margin: 8px 10px 2px; font: var(--t-caption1); font-weight: var(--w-emph); color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
+
+/* ---- a video from the phone: choose or record, then it shows as it will play ---- */
+.clipPicks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex-shrink: 0; }
+.clipPicks .pick { min-height: 128px; }
+.clipPicks .pick:disabled { opacity: .6; cursor: progress; }
+.clip { position: relative; flex-shrink: 0; border-radius: var(--r-lg); overflow: hidden; background: #000; box-shadow: 0 0 0 1px var(--line); }
+.clip video { display: block; width: 100%; max-height: 300px; background: #000; }
+.clipFacts { display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: var(--surface); font: var(--t-footnote); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.clipFacts > span { flex: 1; min-width: 0; }

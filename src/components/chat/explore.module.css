@@ -258,6 +258,15 @@
 .faces > span + span { margin-left: -8px; box-shadow: 0 0 0 2px var(--bg); border-radius: var(--r-pill); }
 .faces small { margin-left: 10px; font: var(--t-footnote); color: var(--ink-2); }
 
+/* A group's channels before you join: each with what it's for, and where you'll land. */
+.channelList { margin: 0; padding: 0; list-style: none; border-radius: var(--r-lg); background: var(--surface); box-shadow: 0 0 0 1px var(--line); overflow: hidden; }
+.channelList li { display: flex; flex-direction: column; gap: 2px; padding: 11px 14px; }
+.channelList li + li { border-top: 1px solid var(--line); }
+.channelName { display: flex; align-items: center; gap: 8px; }
+.channelName b { font: var(--t-subhead); font-weight: var(--w-emph); color: var(--ink); }
+.channelList small { font: var(--t-footnote); color: var(--ink-3); }
+.opensHere { height: 20px; padding: 0 7px; display: inline-flex; align-items: center; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent-ink); font: var(--t-caption2); font-weight: var(--w-emph); }
+
 /* ---- friends lately: who did what, and the things themselves ---- */
 
 .feed { display: flex; flex-direction: column; gap: 18px; }
@@ -310,3 +319,341 @@
 .filterBtn:active { transform: scale(.95); }
 .filterOn { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .pageStack > .masonry { margin-top: 10px; }
+
+/* ==========================================================================
+   Explore, after Pinterest and Cosmos: one wall, collections as their own
+   pages (no banner: the name is the brand), a thing up close, a creator.
+   ========================================================================== */
+
+/* ---- home ---- */
+.topicChips { margin-bottom: 10px; }
+.chipRule { flex-shrink: 0; align-self: center; width: 1px; height: 20px; margin: 0 4px; background: var(--line); }
+.exToast { z-index: 60; }
+
+/* ---- the wall: two columns at their own heights, a collection across both ---- */
+.wallStack { display: flex; flex-direction: column; gap: 14px; }
+.wall { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.wallCol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.tile { display: block; min-width: 0; }
+.tileMain {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--fill);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--t-fast);
+}
+.tileMain:active { transform: scale(.97); }
+.tileMain:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tileMain > img { display: block; width: 100%; height: auto; }
+.wordTile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 14px 16px;
+  background: color-mix(in srgb, var(--tone) 13%, var(--surface));
+  color: var(--ink);
+}
+.wordTile em { font: var(--t-caption2); font-style: normal; font-weight: var(--w-emph); letter-spacing: .04em; text-transform: uppercase; color: color-mix(in srgb, var(--tone) 65%, var(--ink-3)); }
+.wordTile b { font-size: 15px; line-height: 20px; font-weight: 600; letter-spacing: -.01em; text-wrap: pretty; }
+.wordTile span { font: var(--t-footnote); color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.tileSaved { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: var(--r-pill); display: grid; place-items: center; background: var(--accent-fill); color: var(--on-accent); box-shadow: 0 1px 4px rgba(0, 0, 0, .25); }
+
+/* A collection on the wall: a strip of its pictures, its name, who made it. */
+.colStrip { display: flex; flex-direction: column; gap: 8px; }
+.colStripMain { display: block; width: 100%; padding: 0; border: none; background: none; cursor: pointer; border-radius: 18px; transition: transform var(--t-fast); }
+.colStripMain:active { transform: scale(.985); }
+.stripEmpty { grid-column: 1 / -1; display: grid; place-items: center; font-size: 40px; }
+.colStripText { display: flex; flex-direction: column; gap: 2px; padding: 0 4px; }
+.colStripName { padding: 0; border: none; background: none; color: var(--ink); font-size: 17px; line-height: 22px; font-weight: 650; letter-spacing: -.015em; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.colStripMeta { display: flex; align-items: center; gap: 6px; min-width: 0; font: var(--t-footnote); color: var(--ink-3); }
+.colStripMeta > button { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: none; background: none; color: var(--ink-2); font: inherit; font-weight: var(--w-control); cursor: pointer; white-space: nowrap; }
+.inMind { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font: var(--t-caption1); font-weight: var(--w-emph); color: var(--accent-ink); white-space: nowrap; }
+
+/* ---- a page over Explore ---- */
+.exPage.exPage { z-index: 45; background: var(--bg); }
+.exBar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: var(--inset-top) 12px 6px;
+  min-height: calc(var(--inset-top) + 56px);
+  transition: background var(--t-mid), box-shadow var(--t-mid);
+}
+.exBarOn { background: color-mix(in srgb, var(--bg) 86%, transparent); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); box-shadow: 0 .5px 0 var(--line); }
+.exBar > b { font: var(--t-headline); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity var(--t-fast); }
+.exBarOn > b { opacity: 1; }
+.exBarRight { justify-self: end; display: flex; gap: 8px; min-width: 44px; justify-content: flex-end; }
+.exScroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: calc(var(--inset-top) + 62px) 12px calc(var(--inset-bottom) + 110px); }
+.exScroll::-webkit-scrollbar { display: none; }
+.label { margin: 4px 4px 8px; font: var(--t-footnote); font-weight: var(--w-emph); color: var(--ink-3); }
+
+/* A collection's head: the name is the brand. */
+.colHead { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 12px 20px; text-align: center; }
+.colHeadEmoji { width: 54px; height: 54px; margin-bottom: 6px; border-radius: 16px; display: grid; place-items: center; font-size: 28px; background: color-mix(in srgb, var(--tone, var(--ink)) 14%, var(--surface)); }
+.colHead h1 { margin: 0; font-size: 30px; line-height: 34px; font-weight: 700; letter-spacing: -.03em; color: var(--ink); text-wrap: balance; }
+.colHeadBy { display: inline-flex; align-items: center; gap: 7px; margin-top: 6px; padding: 4px 10px 4px 4px; border: none; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink); font: var(--t-subhead); cursor: pointer; }
+.colHeadBy b { font-weight: 600; }
+.colHeadMeta { font: var(--t-footnote); color: var(--ink-3); }
+.colHead p { margin: 6px 0 0; max-width: 34ch; font: var(--t-subhead); color: var(--ink-2); text-wrap: pretty; }
+.followBtn { display: inline-flex; align-items: center; gap: 6px; height: 36px; margin-top: 10px; padding: 0 16px; border: none; border-radius: var(--r-pill); background: var(--ink); color: var(--bg); font: var(--t-footnote); font-weight: var(--w-emph); cursor: pointer; transition: transform var(--t-fast); }
+.followBtn:active { transform: scale(.96); }
+.followBtn.followOn { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
+
+.related { display: flex; gap: 8px; margin: 0 -12px 18px; padding: 2px 12px; overflow-x: auto; scrollbar-width: none; }
+.related::-webkit-scrollbar { display: none; }
+.relatedCard { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; max-width: 250px; padding: 6px 14px 6px 6px; border: none; border-radius: 16px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.relatedCard > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.relatedCard b { font: var(--t-subhead); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.relatedCard small { font: var(--t-caption1); color: var(--ink-3); }
+
+.mosaic { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 2px; width: 100%; aspect-ratio: 1; overflow: hidden; border-radius: 16px; background: color-mix(in srgb, var(--tone) 16%, var(--surface)); }
+.mosaic > img { width: 100%; height: 100%; min-height: 0; object-fit: cover; display: block; }
+.mosaicOne { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.mosaicSmall { flex-shrink: 0; width: 44px; border-radius: 11px; gap: 1px; }
+.mosaicEmoji { display: grid; place-items: center; font-size: 30px; }
+.mosaicSmall .mosaicEmoji { font-size: 20px; }
+
+.tagRow { display: flex; gap: 6px; margin: 0 -12px 12px; padding: 0 12px; overflow-x: auto; scrollbar-width: none; }
+.tagRow::-webkit-scrollbar { display: none; }
+.tagRow > button { flex-shrink: 0; }
+.todoCard { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 16px; background: color-mix(in srgb, var(--tone) 10%, var(--surface)); }
+.todoCard em { font: var(--t-caption2); font-style: normal; font-weight: var(--w-emph); letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+.todoCard span { display: flex; align-items: center; gap: 10px; font: var(--t-subhead); color: var(--ink); }
+.todoCard i { flex-shrink: 0; width: 16px; height: 16px; border-radius: 5px; box-shadow: inset 0 0 0 1.5px var(--ink-3); }
+.floatSpace { height: 16px; }
+
+/* The bar at the bottom: save the whole thing, find similar, share. */
+.floatBar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--inset-bottom) + 18px);
+  z-index: 31;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px;
+  border-radius: var(--r-pill);
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 0 0 .5px var(--line), 0 10px 30px -8px rgba(0, 0, 0, .3);
+  white-space: nowrap;
+}
+.floatMain { display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 18px; border: none; border-radius: var(--r-pill); background: var(--ink); color: var(--bg); font: var(--t-subhead); font-weight: var(--w-emph); cursor: pointer; }
+.floatMain:active { transform: scale(.97); }
+.floatMain.floatDone { background: var(--accent-soft); color: var(--accent-ink); cursor: default; }
+.floatBtn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; height: 44px; min-width: 60px; padding: 0 8px; border: none; border-radius: var(--r-pill); background: none; color: var(--ink); font: var(--t-caption2); font-weight: var(--w-emph); cursor: pointer; }
+.floatBtn:active { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.floatNote { padding: 0 14px; font: var(--t-footnote); font-weight: var(--w-emph); color: var(--ink-2); }
+
+/* ---- a thing up close ---- */
+.thingMedia { overflow: hidden; border-radius: 24px; background: color-mix(in srgb, var(--tone) 12%, var(--surface)); }
+.thingMedia > img { display: block; width: 100%; height: auto; max-height: 66vh; object-fit: cover; }
+.thingCard { padding: 14px; }
+.thingActions { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; }
+.thingRound.thingRound { width: 48px; height: 48px; flex-shrink: 0; background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); box-shadow: none; }
+.saveBig { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 48px; min-width: 0; padding: 0 16px; border: none; border-radius: var(--r-pill); background: var(--ink); color: var(--bg); font: var(--t-headline); cursor: pointer; white-space: nowrap; overflow: hidden; transition: transform var(--t-fast), background var(--t-fast); }
+.saveBig:active { transform: scale(.97); }
+.saveBig.saveBigDone { background: var(--accent-soft); color: var(--accent-ink); font: var(--t-subhead); font-weight: var(--w-emph); }
+.thingOwn { flex: 1; text-align: center; font: var(--t-footnote); color: var(--ink-3); }
+.thingText { display: flex; flex-direction: column; gap: 6px; padding: 10px 4px 4px; }
+.thingText b { font-size: 19px; line-height: 24px; font-weight: 650; letter-spacing: -.015em; color: var(--ink); }
+.thingText p { margin: 0; font: var(--t-subhead); color: var(--ink-2); text-wrap: pretty; }
+.savedBy { display: inline-flex; align-items: center; gap: 8px; margin-top: 2px; font: var(--t-footnote); color: var(--ink-3); }
+.fromCard { display: flex; align-items: center; gap: 12px; width: 100%; margin: 14px 0 6px; padding: 10px 12px 10px 10px; border: none; border-radius: 18px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.fromCard > span:nth-child(2) { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.fromCard b { font: var(--t-subhead); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fromCard small { font: var(--t-caption1); color: var(--ink-3); }
+.fromCard > svg { flex-shrink: 0; color: var(--ink-3); }
+.moreTitle { margin: 22px 4px 10px; font-size: 20px; line-height: 24px; font-weight: 650; letter-spacing: -.02em; }
+
+/* ---- a creator ---- */
+.creatorHead { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 12px 22px; text-align: center; }
+.creatorHead h1 { margin: 10px 0 0; font-size: 26px; line-height: 30px; font-weight: 700; letter-spacing: -.025em; }
+.creatorHandle { font: var(--t-subhead); color: var(--ink-3); }
+.creatorMeta { font: var(--t-footnote); color: var(--ink-2); }
+.creatorGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 10px; }
+.creatorCol { display: flex; flex-direction: column; gap: 3px; padding: 0; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.creatorCol > :first-child { margin-bottom: 4px; }
+.creatorCol b { font: var(--t-subhead); font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.creatorCol small { font: var(--t-caption1); color: var(--ink-3); }
+
+/* ---- the first visit: what are you into ---- */
+.interestsLede { margin: 0 4px 6px; font: var(--t-subhead); color: var(--ink-2); text-wrap: pretty; }
+.interestGroup { display: flex; flex-direction: column; gap: 4px; }
+.interestChips { display: flex; flex-wrap: wrap; gap: 8px; }
+.interest { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 7px 0 14px; border: none; border-radius: var(--r-pill); background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--ink); font: var(--t-subhead); font-weight: var(--w-control); cursor: pointer; transition: background var(--t-fast), color var(--t-fast); }
+.interest > span { width: 24px; height: 24px; border-radius: var(--r-pill); display: grid; place-items: center; background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.interest.interestOn { background: var(--accent-soft); color: var(--accent-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent); }
+.interest.interestOn > span { background: var(--accent-fill); color: var(--on-accent); }
+.skip { align-self: center; margin: 4px auto 0; padding: 8px 12px; border: none; background: none; color: var(--ink-3); font: var(--t-footnote); font-weight: var(--w-emph); cursor: pointer; }
+
+/* Under a collection of yours in Mind: public ones like it. */
+.relatedMindSection { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.relatedMindSection > p { display: flex; align-items: center; gap: 5px; }
+.related.relatedMind { margin: 0 -16px; padding: 2px 16px; }
+
+/* Saving a picture: a small row, so the collections stay in view. */
+.savePreview { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: var(--r-lg); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
+.savePreview img { width: 56px; height: 56px; flex-shrink: 0; border-radius: 12px; object-fit: cover; display: block; }
+.savePreview > span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.savePreview b { font: var(--t-subhead); font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.savePreview small { font: var(--t-footnote); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- each kind its own face: a book as a book, a link with where it goes, a place on a map ---- */
+.tileFrom { display: flex; align-items: center; gap: 6px; padding: 7px 2px 0; min-width: 0; font: var(--t-caption1); font-weight: var(--w-control); color: var(--ink-2); }
+.tileFrom > span:last-child { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tilePlay { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border-radius: var(--r-pill); display: grid; place-items: center; background: rgba(0, 0, 0, .42); color: #fff; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+
+.map { position: relative; display: block; width: 100%; height: 100%; min-height: 96px; overflow: hidden; background: #E8E4DC; }
+.mapTiles { position: absolute; width: 640px; height: 640px; }
+.mapTiles > img { position: absolute; width: 128px; height: 128px; max-width: none; display: block; filter: saturate(.85); }
+.mapPin { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -100%); width: 30px; height: 30px; border-radius: 50% 50% 50% 0; rotate: -45deg; display: grid; place-items: center; background: var(--accent-fill); color: var(--on-accent); box-shadow: 0 3px 10px rgba(0, 0, 0, .3), 0 0 0 2px #fff; }
+.mapPin > svg { rotate: 45deg; }
+.mapBig .mapPin { width: 40px; height: 40px; }
+.mapCredit { position: absolute; right: 4px; bottom: 3px; padding: 0 4px; border-radius: 4px; background: rgba(255, 255, 255, .7); color: #555; font-size: 8px; line-height: 12px; }
+.mapBig { min-height: 0; }
+
+.linkFace { display: flex; flex-direction: column; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); border-radius: inherit; overflow: hidden; }
+.linkPreview { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; background: color-mix(in srgb, var(--tone) 14%, var(--surface)); }
+.linkPreview > img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.linkSite { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 100%; }
+.linkSite > img { width: 36px; height: 36px; border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 0, 0, .12); padding: 4px; }
+.linkSite > b { font: var(--t-caption1); font-weight: var(--w-emph); color: var(--ink-2); }
+.linkText { flex: 1; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px 12px; color: var(--ink); }
+.linkText em, .bookText em { display: inline-flex; align-items: center; gap: 4px; font: var(--t-caption2); font-style: normal; font-weight: var(--w-emph); letter-spacing: .04em; text-transform: uppercase; color: color-mix(in srgb, var(--tone) 65%, var(--ink-3)); }
+.linkText b { font-size: 15px; line-height: 19px; font-weight: 650; letter-spacing: -.01em; }
+.linkText > span { font: var(--t-footnote); color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.linkText small { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font: var(--t-caption1); color: var(--accent-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.linkBig { border-radius: 24px; }
+.linkBig .linkPreview { aspect-ratio: 4 / 3; }
+.linkBig .linkText { padding: 14px 16px 16px; }
+.linkBig .linkText b { font-size: 19px; line-height: 24px; }
+
+.bookCover {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  padding: 12px 10px 10px 16px;
+  overflow: hidden;
+  border-radius: 3px 7px 7px 3px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--tone) 70%, #fff), var(--tone));
+  color: #fff;
+  box-shadow: 0 10px 22px -8px rgba(0, 0, 0, .45), 0 2px 4px rgba(0, 0, 0, .18);
+}
+.bookCover > b { font-size: 12px; line-height: 15px; font-weight: 700; text-wrap: balance; }
+.bookCover > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+/* The spine: a crease and a shine down the left edge, over the cover. */
+.bookCover::after { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; border-radius: inherit; background: linear-gradient(90deg, rgba(0, 0, 0, .28) 0, rgba(255, 255, 255, .22) 4px, rgba(0, 0, 0, .1) 7px, transparent 12px), linear-gradient(0deg, rgba(0, 0, 0, .06), transparent 30%); }
+
+/* A collection's cover: one large, two beside it, like a board. */
+.cover {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 3px;
+  aspect-ratio: 1.75 / 1;
+  overflow: hidden;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--tone) 18%, var(--surface));
+}
+.coverMain, .coverLast { position: relative; display: block; min-height: 0; overflow: hidden; }
+.coverSide { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 3px; min-height: 0; }
+.cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.coverSide > img { min-height: 0; }
+.coverMain > *, .coverLast > :first-child { width: 100%; height: 100%; }
+.coverBlank { display: block; background: color-mix(in srgb, var(--tone) 10%, var(--surface)); }
+.coverBook { display: grid; place-items: center; height: 100%; background: color-mix(in srgb, var(--tone) 14%, var(--surface)); }
+.coverBook .bookCover { width: auto; height: 78%; }
+.coverMain .coverBook .bookCover { height: 72%; }
+.coverMap { display: block; height: 100%; }
+.coverMap .map { min-height: 0; }
+.coverMap .mapCredit { display: none; }
+.coverWord { display: flex; flex-direction: column; justify-content: flex-end; gap: 3px; height: 100%; padding: 10px; background: color-mix(in srgb, var(--tone) 16%, var(--surface)); font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink); text-align: left; overflow: hidden; }
+.coverMain .coverWord { font-size: 18px; line-height: 22px; padding: 14px; }
+.coverWord em { font-style: normal; font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; color: color-mix(in srgb, var(--tone) 65%, var(--ink-3)); }
+.coverMore { position: absolute; right: 8px; bottom: 8px; z-index: 2; height: 26px; padding: 0 9px; display: grid; place-items: center; border-radius: var(--r-pill); background: rgba(0, 0, 0, .5); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: #fff; font-size: 13px; font-weight: 650; }
+
+.thingLink { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 36px; margin-top: 4px; padding: 0 14px; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent-ink); font: var(--t-footnote); font-weight: var(--w-emph); text-decoration: none; }
+.thingMeta { display: inline-flex; align-items: center; gap: 5px; font: var(--t-footnote); color: var(--ink-3); }
+.linkBig .linkPreview { aspect-ratio: 1 / 1; }
+
+/* ---- Only a picture stretches to end a run flush (it crops); cards stay the size of what's in them ---- */
+.tileGrow { flex: 1; display: flex; flex-direction: column; }
+.tileGrow > .tileMain { flex: 1; min-height: 0; }
+.tileGrow > .tileMain > img { height: 100%; object-fit: cover; }
+
+/* A book stands on its own, as in Mind: no panel behind it. */
+.tileMain.tileBook { background: none; overflow: visible; border-radius: 0; }
+.bookFace { display: flex; flex-direction: column; gap: 8px; }
+.bookText { display: flex; flex-direction: column; gap: 1px; padding: 0 2px; color: var(--ink); text-align: left; }
+.bookText b { font-size: 14px; line-height: 18px; font-weight: 650; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.bookText small { font: var(--t-caption1); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bookBig { align-items: center; padding: 28px 0 24px; }
+.bookBig .bookCover { width: 52%; border-radius: 4px 10px 10px 4px; }
+.bookBig .bookCover > b { font-size: 18px; line-height: 22px; }
+
+/* A link or place: a card no taller than its words. */
+.tileMain.tileCard { background: var(--surface); }
+.linkPhoto { aspect-ratio: 4 / 3; }
+.linkPhoto > img { height: 100%; }
+.linkText small { gap: 4px; }
+.linkText small > svg { flex-shrink: 0; }
+.thingMap { height: 150px; margin-top: 10px; overflow: hidden; border-radius: 18px; box-shadow: inset 0 0 0 1px var(--line); }
+
+/* A note as a poster: big words on its collection's colour. */
+.tileMain.tileWords { background: none; }
+.note {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 14px 14px;
+  border-radius: inherit;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--tone) 82%, #fff), var(--tone));
+  color: #fff;
+}
+.note > b { font-size: 19px; line-height: 23px; font-weight: 700; letter-spacing: -.02em; text-wrap: balance; }
+.note > span { font: var(--t-footnote); color: rgba(255, 255, 255, .86); display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.note > small { margin-top: 2px; font-size: 10px; line-height: 12px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: rgba(255, 255, 255, .7); }
+
+/* A flashcard: the front, and Flip turns it over on the wall. */
+.flash { position: relative; display: block; perspective: 900px; border-radius: inherit; }
+.flashInner { display: grid; border-radius: inherit; transition: transform 520ms cubic-bezier(.2, .8, .2, 1); transform-style: preserve-3d; }
+.flashOver .flashInner { transform: rotateY(180deg); }
+.flashSide {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 14px 52px;
+  border-radius: 16px;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  background: color-mix(in srgb, var(--tone) 12%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 22%, transparent);
+  color: var(--ink);
+}
+.flashSide em { font-size: 10px; line-height: 12px; font-style: normal; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: color-mix(in srgb, var(--tone) 70%, var(--ink-3)); }
+.flashSide b { font-size: 19px; line-height: 23px; font-weight: 700; letter-spacing: -.02em; text-wrap: balance; }
+.flashBack { transform: rotateY(180deg); background: linear-gradient(165deg, color-mix(in srgb, var(--tone) 82%, #fff), var(--tone)); color: #fff; box-shadow: none; }
+.flashBack em { color: rgba(255, 255, 255, .75); }
+.flashFlip { position: absolute; left: 12px; bottom: 12px; z-index: 2; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px; border: none; border-radius: var(--r-pill); background: var(--ink); color: var(--bg); font: var(--t-caption1); font-weight: var(--w-emph); cursor: pointer; }
+.flashOver .flashFlip { background: #fff; color: #1a1a1a; }
+.flashFlip:active { transform: scale(.95); }

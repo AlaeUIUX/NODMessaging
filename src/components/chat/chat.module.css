@@ -3196,7 +3196,7 @@
   .statusbar > * { visibility: hidden; }
   /* Text fields at 16px: anything smaller makes iOS zoom the page on focus. */
   .searchBar input, .sheetSearch input, .input, .plainInput, .optionField input, .checkAdd input,
-  .linkPop input, .mindField, .mindField input, .mindCompose input, .mindTagInput, .mindTagBox input, .mindStep input, .mindNumber input { font-size: 16px; }
+  .linkPop input, .mindField, .mindField input, .mindCompose input, .mindTagInput, .mindTagBox input, .mindStep input, .mindNumber input, .itemField input, .itemField textarea { font-size: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -4495,6 +4495,14 @@ figure.mb { margin: 0; }
 .mindStepsHead .mbBar { flex: 1; }
 .mindStepsHead em { font-style: normal; font: var(--t-footnote); color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mindNumbers { display: flex; gap: 8px; }
+/* An item's words, changed in its sheet: one rounded group, a label over each field. */
+.itemFields { display: flex; flex-direction: column; border-radius: var(--r-md); background: color-mix(in srgb, var(--ink) 5%, transparent); overflow: hidden; }
+.itemField { display: grid; gap: 2px; padding: 9px 14px; }
+.itemField + .itemField { border-top: 1px solid var(--line); }
+.itemField span { font: var(--t-caption1); color: var(--ink-3); }
+.itemField input, .itemField textarea { width: 100%; min-width: 0; padding: 0; border: none; outline: none; background: transparent; color: var(--ink); font: var(--t-body); resize: none; }
+.itemField input { height: 26px; }
+.itemField:focus-within span { color: var(--accent-ink); }
 .mindNumber { flex: 1; min-width: 0; display: grid; gap: 2px; padding: 8px 12px; border-radius: var(--r-md); background: color-mix(in srgb, var(--ink) 5%, transparent); }
 .mindNumber span { font: var(--t-caption1); color: var(--ink-3); }
 .mindNumber input { width: 100%; min-width: 0; height: 28px; padding: 0; border: none; outline: none; background: transparent; color: var(--ink); font: var(--t-headline); font-variant-numeric: tabular-nums; }
@@ -4724,7 +4732,7 @@ a.mbThumb { color: inherit; text-decoration: none; }
 .mbPlayBtn:active .mbPlay { transform: scale(.92); }
 .mbPlay { transition: transform var(--t-fast); }
 .mbPlayer { background: #000; }
-.mbPlayer iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.mbPlayer iframe, .mbPlayer > video { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; object-fit: contain; background: #000; }
 
 /* books: a real cover keeps the spine shading the drawn ones have */
 .mbCover.mbCoverArt { overflow: hidden; }
@@ -5116,6 +5124,8 @@ img.spaceAvatar { object-fit: cover; }
    ========================================================================== */
 /* Both sides as wide as the three tools, so the name stays centred. */
 .headerSide.mindHeadSide { width: 112px; }
+/* A long name on a small phone: search and filter fold into "…", so both sides shrink to one button. */
+.headerSide.mindHeadSide.mindHeadTight { width: 44px; }
 .mindTools { display: flex; align-items: center; height: 44px; padding: 0 4px; border-radius: var(--r-pill); }
 .mindTools button {
   position: relative;
@@ -5312,6 +5322,25 @@ img.spaceAvatar { object-fit: cover; }
 }
 
 .mindPublish { display: flex; flex-direction: column; gap: 8px; }
+/* The Publish sheet's preview: the collection as its Explore card will show it. */
+.publishPreview { display: flex; align-items: center; gap: 14px; padding: 12px; border-radius: var(--r-lg); background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--e1); }
+.publishCover {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  font-size: 30px;
+  background: radial-gradient(120% 90% at 20% 10%, color-mix(in srgb, var(--tone) 55%, #fff), var(--tone));
+}
+.publishText { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.publishText b { font: var(--t-headline); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.publishText > span { font: var(--t-subhead); color: var(--ink-2); text-wrap: pretty; overflow-wrap: anywhere; }
+.publishText > span.publishHint { color: var(--ink-3); font-style: italic; }
+.publishText small { font: var(--t-footnote); color: var(--ink-3); }
+.publishCount { float: right; font: var(--t-footnote); color: var(--ink-3); text-transform: none; letter-spacing: 0; }
+.publishTopics > .chip:disabled { opacity: .45; }
 .mindPublishRow { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r-md); background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .mindPublishIcon { width: 36px; height: 36px; flex-shrink: 0; display: grid; place-items: center; border-radius: 11px; background: var(--accent-fill); color: var(--on-accent); }
 

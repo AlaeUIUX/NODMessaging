@@ -9,7 +9,7 @@ import Avatar from "./Avatar";
 import {
   IconAttachment, IconBell, IconCalendar, IconCamera, IconCheck, IconChecklist, IconClose, IconImage, IconLocation,
   IconMoneyReceive, IconMoneySend, IconPlus, IconPoll, IconSmile,
-  IconBrush, IconGame, IconSparkles, IconWheel, IconBoard, IconReceipt, IconRoute, IconFlag, IconMegaphone,
+  IconBrush, IconGame, IconSparkles, IconWheel, IconBoard, IconReceipt, IconRoute, IconFlag, IconMegaphone, IconFolder, IconBookmark,
 } from "./Icons";
 import MiniMap from "./MiniMap";
 import { Segmented, Sheet, Toggle, uid } from "./ui";
@@ -18,6 +18,7 @@ import iv from "./invoice.module.css";
 
 export type AddKind =
   | "photos" | "camera" | "file"
+  | "mindCollection" | "mindItem"
   | "checklist" | "poll" | "reminder" | "location" | "event" | "plan" | "board"
   | "pay" | "request" | "bill"
   | "sketch" | "tictactoe" | "wheel" | "gallery"
@@ -40,6 +41,15 @@ const ALL_GROUPS: { title: string; tone: AvatarTone; items: { kind: AddKind; lab
       { kind: "photos", label: "Photos", icon: <IconImage size={24} /> },
       { kind: "camera", label: "Camera", icon: <IconCamera size={24} /> },
       { kind: "file", label: "File", icon: <IconAttachment size={24} /> },
+    ],
+  },
+  {
+    // Send from your Mind without leaving the chat: a whole collection, or one thing in it.
+    title: "From Mind",
+    tone: "plum",
+    items: [
+      { kind: "mindCollection", label: "Collection", icon: <IconFolder size={24} /> },
+      { kind: "mindItem", label: "Item", icon: <IconBookmark size={24} /> },
     ],
   },
   {

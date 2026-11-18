@@ -5,16 +5,17 @@ import { createPortal } from "react-dom";
 import { netDown, netFailureText } from "@/lib/chat/api";
 import { DEFAULT_CURRENCY, lastCurrency, rememberCurrency } from "@/lib/chat/money";
 import { initials, TONES } from "@/lib/chat/avatar";
-import { TOPIC_LABEL, topicsIn } from "@/lib/chat/explore";
+import { relatedToMine, TOPIC_LABEL, topicsIn, topicsOf, type Topic } from "@/lib/chat/explore";
+import { openOnExplore } from "@/lib/chat/exploreFlags";
 import { Emoji, emojify, firstEmoji } from "@/lib/chat/emoji";
 import { findUrl, hostOf, normalizeUrl, parseVideo, splitUrl, videoProvider, videoThumb, watchUrl } from "@/lib/chat/links";
 import { findBooks, sameTitle, unfurl, type BookHit, type LinkMeta } from "@/lib/chat/lookup";
 import { isLanding, land } from "@/lib/chat/landing";
-import { toAttachment } from "@/lib/chat/media";
+import { MAX_VIDEO_BYTES, toAttachment } from "@/lib/chat/media";
 import {
   amendBlock, collectionItems, commitDraft, commitShareDraft, draftOf, dropDraft, failureText, intoUnassigned, isUnassigned, learnChat, locate, makeCollection, MIND_FAILED, newId, nowMs,
   isUpload, meetSharers, patchBlock, patchCollection, peopleMinds, place, projectCollection, removeBlock, sendItem, tagOf, tagsOf, todayKey, UNASSIGNED,
-  useAllMinds, useMind, useUploadProgress,
+  updateMind, useAllMinds, useMind, useUploadProgress,
   type Block, type MindFailure, type BlockKind, type Collection, type Mind, type MindView, type Step, type TaskStatus,
 } from "@/lib/chat/mind";
 import { paletteName, randomPalette, swatchesOf, type Swatch } from "@/lib/chat/palette";
@@ -29,11 +30,12 @@ import { BlockView, KIND_LABEL, whenOf } from "./MindBlocks";
 import { DateField } from "./DatePicker";
 import { DragScroll } from "./Composer";
 import { LAND, LandingGlow, Poof, RECEIVE } from "./Landing";
-import { AmountField, BookSearch, FilePicker, PasteButton, PasteField, PhotoPicker, VideoPreview } from "./MindFields";
+import { AmountField, BookSearch, FilePicker, PasteButton, PasteField, PhotoPicker, VideoPicker, VideoPreview, type PhoneClip } from "./MindFields";
 import {
   FolderSkeleton, LoadFailed, OfflineLine, RetryLine, RowSkeleton, Unsent, UploadMark, useFirstLoad, useOffline, useOpened, useSettled, VideoSkeleton,
 } from "./Loading";
-import { ActionMenu, FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, ScopeSearch, ScopeTools, type MindFilter } from "./MindFilter";
+import { ActionMenu, FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, scopeActions, ScopeSearch, ScopeTools, useTightHeader, type MindFilter } from "./MindFilter";
+import { RelatedOnExplore } from "./ExplorePages";
 import PaletteEditor from "./PaletteEditor";
 import { PersonAvatar, SendSheet, SharedItemSheet, SharedPage, ShareSheet } from "./Share";
 import {
@@ -797,6 +799,9 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
   edit?: { title: string; note: string; dirty: boolean; onCancel: () => void; onSave: () => void };
 }) {
   const [filter, setFilter] = useState<MindFilter>(NO_FILTER);
+  const headRef = useRef<HTMLElement>(null);
+  const titleRef = useRef<HTMLSpanElement>(null);
+  const tight = useTightHeader(headRef, titleRef, col.name);
   // Opening a collection reads its items in the real app: the first time this session, NOD may not answer. An editor works on a copy.
   const opened = useOpened(`mind:${ctx.store}:${col.id}`);
   const offline = useOffline();
@@ -807,10 +812,14 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
   const scrollRef = useRef<HTMLDivElement>(null);
   const composeRef = useRef<HTMLInputElement>(null);
   const all = collectionItems(ctx.mind, col);
+  const toggleSearch = () => setSearch((s) => (s === null ? "" : null));
+  const openFilter = (el: HTMLElement) => ctx.openSheet(<FilterMenu anchor={el} items={all} filter={filter} onChange={setFilter} onClose={ctx.closeSheet} />);
   const filtering = isFiltering(filter);
   const has = (b: Block) => passes(filter, b);
   const items = all.filter(has);
   const unsorted = isUnassigned(col);
+  // Public collections like this one, under your own (not a group's, not one shared with you).
+  const related = useMemo(() => (edit || unsorted || ctx.store !== ctx.me ? [] : relatedToMine(ctx.mind, col, ctx.me)), [edit, unsorted, ctx.store, ctx.me, ctx.mind, col]);
   const q = search?.trim().toLowerCase() ?? "";
   const view = col.view && COLLECTION_VIEWS.includes(col.view) ? col.view : "list";
   const setView = (v: MindView) => ctx.update((m) => patchCollection(m, col.id, (c) => ({ ...c, view: v })));
@@ -961,6 +970,7 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
           <div className={styles.mindRows}>{items.map(row)}</div>
         )}
       </div>
+      {!filtering && <RelatedOnExplore list={related} onOpen={openOnExplore} />}
     </>
   );
 
@@ -987,23 +997,29 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
           </div>
         </header>
       ) : (
-        <header className={styles.chatHeader}>
-          <div className={`${styles.headerSide} ${styles.mindHeadSide}`}>
+        <header className={styles.chatHeader} ref={headRef}>
+          <div className={`${styles.headerSide} ${styles.mindHeadSide} ${tight ? styles.mindHeadTight : ""}`}>
             <button className={`${styles.circleBtn} ${styles.glass}`} onClick={onBack} aria-label="Back to Mind"><IconBack /></button>
           </div>
           <div className={styles.titleCapsule}>
             <span className={styles.mindPageBadge}><Emoji char={col.emoji} /></span>
-            <div className={`${styles.tcName} ${styles.glass}`}><span>{col.name}</span></div>
+            <div className={`${styles.tcName} ${styles.glass}`}><span ref={titleRef}>{col.name}</span></div>
             <span className={styles.tcPresence}>{offline ? "Offline · " : ""}{countLabel(col, all.length)}</span>
           </div>
-          <div className={`${styles.headerSide} ${styles.headerEnd} ${styles.mindHeadSide}`}>
+          <div className={`${styles.headerSide} ${styles.headerEnd} ${styles.mindHeadSide} ${tight ? styles.mindHeadTight : ""}`}>
             <ScopeTools
               searching={search !== null}
               filtering={filtering}
               moreLabel="Collection options"
-              onSearch={() => setSearch((s) => (s === null ? "" : null))}
-              onFilter={(el) => ctx.openSheet(<FilterMenu anchor={el} items={all} filter={filter} onChange={setFilter} onClose={ctx.closeSheet} />)}
-              onMore={(el) => ctx.openSheet(<ActionMenu anchor={el} title={emojify(`${col.emoji} ${col.name}`)} actions={collectionActions(ctx, col, onBack)} onClose={ctx.closeSheet} />)}
+              tight={tight}
+              onSearch={toggleSearch}
+              onFilter={openFilter}
+              onMore={(el) => ctx.openSheet(<ActionMenu
+                anchor={el}
+                title={emojify(`${col.emoji} ${col.name}`)}
+                actions={[...(tight ? scopeActions({ searching: search !== null, filtering, anchor: el, onSearch: toggleSearch, onFilter: openFilter }) : []), ...collectionActions(ctx, col, onBack)]}
+                onClose={ctx.closeSheet}
+              />)}
             />
           </div>
         </header>
@@ -1055,8 +1071,10 @@ function FolderScreen({ ctx, col, leaving, onBack, edit }: {
 function SendingState({ block: b, store }: { block: Block; store: string }) {
   const progress = useUploadProgress(b.id);
   const retry = () => sendItem(store, b.id);
+  // Stopping an upload takes the item away: it never made it.
+  const cancel = () => updateMind(store, (m) => removeBlock(m, b.id));
   if (isUpload(b) && (progress !== null || b.unsent === "failed")) {
-    return <UploadMark kind={b.kind === "image" ? "image" : "file"} value={progress} failed={b.unsent === "failed"} onRetry={retry} />;
+    return <UploadMark kind={b.kind === "file" ? "file" : "image"} value={progress} failed={b.unsent === "failed"} onRetry={retry} onCancel={cancel} />;
   }
   return <Unsent state={b.unsent!} onRetry={retry} />;
 }
@@ -1281,8 +1299,9 @@ function PublishField({ ctx, col, onChange }: { ctx: Ctx; col: Collection; onCha
             <Toggle
               on={!!col.published}
               onChange={(v) => {
-                if (!onChange(v ? { at: Date.now(), description: "" } : undefined)) return;
-                ctx.flash(v ? `${col.emoji} ${col.name} is on Explore` : `${col.emoji} ${col.name} is private again`);
+                if (v) { ctx.openSheet(<PublishSheet ctx={ctx} colId={col.id} />); return; }
+                if (!onChange(undefined)) return;
+                ctx.flash(`${col.emoji} ${col.name} is private again`);
               }}
               label="Publish to Explore"
             />
@@ -1303,6 +1322,74 @@ function PublishField({ ctx, col, onChange }: { ctx: Ctx; col: Collection; onCha
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * Publishing a collection to Explore: the card as people will see it, a line
+ * about what's in it (asked for here, so nobody has to find it later), then Publish.
+ */
+function PublishSheet({ ctx, colId }: { ctx: Ctx; colId: string }) {
+  const { mind } = useMind(ctx.store);
+  const col = mind?.collections.find((c) => c.id === colId);
+  const [about, setAbout] = useState(col?.published?.description ?? "");
+  // Where it shows on Explore: up to three topics, guessed from what's in it until you pick.
+  const [guessed] = useState<Topic[]>(() => (mind && col ? topicsOf(mind, col).slice(0, 3) : []));
+  const [topics, setTopics] = useState<Topic[]>(() => (col?.published?.topics as Topic[] | undefined) ?? guessed);
+  if (!mind || !col) return null;
+  const n = collectionItems(mind, col).length;
+  const line = about.trim();
+  const offered = [...new Set([...topics, ...guessed, ...(Object.keys(TOPIC_LABEL) as Topic[])])];
+  const pick = (t: Topic) => setTopics((p) => (p.includes(t) ? p.filter((x) => x !== t) : p.length < 3 ? [...p, t] : p));
+  return (
+    <Sheet title="Publish to Explore" onClose={ctx.closeSheet}>
+      {(close) => {
+        const publish = () => {
+          if (!line) return;
+          close(() => {
+            if (!ctx.update((m) => patchCollection(m, col.id, (x) => ({ ...x, published: { at: x.published?.at ?? Date.now(), description: line, topics } })))) return;
+            ctx.flash(`${col.emoji} ${col.name} is on Explore`);
+          });
+        };
+        return (
+        <>
+          <div className={styles.publishPreview} style={{ ["--tone" as string]: col.tone }} aria-hidden="true">
+            <span className={styles.publishCover}><Emoji char={col.emoji} /></span>
+            <span className={styles.publishText}>
+              <b>{col.name}</b>
+              <span className={line ? undefined : styles.publishHint}>{line || "What it's about shows here"}</span>
+              <small>{n} {n === 1 ? "thing" : "things"} · by you</small>
+            </span>
+          </div>
+          <p className={styles.sheetLabel}>What it’s about</p>
+          <input
+            className={styles.plainInput}
+            value={about}
+            maxLength={120}
+            autoFocus
+            onChange={(e) => setAbout(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") publish(); }}
+            placeholder="e.g. Phrases for cafés and trains"
+            aria-label="What it's about"
+            enterKeyHint="done"
+          />
+          <p className={styles.sheetLabel}>Shows under <small className={styles.publishCount}>{topics.length} of 3</small></p>
+          <DragScroll className={`${styles.chips} ${styles.publishTopics}`} sideWheel={false} aria-label="Topics on Explore">
+            {offered.map((t) => {
+              const on = topics.includes(t);
+              return (
+                <button key={t} className={`${styles.chip} ${on ? styles.chipOn : ""}`} onClick={() => pick(t)} aria-pressed={on} disabled={!on && topics.length >= 3}>
+                  {TOPIC_LABEL[t]}
+                </button>
+              );
+            })}
+          </DragScroll>
+          <p className={styles.sheetNote}>Anyone on NOD can find it and add a copy. What you add or change later shows on Explore too.</p>
+          <button className={styles.primaryWide} disabled={!line} onClick={publish}>Publish</button>
+        </>
+        );
+      }}
+    </Sheet>
   );
 }
 
@@ -1653,8 +1740,10 @@ function collectionActions(ctx: Ctx, c: Collection, onDeleted?: () => void): Hol
       label: c.published ? "Remove from Explore" : "Publish to Explore",
       icon: <IconGlobe />,
       run: () => {
-        if (!ctx.update((m) => patchCollection(m, c.id, (x) => ({ ...x, published: c.published ? undefined : { at: Date.now(), description: "" } })))) return;
-        ctx.flash(c.published ? `${c.emoji} ${c.name} is private again` : `${c.emoji} ${c.name} is on Explore`);
+        // Publishing asks for a line about it first; taking it off Explore is one tap.
+        if (!c.published) { ctx.openSheet(<PublishSheet ctx={ctx} colId={c.id} />); return; }
+        if (!ctx.update((m) => patchCollection(m, c.id, (x) => ({ ...x, published: undefined })))) return;
+        ctx.flash(`${c.emoji} ${c.name} is private again`);
       },
     }]),
     "sep",
@@ -1960,6 +2049,9 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
   const stepRef = useRef<HTMLInputElement>(null);
   const [remindAt, setRemindAt] = useState(() => soon("hour"));
   const [unit, setUnit] = useState("pages");
+  // A video: a link (YouTube, Vimeo), or one from the phone.
+  const [videoFrom, setVideoFrom] = useState<"link" | "phone">("link");
+  const [clip, setClip] = useState<PhoneClip | null>(null);
   // An amount starts in the currency used last.
   const [currency, setCurrency] = useState(lastCurrency);
   const where = nameOf(ctx.mind, collectionId);
@@ -1994,7 +2086,7 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
   const ready = kind === "file" ? !!upload
     : kind === "image" || kind === "palette" ? true
     : kind === "link" ? !!link || !!title.trim()
-    : kind === "video" ? !!link
+    : kind === "video" ? (videoFrom === "phone" ? !!clip : !!link)
     : kind === "book" ? (byHand ? !!a.trim() : !!book)
     : kind === "todo" ? !!a.trim() || steps.length > 0
     : kind === "progress" ? !!a.trim() && Number(c) > 0
@@ -2019,7 +2111,20 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
       standIn = !title.trim() && !!link;
       block = { ...base, title: title.trim() || site || "Link", source: site || "link", url: link ?? undefined };
     }
-    if (kind === "video") {
+    if (kind === "video" && clip) {
+      // From the phone: it lands at once with its still and length, and goes up from there.
+      const att = await toAttachment(clip.file, MAX_VIDEO_BYTES);
+      block = {
+        ...base,
+        title: t || clip.file.name.replace(/\.[^.]+$/, "") || "Video",
+        source: "From your phone",
+        image: clip.still,
+        duration: clip.duration,
+        size: clip.file.size,
+        attachment: att ?? undefined,
+        unsent: att && !ctx.store.startsWith("draft:") ? "waiting" : undefined,
+      };
+    } else if (kind === "video") {
       standIn = !title.trim();
       block = {
         ...base,
@@ -2087,7 +2192,25 @@ function AddItemSheet({ ctx, collectionId, kind: picked }: { ctx: Ctx; collectio
       action={{ label: "Add", disabled: !ready, onClick: () => { void create(); } }}
     >
 
-      {(kind === "link" || kind === "video") && (
+      {kind === "video" && (
+        <Segmented value={videoFrom} options={[{ id: "link", label: "A link" }, { id: "phone", label: "From your phone" }]} onChange={setVideoFrom} />
+      )}
+      {kind === "video" && videoFrom === "phone" && (
+        <>
+          <VideoPicker clip={clip} onClip={setClip} before={askPhotos} />
+          {clip && (
+            <input
+              className={`${styles.plainInput} ${styles.mindTitleInput}`}
+              placeholder={clip.file.name.replace(/\.[^.]+$/, "") || "Title"}
+              value={a}
+              onChange={(e) => setA(e.target.value)}
+              onKeyDown={enter}
+              aria-label="Title"
+            />
+          )}
+        </>
+      )}
+      {(kind === "link" || (kind === "video" && videoFrom === "link")) && (
         <>
           <PasteField
             value={url}
@@ -2401,6 +2524,54 @@ function AmountEditor({ b, set }: { b: Block; set: (patch: Partial<Block>) => vo
   );
 }
 
+/** What each kind says, as fields you can change after adding it (saved as you type). Saves from a chat stay as they were. */
+type DetailField = { key: "title" | "body" | "url" | "source" | "back" | "year"; label: string; long?: boolean; placeholder?: string };
+const DETAILS: Partial<Record<BlockKind, DetailField[]>> = {
+  note: [{ key: "title", label: "Title" }, { key: "body", label: "Text", long: true, placeholder: "Write it down" }],
+  link: [{ key: "title", label: "Title" }, { key: "url", label: "Address", placeholder: "https://" }],
+  video: [{ key: "title", label: "Title" }, { key: "url", label: "Address", placeholder: "https://" }, { key: "source", label: "Channel" }],
+  quote: [{ key: "title", label: "Words", long: true }, { key: "body", label: "Who said it" }],
+  flashcard: [{ key: "title", label: "Front" }, { key: "back", label: "Back" }],
+  book: [{ key: "title", label: "Title" }, { key: "source", label: "Author" }, { key: "year", label: "Year", placeholder: "2024" }, { key: "body", label: "About", long: true }],
+  amount: [{ key: "title", label: "What for" }, { key: "source", label: "From", placeholder: "Who it's from" }],
+  todo: [{ key: "title", label: "To-do" }],
+  reminder: [{ key: "title", label: "Reminder" }],
+  date: [{ key: "title", label: "What's on" }],
+  progress: [{ key: "title", label: "Title" }],
+  habit: [{ key: "title", label: "Habit" }],
+  image: [{ key: "title", label: "Caption" }],
+  file: [{ key: "title", label: "Name" }],
+};
+
+function DetailFields({ b, set }: { b: Block; set: (patch: Partial<Block>) => void }) {
+  // A checklist and a palette already name themselves at the top of the sheet.
+  const fields = (DETAILS[b.kind] ?? [])
+    .filter((f) => !(f.key === "title" && b.kind === "todo" && b.checklist?.length))
+    // A video from the phone has no address or channel: only its title.
+    .filter((f) => !(b.kind === "video" && b.attachment && f.key !== "title"));
+  if (!fields.length) return null;
+  const value = (f: DetailField) => (f.key === "year" ? (b.year ? String(b.year) : "") : (b[f.key] ?? ""));
+  const change = (f: DetailField, v: string) => {
+    if (f.key === "year") { const y = Number(v.replace(/\D/g, "")); set({ year: y || undefined }); return; }
+    set({ [f.key]: f.key === "title" ? v : v || undefined } as Partial<Block>);
+  };
+  return (
+    <>
+      <p className={styles.sheetLabel}>Details</p>
+      <div className={styles.itemFields}>
+        {fields.map((f) => (
+          <label key={f.key} className={styles.itemField}>
+            <span>{f.label}</span>
+            {f.long
+              ? <textarea rows={f.key === "body" && b.kind === "note" ? 4 : 2} value={value(f)} placeholder={f.placeholder} onChange={(e) => change(f, e.target.value)} />
+              : <input value={value(f)} placeholder={f.placeholder} inputMode={f.key === "year" ? "numeric" : f.key === "url" ? "url" : undefined} onChange={(e) => change(f, e.target.value)} />}
+          </label>
+        ))}
+      </div>
+    </>
+  );
+}
+
 /**
  * An item in detail, with what can be changed right there: the palette
  * maker, a date, a shelf, a status, the stepper. The item sheet shows it, and
@@ -2468,6 +2639,7 @@ export function BlockEditor({ b, set, onToggle }: { b: Block; set: (patch: Parti
           </div>
         </>
       )}
+      {b.kind !== "chat" && b.kind !== "palette" && <DetailFields b={b} set={set} />}
     </>
   );
 }
@@ -2544,6 +2716,9 @@ function NewPlace({ chip, onCreate }: { chip?: boolean; onCreate: (name: string)
 
 /** How long a sorted card takes to fly into the collection it went to. */
 const FLY_MS = 440;
+/** How long a skipped card takes to slide aside. */
+const SKIP_MS = 320;
+const SKIP = "skip";
 
 /** Words too common to say where something belongs. */
 const STOP = new Set(["about", "with", "from", "into", "this", "that", "your", "what", "when", "find", "have", "will", "there", "their"]);
@@ -2669,6 +2844,19 @@ function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
     }, FLY_MS);
   };
 
+  /** Not sure where it goes yet: it slides aside, stays in Unassigned for later, and the next one comes up. */
+  const skip = () => {
+    if (!b || fly) return;
+    const { id } = b;
+    setFly({ x: 0, y: 0, to: SKIP });
+    setTimeout(() => {
+      setFly(null);
+      setQuery("");
+      setHistory((h) => [...h, { id, to: null }]);
+      setAt(queue.indexOf(id) + 1);
+    }, SKIP_MS);
+  };
+
   /** Puts the last card back on top, and back in Unassigned where it was. */
   const undo = () => {
     const e = history[history.length - 1];
@@ -2741,6 +2929,9 @@ function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
             <span>{history.length + 1} of {total}</span>
             <i aria-hidden="true"><b style={{ width: `${(history.length / total) * 100}%` }} /></i>
             {undoBtn}
+            <button className={sortCss.undo} onClick={skip} disabled={!!fly} title="Leave it in Unassigned for now">
+              Skip <IconArrowRight size={14} />
+            </button>
           </div>
 
           {/* A pile of the items themselves, like post: the next ones peek out behind the top one. */}
@@ -2759,7 +2950,7 @@ function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
                   <div
                     key={id}
                     ref={id === b.id ? cardRef : undefined}
-                    className={`${sortCss.letter} ${leaving ? sortCss.flyPlace : ""}`}
+                    className={`${sortCss.letter} ${leaving ? (fly.to === SKIP ? sortCss.skipPlace : sortCss.flyPlace) : ""}`}
                     data-depth={leaving ? undefined : Math.min(3, depth)}
                     style={leaving ? cardStyle : undefined}
                     aria-hidden={depth !== 0 && !leaving ? true : undefined}

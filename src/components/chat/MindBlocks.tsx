@@ -362,7 +362,9 @@ function VideoBlock({ block, shape, cls, autoPlay }: { block: Block; shape: Bloc
   );
   return (
     <div className={cls}>
-      {shape === "detail" && video ? (
+      {shape === "detail" && block.attachment ? (
+        <PhoneVideo att={block.attachment} poster={block.image} title={block.title} autoPlay={!!autoPlay} />
+      ) : shape === "detail" && video ? (
         <VideoPlayer key={video.id} video={video} title={block.title} autoPlay={!!autoPlay}>{still}</VideoPlayer>
       ) : shape === "detail" && block.url ? (
         // Not a video NOD can play here: the still opens it where it lives.
@@ -372,6 +374,19 @@ function VideoBlock({ block, shape, cls, autoPlay }: { block: Block; shape: Bloc
       )}
       <span className={styles.mbText}><b>{block.title}</b>{by && <small>{by}</small>}</span>
     </div>
+  );
+}
+
+/** A video from someone's phone, played from its own file (no site to send you to). */
+function PhoneVideo({ att, poster, title, autoPlay }: { att: NonNullable<Block["attachment"]>; poster?: string; title: string; autoPlay: boolean }) {
+  const src = useMediaUrl(att);
+  return (
+    <span className={`${styles.mbThumb} ${styles.mbPlayer}`}>
+      {src
+        ? <video src={src} poster={poster} controls playsInline autoPlay={autoPlay} aria-label={title} />
+        // eslint-disable-next-line @next/next/no-img-element
+        : poster ? <img src={poster} alt="" /> : null}
+    </span>
   );
 }
 

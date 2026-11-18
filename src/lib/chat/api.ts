@@ -62,7 +62,8 @@ export const netFailureText = () => (isOffline() ? "You're offline" : "Couldn't 
  * network down it stalls part of the way and fails.
  */
 export function uploadBytes(bytes: number, onProgress: (p: number) => void): Promise<boolean> {
-  const ms = Math.min(2400, 700 + bytes / 4000);
+  // Bigger takes longer, the way a real upload does (a few MB in about a second, a long video several).
+  const ms = Math.min(9000, 700 + bytes / 9000);
   const failAt = 0.25 + Math.random() * 0.3;
   const start = performance.now();
   return new Promise((resolve) => {

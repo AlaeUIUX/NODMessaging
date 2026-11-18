@@ -5,86 +5,80 @@ import { netFailureText } from "@/lib/chat/api";
 import { initials, TONES } from "@/lib/chat/avatar";
 import { Emoji, emojify } from "@/lib/chat/emoji";
 import {
-  addCollection, addedFrom, asBlock, friendActivity, publicCollection, publicItem, publishedBy, rankCollections, rankGroups, rankItems,
-  saveItem, STRANGERS, suggestCollection, TOPIC_LABEL, type Activity, type PublicCollection, type PublicItem, type Ranked, type Topic,
+  addCollection, addedFrom, allPublic, asBlock, friendActivity, friendsOf, hasPicture, peopleLine, publicCollection, publicItem, rankGroups,
+  saveItem, suggestCollection, TOPIC_LABEL, topicsOnExplore, wallFor, type Activity, type PublicCollection, type PublicItem, type Ranked, type Topic,
+  type WallEntry, type WallThing,
 } from "@/lib/chat/explore";
+import { OPEN_EXPLORE, takePendingExplore, toggleFollow, updateExploreFlags, useExploreFlags } from "@/lib/chat/exploreFlags";
 import { addMember, groupInfo, landingChannel } from "@/lib/chat/groups";
-import { isUnassigned, makeCollection, MIND_FAILED, useMind } from "@/lib/chat/mind";
+import { isUnassigned, makeCollection, MIND_FAILED, place, useMind } from "@/lib/chat/mind";
 import { useChat, userById } from "@/lib/chat/store";
-import type { AvatarTone, Chat } from "@/lib/chat/types";
+import type { Chat } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { DragScroll } from "./Composer";
+import {
+  CollectionPage, CollectionStrip, creator, CreatorPage, InterestsSheet, ThingPage, Wall, type ExploreNav,
+} from "./ExplorePages";
 import { GroupBanner } from "./Groups";
-import { IconBack, IconBookmark, IconCheck, IconClose, IconFilter, IconFolder, IconOpen, IconSparkles, IconUserGroup } from "./Icons";
+import { IconBookmark, IconCheck, IconClose, IconFolder, IconOpen, IconSparkles, IconUserGroup } from "./Icons";
 import { ExploreSkeleton, LoadFailed, RowSkeleton, useFirstLoad, useSettled } from "./Loading";
 import Logo from "./Logo";
 import { BlockView, KIND_LABEL } from "./MindBlocks";
-import { FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, type MindFilter } from "./MindFilter";
 import { HoldMenu, useHoldMenu, type HoldAction } from "./MindHold";
 import { Sheet, useNow } from "./ui";
 import styles from "./chat.module.css";
 import x from "./explore.module.css";
 
 /**
- * Explore: public things on NOD, ranked for you (see lib/chat/explore.ts).
- * A top pick, what friends have been saving and joining, groups that fit,
- * collections to add, and single things for the collections you already
- * keep. Tap anything to look at it; hold it (like a message) for its menu:
- * save a thing to Mind, add a whole collection. Groups join straight away.
+ * Explore, after Pinterest and Cosmos: one wall of things from public
+ * collections, with a collection across the width every few rows (see
+ * lib/chat/explore.ts, wallFor). Topic chips narrow it; groups and what
+ * friends have been saving have chips of their own, out of the wall.
+ * Anything opens as a page (ExplorePages.tsx) without saving it; saving is
+ * one tap, into the collection Mind suggests, with Change on the toast.
  */
 
-type Filter = "foryou" | "collections" | "groups" | "friends";
-const FILTERS: { id: Filter; label: string }[] = [
-  { id: "foryou", label: "For you" },
-  { id: "collections", label: "Collections" },
-  { id: "groups", label: "Groups" },
-  { id: "friends", label: "Friends" },
-];
+type Chip = "foryou" | Topic | "groups" | "friends";
+type PageRef = { key: number; kind: "collection" | "thing" | "creator"; id: string; from?: string; leaving?: boolean };
 
-/** Whoever made something: someone in the demo, or a stranger on NOD. */
-function creator(id: string): { name: string; tone: AvatarTone; photo?: string; username?: string } {
-  const s = STRANGERS.find((p) => p.id === id);
-  if (s) return { name: s.name, tone: s.tone, username: s.username };
-  const u = userById(id);
-  return { name: u.fullName, tone: u.tone, photo: u.photo, username: u.username };
-}
-const short = (id: string) => creator(id).name.split(" ")[0];
-/** A collection's cover: its picture, or (published from a Mind with no picture yet) its own colour. */
-const coverOf = (pc: PublicCollection) => (pc.cover
-  ? `url(${pc.cover})`
-  : `radial-gradient(120% 90% at 20% 10%, color-mix(in srgb, ${pc.tone} 55%, #fff), ${pc.tone})`);
 const KIND_ICON: Partial<Record<PublicItem["kind"], string>> = { link: "🔗", note: "📝", flashcard: "🃏", todo: "✅", book: "📚", video: "🎬", quote: "💬" };
 const count = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1).replace(/\.0$/, "")}k` : String(n));
+/** "just now", then minutes, hours and days, so something done a moment ago doesn't look an hour old. */
 function ago(ts: number, now: number) {
-  const h = Math.max(1, Math.round((now - ts) / 3_600_000));
-  return h < 24 ? `${h}h` : `${Math.round(h / 24)}d`;
+  const m = Math.floor((now - ts) / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
 }
+const short = (id: string) => creator(id).name.split(" ")[0];
 
 export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (chat: Chat) => void; onSettings: () => void }) {
   const { state, me, updateGroup } = useChat();
   const { mind, update } = useMind(me);
+  const flags = useExploreFlags(me);
   const meUser = userById(me);
   const now = useNow(60_000);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("foryou");
+  const [chip, setChip] = useState<Chip>("foryou");
   const [sheet, setSheet] = useState<React.ReactNode>(null);
-  const [page, setPage] = useState<{ id: string; leaving: boolean } | null>(null);
+  const [pages, setPages] = useState<PageRef[]>([]);
   const [toast, setToast] = useState<{ text: string; id: number; leaving?: boolean; action?: { label: string; run: () => void } } | null>(null);
+  /** Saved this visit: which Mind collection, and the new item's id there (so Change can move it). */
+  const [saved, setSaved] = useState<Record<string, { col: string; block: string }>>({});
+  /** The interests question, put off for this visit only. */
+  const [notNow, setNotNow] = useState(false);
   const chats = state.data.chats;
-  // Picks are worked out once per visit, so what you save stays on screen (with a tick) instead of vanishing.
-  const [items] = useState(() => rankItems(mind, chats, me).slice(0, 24));
-  const [saved, setSaved] = useState<Record<string, string>>({});
 
   const flash = useCallback((text: string, action?: { label: string; run: () => void }) => {
     const id = Date.now();
     setToast({ text, id, action });
-    const stay = action ? 3600 : 2000;
+    const stay = action ? 4000 : 2200;
     setTimeout(() => setToast((t) => (t?.id === id ? { ...t, leaving: true } : t)), stay);
     setTimeout(() => setToast((t) => (t?.id === id ? null : t)), stay + 220);
   }, [setToast]);
   // Explore comes from the server in the real app: the first visit this session waits for it, and may not get it.
   const load = useFirstLoad(`explore:${me}`, { canFail: true });
-  // Saving or adding to Mind that didn't go through has already been put back (see updateMind): say so.
   useEffect(() => {
     const failed = (e: Event) => {
       if ((e as CustomEvent<{ userId: string }>).detail.userId === me) flash(`${netFailureText()}. It wasn't saved to your Mind.`);
@@ -93,43 +87,72 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
     return () => window.removeEventListener(MIND_FAILED, failed);
   }, [me, flash]);
   const closeSheet = () => setSheet(null);
-  const openPage = (id: string) => setPage({ id, leaving: false });
-  const closePage = () => {
-    setPage((p) => (p ? { ...p, leaving: true } : p));
-    setTimeout(() => setPage((p) => (p?.leaving ? null : p)), 220);
-  };
 
-  const collections = rankCollections(mind, chats, me, short);
-  // Groups and the top pick are also held for the visit: joining or adding marks them done instead of swapping them out.
-  const [groupPicks] = useState(() => rankGroups(mind, chats, me, short).map((r) => ({ id: r.value.id, score: r.score, reason: r.reason })));
-  const groups: Ranked<Chat>[] = groupPicks
-    .map((p) => ({ ...p, value: chats.find((c) => c.id === p.id) }))
-    .filter((p): p is Ranked<Chat> & { id: string } => !!p.value && !p.value.removedAt);
-  const [heroId] = useState(() => (collections.find((r) => !addedFrom(mind, r.value.id)) ?? collections[0])?.value.id);
-  const activity = friendActivity(chats, me);
-  // What you published, as everyone else sees it on Explore.
-  const yours: Ranked<PublicCollection>[] = publishedBy(me).map((pc) => ({ value: pc, score: 0, reason: pc.saves ? `${pc.saves} ${pc.saves === 1 ? "person has" : "people have"} it` : "Published by you" }));
-
-  /* ---- actions ---- */
-  const saveTo = (item: PublicItem, colId: string) => {
-    const col = mind?.collections.find((c) => c.id === colId);
-    update((m) => saveItem(m, item, colId).mind);
-    setSaved((s) => ({ ...s, [item.id]: colId }));
-    if (col) flash(`Saved to ${col.emoji} ${col.name}`);
+  /* ---- pages: a stack, each sliding in over the last ---- */
+  const push = useCallback((p: Omit<PageRef, "key">) => setPages((s) => [...s.filter((q) => !q.leaving), { ...p, key: Date.now() + Math.random() }]), []);
+  const back = () => {
+    setPages((s) => s.map((p, i) => (i === s.length - 1 ? { ...p, leaving: true } : p)));
+    setTimeout(() => setPages((s) => s.filter((p) => !p.leaving)), 220);
   };
-  const askSave = (item: PublicItem, from: PublicCollection) => setSheet(
-    <SaveSheet item={item} from={from} onClose={closeSheet} onPick={(colId) => saveTo(item, colId)} onNew={() => {
-      // No collection yet: start one named after where it came from.
+  // Mind's "Related on Explore" (or a shared link) opens a collection here.
+  useEffect(() => {
+    const take = () => { const id = takePendingExplore(); if (id) push({ kind: "collection", id }); };
+    take();
+    window.addEventListener(OPEN_EXPLORE, take);
+    return () => window.removeEventListener(OPEN_EXPLORE, take);
+  }, [push]);
+
+  /* ---- saving ---- */
+  const saveTo = (item: PublicItem, colId: string, label: string) => {
+    let block = "";
+    update((m) => { const r = saveItem(m, item, colId); block = r.id; return r.mind; });
+    setSaved((s) => ({ ...s, [item.id]: { col: colId, block } }));
+    return label;
+  };
+  /** Into the collection that fits, at once; Change on the toast picks another. */
+  const quickSave = (item: PublicItem, from: PublicCollection) => {
+    const target = suggestCollection(mind, from.topics as Topic[]);
+    if (target) {
+      saveTo(item, target.id, "");
+      flash(`Saved to ${target.emoji} ${target.name}`, { label: "Change", run: () => change(item, from) });
+    } else {
       const col = makeCollection(from.name, from.emoji, from.tone);
-      update((m) => saveItem({ ...m, collections: [...m.collections, col] }, item, col.id).mind);
-      setSaved((s) => ({ ...s, [item.id]: col.id }));
-      flash(`Saved to ${from.emoji} ${from.name}`);
-    }} />,
+      update((m) => ({ ...m, collections: [...m.collections, col] }));
+      saveTo(item, col.id, "");
+      flash(`Saved to a new ${from.emoji} ${from.name}`, { label: "Change", run: () => change(item, from) });
+    }
+  };
+  /** Pick the collection: moves it if it's already saved, saves it if not. */
+  const change = (item: PublicItem, from: PublicCollection) => setSheet(
+    <SaveSheet
+      item={item}
+      from={from}
+      current={saved[item.id]?.col}
+      onClose={closeSheet}
+      onPick={(colId) => {
+        const col = mind?.collections.find((c) => c.id === colId);
+        const was = saved[item.id];
+        if (was) {
+          update((m) => place(m, was.block, { collectionId: colId }));
+          setSaved((s) => ({ ...s, [item.id]: { ...was, col: colId } }));
+          if (col) flash(`Moved to ${col.emoji} ${col.name}`);
+        } else {
+          saveTo(item, colId, "");
+          if (col) flash(`Saved to ${col.emoji} ${col.name}`);
+        }
+      }}
+      onNew={() => {
+        const col = makeCollection(from.name, from.emoji, from.tone);
+        update((m) => saveItem({ ...m, collections: [...m.collections, col] }, item, col.id).mind);
+        setSaved((s) => ({ ...s, [item.id]: { col: col.id, block: "" } }));
+        flash(`Saved to ${from.emoji} ${from.name}`);
+      }}
+    />,
   );
   const add = (pc: PublicCollection) => {
     if (addedFrom(mind, pc.id)) return;
     update((m) => addCollection(m, pc).mind);
-    flash(`${pc.emoji} ${pc.name} is in your Mind`);
+    flash(`Added ${pc.emoji} ${pc.name} to your Mind`);
   };
   const join = (group: Chat) => {
     updateGroup(group.id, (g) => addMember(g, me));
@@ -138,87 +161,88 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
   const showGroup = (group: Chat, reason?: string) => setSheet(
     <GroupSheet groupId={group.id} reason={reason} onClose={closeSheet} onJoin={join} onOpen={(g) => onOpenChat(landingChannel(chats, g, me))} />,
   );
-  const showItem = (item: PublicItem, from: PublicCollection) => setSheet(
-    <ItemSheet item={item} from={from} saved={saved[item.id]} onClose={closeSheet} onSave={() => askSave(item, from)} onOpenCollection={() => { closeSheet(); openPage(from.id); }} />,
-  );
+
+  const nav: ExploreNav = {
+    me,
+    openCollection: (id) => push({ kind: "collection", id }),
+    openThing: (item, from) => push({ kind: "thing", id: item.id, from: from.id }),
+    openCreator: (id) => push({ kind: "creator", id }),
+    back,
+    savedTo: (id) => {
+      const s = saved[id];
+      const col = s && mind?.collections.find((c) => c.id === s.col);
+      return col ? { colName: col.name, colEmoji: col.emoji } : null;
+    },
+    save: quickSave,
+    change,
+    added: (pcId) => !!addedFrom(mind, pcId),
+    saveCollection: add,
+    following: (who) => flags.follows.includes(who),
+    follow: (who) => {
+      const was = flags.follows.includes(who);
+      toggleFollow(me, who);
+      flash(was ? `You unfollowed ${short(who)}` : `Following ${short(who)}: their collections come first`);
+    },
+    share: (what) => {
+      const top = pages[pages.length - 1];
+      const id = top?.kind === "collection" ? top.id : top?.from ?? "";
+      const link = `${window.location.origin}/?explore=${encodeURIComponent(id)}`;
+      void navigator.clipboard?.writeText(link).catch(() => {});
+      flash(`Link to ${what} copied`);
+    },
+  };
 
   /* ---- hold for a menu, like a message ---- */
   const hold = useHoldMenu();
   const menu = (el: HTMLElement, title: React.ReactNode, actions: HoldAction[]) => setSheet(<HoldMenu anchor={el} title={title} actions={actions} onClose={closeSheet} />);
-  const collectionMenu = (pc: PublicCollection) => hold((el) => menu(el, emojify(`${pc.emoji} ${pc.name}`), [
-    { id: "open", label: "Look inside", icon: <IconOpen />, run: () => openPage(pc.id) },
-    ...(pc.by === me || addedFrom(mind, pc.id) ? [] : [{ id: "add", label: "Add to Mind", icon: <IconBookmark />, run: () => add(pc) }]),
+  const holdThing = (t: WallThing) => hold((el) => menu(el, t.item.title || KIND_LABEL[t.item.kind], [
+    { id: "open", label: "Open", icon: <IconOpen />, run: () => nav.openThing(t.item, t.collection) },
+    ...(t.collection.by === me ? [] : [
+      { id: "save", label: saved[t.item.id] ? "Move to…" : "Save", icon: <IconBookmark />, run: () => (saved[t.item.id] ? change(t.item, t.collection) : quickSave(t.item, t.collection)) },
+      { id: "saveTo", label: "Save to…", icon: <IconFolder />, run: () => change(t.item, t.collection) },
+    ]),
+    { id: "from", label: `See ${t.collection.name}`, icon: <IconSparkles />, run: () => nav.openCollection(t.collection.id) },
   ]));
-  const itemMenu = (item: PublicItem, from: PublicCollection) => hold((el) => menu(el, item.title, [
-    { id: "open", label: "Open", icon: <IconOpen />, run: () => showItem(item, from) },
-    ...(saved[item.id] || from.by === me ? [] : [{ id: "save", label: "Save to Mind", icon: <IconBookmark />, run: () => askSave(item, from) }]),
-    { id: "from", label: "See its collection", icon: <IconFolder />, run: () => openPage(from.id) },
+  const holdCollection = (pc: PublicCollection) => hold((el) => menu(el, emojify(`${pc.emoji} ${pc.name}`), [
+    { id: "open", label: "Look inside", icon: <IconOpen />, run: () => nav.openCollection(pc.id) },
+    ...(pc.by === me || addedFrom(mind, pc.id) ? [] : [{ id: "add", label: "Save collection", icon: <IconBookmark />, run: () => add(pc) }]),
+    { id: "who", label: `More from ${short(pc.by)}`, icon: <IconUserGroup />, run: () => nav.openCreator(pc.by) },
   ]));
 
-  /* ---- search ---- */
+  /* ---- the wall, worked out once per chip per visit, so what you save stays put ---- */
+  const picks = flags.topics ?? [];
+  const computeWall = (c: Chip, p: string[] = picks) => wallFor(mind, chats, me, { topic: c === "foryou" ? null : (c as Topic), picks: p, follows: flags.follows });
+  const [walls, setWalls] = useState<Partial<Record<Chip, WallEntry[]>>>(() => ({ foryou: computeWall("foryou") }));
+  const selectChip = (c: Chip) => {
+    setChip(c);
+    if (c !== "groups" && c !== "friends" && !walls[c]) setWalls((w) => ({ ...w, [c]: computeWall(c) }));
+  };
+  const wall = chip === "groups" || chip === "friends" ? null : walls[chip] ?? null;
+  const topics = topicsOnExplore(picks);
+
+  // Groups are held for the visit too: joining marks one joined instead of swapping it out.
+  const [groupPicks] = useState(() => rankGroups(mind, chats, me, short).map((r) => ({ id: r.value.id, score: r.score, reason: r.reason })));
+  const groups: Ranked<Chat>[] = groupPicks
+    .map((p) => ({ ...p, value: chats.find((c) => c.id === p.id) }))
+    .filter((p): p is Ranked<Chat> & { id: string } => !!p.value && !p.value.removedAt);
+  const activity = friendActivity(chats, me);
+
+  /* ---- search: collections, then things, then groups ---- */
   const q = query.trim().toLowerCase();
-  const found = q ? {
-    collections: collections.filter((r) => [r.value.name, r.value.description, creator(r.value.by).name, ...r.value.topics].some((s) => s.toLowerCase().includes(q))),
-    groups: groups.filter((r) => [r.value.name, groupInfo(r.value).description, ...(groupInfo(r.value).discover?.topics ?? [])].some((s) => s.toLowerCase().includes(q))),
-    items: rankItems(mind, chats, me).filter((r) => r.value.item.title.toLowerCase().includes(q)).slice(0, 8),
-  } : null;
+  const found = q ? (() => {
+    const cols = allPublic().filter((c) => c.by !== me && [c.name, c.description, creator(c.by).name, ...c.topics.map((t) => TOPIC_LABEL[t])].some((s) => s.toLowerCase().includes(q)));
+    const things: WallEntry[] = allPublic().filter((c) => c.by !== me).flatMap((c) => c.items
+      // A thing matches on its words, or on its collection's topics ("cinematography" finds film).
+      .filter((i) => i.kind !== "todo" && `${i.title} ${i.body ?? ""} ${i.note ?? ""} ${(i.tags ?? []).join(" ")} ${c.topics.map((t) => TOPIC_LABEL[t]).join(" ")}`.toLowerCase().includes(q))
+      .map((item) => ({ kind: "thing" as const, item, collection: c })))
+      .sort((a, b) => Number(hasPicture(b.item)) - Number(hasPicture(a.item)))
+      .slice(0, 24);
+    const gs = groups.filter((r) => [r.value.name, groupInfo(r.value).description, ...(groupInfo(r.value).discover?.topics ?? [])].some((s) => s.toLowerCase().includes(q)));
+    return { cols, things, groups: gs };
+  })() : null;
   const searching = useSettled(q);
 
-  const tile = (r: Ranked<{ item: PublicItem; collection: PublicCollection }>) => (
-    <ItemTile key={r.value.item.id} item={r.value.item} reason={r.reason} saved={!!saved[r.value.item.id]} onOpen={() => showItem(r.value.item, r.value.collection)} holdProps={itemMenu(r.value.item, r.value.collection)} />
-  );
-  // One collection per row: a grid of two was too much at once.
-  const colCards = (list: Ranked<PublicCollection>[]) => (
-    <div className={x.colList}>
-      {list.map((r, i) => <CollectionCard key={r.value.id} r={r} i={i} own={r.value.by === me} added={!!addedFrom(mind, r.value.id)} onOpen={() => openPage(r.value.id)} holdProps={collectionMenu(r.value)} />)}
-    </div>
-  );
-  const groupCards = (list: Ranked<Chat>[]) => (
-    <DragScroll className={x.rail} sideWheel={false} glide>
-      {list.map((r) => <GroupCard key={r.value.id} r={r} joined={r.value.memberIds.includes(me)} onOpen={() => showGroup(r.value, r.reason)} onJoin={() => join(r.value)} />)}
-    </DragScroll>
-  );
-  const feed = (list: Activity[]) => (
-    <div className={x.feed}>
-      {list.map((a) => <ActivityRow key={a.id} a={a} now={now} saved={saved} chats={chats} onItem={showItem} holdItem={itemMenu} onCollection={openPage} onGroup={(g) => showGroup(g)} />)}
-    </div>
-  );
-
-  const hero = collections.find((r) => r.value.id === heroId);
-
-  /*
-   * Shelves: everything that fits one of your collections, together
-   * ("Because you collect 🇩🇪 German": collections first, then single
-   * things), then what's popular. Each scrolls sideways, a card at a time.
-   */
-  type Shelf = { key: string; title: string; cols: Ranked<PublicCollection>[]; things: Ranked<{ item: PublicItem; collection: PublicCollection }>[] };
-  const shelves: Shelf[] = [];
-  const shelfFor = (mine: Ranked<unknown>["mine"]) => {
-    const key = mine?.id ?? "popular";
-    let shelf = shelves.find((x) => x.key === key);
-    if (!shelf) {
-      shelf = { key, title: mine ? `Because you collect ${mine.emoji} ${mine.name}` : "Popular on NOD", cols: [], things: [] };
-      shelves.push(shelf);
-    }
-    return shelf;
-  };
-  for (const r of collections) if (r !== hero) shelfFor(r.mine).cols.push(r);
-  for (const r of items) {
-    const shelf = shelfFor(r.mine);
-    if (shelf.things.length < 6) shelf.things.push(r);
-  }
-  // Yours first, the popular shelf last.
-  shelves.sort((a, b) => (a.key === "popular" ? 1 : 0) - (b.key === "popular" ? 1 : 0));
-  const shelfRail = (shelf: Shelf) => (
-    <DragScroll className={x.shelf} sideWheel={false} glide>
-      {shelf.cols.map((r, i) => (
-        <CollectionCard key={r.value.id} r={r} i={i} plain own={r.value.by === me} added={!!addedFrom(mind, r.value.id)} onOpen={() => openPage(r.value.id)} holdProps={collectionMenu(r.value)} />
-      ))}
-      {shelf.things.map((r) => (
-        <div key={r.value.item.id} className={x.shelfThing}>{tile({ ...r, reason: `From ${r.value.collection.emoji} ${r.value.collection.name}` })}</div>
-      ))}
-    </DragScroll>
-  );
+  const top = pages[pages.length - 1];
 
   return (
     <>
@@ -231,13 +255,13 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
             </button>
             <div className={styles.profileText}>
               <b>Explore</b>
-              <span>Picked for you, from what you keep</span>
+              <span>Collections to look through and keep</span>
             </div>
           </div>
         </div>
         <label className={styles.searchBar}>
           <span className={styles.maskIcon} style={{ width: 16, height: 16, ["--src" as string]: "url(/nod/search.svg)" }} aria-hidden="true" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search collections, groups and people" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search collections, people and ideas" />
           {query && <button className={styles.mindClear} onClick={() => setQuery("")} aria-label="Clear search"><IconClose size={14} /></button>}
         </label>
       </header>
@@ -248,62 +272,78 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
             : load.state === "failed" ? <LoadFailed what="Explore" onRetry={load.retry} />
             : <>
           {!q && (
-            <div className={styles.chips} role="tablist">
-              {FILTERS.map((f) => (
-                <button key={f.id} role="tab" aria-selected={filter === f.id} className={`${styles.chip} ${filter === f.id ? styles.chipOn : ""}`} onClick={() => setFilter(f.id)}>{f.label}</button>
+            <DragScroll className={`${styles.chips} ${x.topicChips}`} sideWheel={false} glide role="tablist" aria-label="Topics">
+              <button role="tab" aria-selected={chip === "foryou"} className={`${styles.chip} ${chip === "foryou" ? styles.chipOn : ""}`} onClick={() => selectChip("foryou")}>For you</button>
+              {topics.map((t) => (
+                <button key={t} role="tab" aria-selected={chip === t} className={`${styles.chip} ${chip === t ? styles.chipOn : ""}`} onClick={() => selectChip(t)}>{TOPIC_LABEL[t]}</button>
               ))}
-            </div>
+              <span className={x.chipRule} aria-hidden="true" />
+              <button role="tab" aria-selected={chip === "groups"} className={`${styles.chip} ${chip === "groups" ? styles.chipOn : ""}`} onClick={() => selectChip("groups")}>Groups</button>
+              <button role="tab" aria-selected={chip === "friends"} className={`${styles.chip} ${chip === "friends" ? styles.chipOn : ""}`} onClick={() => selectChip("friends")}>Friends</button>
+            </DragScroll>
           )}
 
           {found && searching.state === "loading" ? <RowSkeleton />
           : found && searching.state === "failed" ? <LoadFailed what="search results" onRetry={searching.retry} />
           : found ? (
             <div className={x.stack}>
-              {found.collections.length > 0 && <Section title="Collections">{colCards(found.collections)}</Section>}
-              {found.groups.length > 0 && <Section title="Groups">{groupCards(found.groups)}</Section>}
-              {found.items.length > 0 && <Section title="Things to save"><div className={x.masonry}>{found.items.map(tile)}</div></Section>}
-              {!found.collections.length && !found.groups.length && !found.items.length && <p className={styles.emptyInbox}>Nothing on Explore matches “{query}”.</p>}
+              {found.cols.length > 0 && (
+                <div className={x.wallStack}>
+                  {found.cols.map((pc) => <CollectionStrip key={pc.id} pc={pc} added={nav.added(pc.id)} onOpen={() => nav.openCollection(pc.id)} onCreator={() => nav.openCreator(pc.by)} holdProps={holdCollection(pc)} />)}
+                </div>
+              )}
+              {found.things.length > 0 && <Wall entries={found.things} nav={nav} holdThing={holdThing} />}
+              {found.groups.length > 0 && <div className={x.groupList}>{found.groups.map((r) => <GroupRow key={r.value.id} r={r} joined={r.value.memberIds.includes(me)} onOpen={() => showGroup(r.value, r.reason)} onJoin={() => join(r.value)} />)}</div>}
+              {!found.cols.length && !found.things.length && !found.groups.length && <p className={styles.emptyInbox}>Nothing on Explore matches “{query}”.</p>}
             </div>
-          ) : filter === "foryou" ? (
-            <div className={x.stack} key="foryou">
-              {hero && <Hero r={hero} added={!!addedFrom(mind, hero.value.id)} onOpen={() => openPage(hero.value.id)} onAdd={() => add(hero.value)} holdProps={collectionMenu(hero.value)} />}
-              {activity.length > 0 && <Section title="Your friends lately" more={activity.length > 3 ? () => setFilter("friends") : undefined}>{feed(activity.slice(0, 3))}</Section>}
-              {groups.length > 0 && <Section title="Groups for you" more={() => setFilter("groups")}>{groupCards(groups.slice(0, 6))}</Section>}
-              {shelves.filter((sh) => sh.cols.length + sh.things.length > 0).map((sh) => (
-                <Section key={sh.key} title={emojify(sh.title)} more={sh.cols.length ? () => setFilter("collections") : undefined}>{shelfRail(sh)}</Section>
-              ))}
-              {yours.length > 0 && <Section title="Published by you" note="What everyone sees on Explore">{colCards(yours)}</Section>}
+          ) : chip === "groups" ? (
+            <div className={x.groupList} key="groups">
+              {groups.map((r) => <GroupRow key={r.value.id} r={r} joined={r.value.memberIds.includes(me)} onOpen={() => showGroup(r.value, r.reason)} onJoin={() => join(r.value)} />)}
+              {!groups.length && <p className={styles.emptyInbox}>You’re in every group on Explore.</p>}
             </div>
-          ) : filter === "collections" ? (
-            <div className={x.stack} key="collections">
-              {yours.length > 0 && <Section title="Published by you">{colCards(yours)}</Section>}
-              {colCards(collections)}
+          ) : chip === "friends" ? (
+            <div className={x.feed} key="friends">
+              {activity.length ? activity.map((a) => (
+                <ActivityRow key={a.id} a={a} now={now} saved={saved} chats={chats} onItem={nav.openThing} holdItem={(item, pc) => holdThing({ kind: "thing", item, collection: pc })} onCollection={nav.openCollection} onGroup={(g) => showGroup(g)} />
+              )) : <p className={styles.emptyInbox}>When people you chat with save or join something public, it shows here.</p>}
             </div>
-          ) : filter === "groups" ? (
-            <div className={x.stack} key="groups">
-              <div className={x.groupList}>
-                {groups.map((r) => <GroupRow key={r.value.id} r={r} joined={r.value.memberIds.includes(me)} onOpen={() => showGroup(r.value, r.reason)} onJoin={() => join(r.value)} />)}
-                {!groups.length && <p className={styles.emptyInbox}>You’re in every group on Explore.</p>}
-              </div>
-            </div>
-          ) : (
-            <div className={x.stack} key="friends">
-              {activity.length ? feed(activity) : <p className={styles.emptyInbox}>When people you chat with save or join something public, it shows here.</p>}
-            </div>
-          )}
+          ) : wall ? (
+            wall.length ? <Wall key={chip} entries={wall} nav={nav} holdThing={holdThing} holdCollection={holdCollection} />
+              : <p className={styles.emptyInbox}>Nothing about {chip === "foryou" ? "this" : TOPIC_LABEL[chip]} yet.</p>
+          ) : <ExploreSkeleton />}
           </>}
         </div>
       </div>
 
-      {page && (() => {
-        const pc = publicCollection(page.id);
-        return pc ? (
-          <CollectionPage pc={pc} openSheet={setSheet} closeSheet={closeSheet} own={pc.by === me} leaving={page.leaving} added={!!addedFrom(mind, pc.id)} saved={saved} onBack={closePage} onAdd={() => add(pc)} onItem={(item) => showItem(item, pc)} holdItem={(item) => itemMenu(item, pc)} />
-        ) : null;
-      })()}
+      {pages.map((p) => {
+        if (p.kind === "collection") {
+          const pc = publicCollection(p.id);
+          return pc ? <CollectionPage key={p.key} pc={pc} nav={nav} leaving={!!p.leaving} holdThing={holdThing} /> : null;
+        }
+        if (p.kind === "thing") {
+          const found = publicItem(p.id);
+          return found ? <ThingPage key={p.key} item={found.item} from={found.collection} nav={nav} leaving={!!p.leaving} holdThing={holdThing} /> : null;
+        }
+        return <CreatorPage key={p.key} who={p.id} nav={nav} leaving={!!p.leaving} />;
+      })}
+
+      {/* The first visit asks what you're into (once you've seen it load). */}
+      {load.state === "ready" && flags.topics === null && !notNow && !top && !sheet && (
+        <InterestsSheet
+          initial={[]}
+          onClose={() => setNotNow(true)}
+          onDone={(t) => {
+            updateExploreFlags(me, (f) => ({ ...f, topics: t }));
+            // The wall starts again from what was picked.
+            setWalls({ foryou: computeWall("foryou", t) });
+            setChip("foryou");
+            if (t.length) flash(`Explore starts from ${t.map((x) => TOPIC_LABEL[x as Topic]).join(", ")}`);
+          }}
+        />
+      )}
       {sheet}
       {toast && (
-        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${styles.mindToast} ${toast.action ? styles.toastActions : ""} ${toast.leaving ? styles.toastLeaving : ""}`} role="status">
+        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${styles.mindToast} ${toast.action ? styles.toastActions : ""} ${toast.leaving ? styles.toastLeaving : ""} ${x.exToast}`} role="status">
           <span className={styles.toastText}>{emojify(toast.text)}</span>
           {toast.action && <button className={styles.toastBtn} onClick={() => { setToast(null); toast.action!.run(); }}>{toast.action.label}</button>}
         </div>
@@ -313,116 +353,10 @@ export default function ExploreTab({ onOpenChat, onSettings }: { onOpenChat: (ch
 }
 
 /* ===========================================================================
-   Pieces
+   Groups, friends, and the sheet that picks a collection
    =========================================================================== */
 
-function Section({ title, note, more, children }: { title: React.ReactNode; note?: string; more?: () => void; children: React.ReactNode }) {
-  return (
-    <section className={x.section}>
-      <div className={x.sectionHead}>
-        <span><b>{title}</b>{note && <small>{note}</small>}</span>
-        {more && <button className={x.more} onClick={more}>See all</button>}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Byline({ id, extra }: { id: string; extra?: string }) {
-  const c = creator(id);
-  return (
-    <span className={x.byline}>
-      <Avatar glyph={initials(c.name)} tone={c.tone} photo={c.photo} size={18} shape="circle" />
-      <span>{c.name}{extra ? ` · ${extra}` : ""}</span>
-    </span>
-  );
-}
-
 type HoldProps = ReturnType<ReturnType<typeof useHoldMenu>>;
-
-/** The top pick: tap anywhere to look inside, hold for its menu, or add it with the small pill. */
-function Hero({ r, added, onOpen, onAdd, holdProps }: { r: Ranked<PublicCollection>; added: boolean; onOpen: () => void; onAdd: () => void; holdProps: HoldProps }) {
-  const pc = r.value;
-  const total = pc.items.length;
-  return (
-    <article className={`${x.hero} ${x.holdable}`} style={{ ["--tone" as string]: pc.tone }} {...holdProps}>
-      <button className={x.heroCover} style={{ backgroundImage: coverOf(pc) }} onClick={onOpen} aria-label={`Look inside ${pc.name}`}>
-        <span className={x.reason}><IconSparkles size={12} /> {emojify(r.reason)}</span>
-      </button>
-      <div className={x.heroBody} onClick={onOpen}>
-        <span className={x.heroEmoji}><Emoji char={pc.emoji} /></span>
-        <b className={x.heroName}>{pc.name}</b>
-        <p className={x.heroDesc}>{pc.description}</p>
-        <div className={x.heroFoot}>
-          <Byline id={pc.by} extra={`${count(pc.saves)} saves · ${total} things`} />
-          <button className={x.addPill} onClick={(e) => { e.stopPropagation(); onAdd(); }} disabled={added}>
-            {added ? <><IconCheck size={13} /> In your Mind</> : "Add to Mind"}
-          </button>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function CollectionCard({ r, i, own, added, plain, onOpen, holdProps }: {
-  r: Ranked<PublicCollection>; i: number; own?: boolean; added: boolean;
-  /** On a shelf: its title already says why, so the card shows what's in it instead. */
-  plain?: boolean;
-  onOpen: () => void; holdProps: HoldProps;
-}) {
-  const pc = r.value;
-  return (
-    <div className={`${x.colCard} ${x.holdable} ${styles.rowEnter}`} style={{ ["--tone" as string]: pc.tone, ["--i" as string]: i }} {...holdProps}>
-      <button className={x.colMain} onClick={onOpen}>
-        <span className={x.colCover} style={{ backgroundImage: coverOf(pc) }}>
-          <span className={x.colEmoji}><Emoji char={pc.emoji} /></span>
-          {own ? <span className={x.badge}>Yours</span> : added && <span className={`${x.badge} ${x.badgeOn}`}><IconCheck size={11} /> In Mind</span>}
-        </span>
-        <b className={x.colName}>{pc.name}</b>
-        <span className={x.colDesc}>{pc.description}</span>
-        <Byline id={pc.by} extra={`${pc.saves ? `${count(pc.saves)} saves` : "New"} · ${pc.items.length} things`} />
-        {!plain && <small className={x.colReason}>{emojify(r.reason)}</small>}
-      </button>
-    </div>
-  );
-}
-
-/** One thing to save: the tile, and under it why it's here. Tap to open it; hold it to save it. */
-function ItemTile({ item, reason, saved, onOpen, holdProps }: { item: PublicItem; reason?: string; saved: boolean; onOpen: () => void; holdProps?: HoldProps }) {
-  return (
-    <div className={x.item}>
-      {/* The tile itself is what's held: it lifts on its own, without the line under it. */}
-      <div role="button" tabIndex={0} className={`${x.itemMain} ${x.holdable}`} onClick={onOpen} onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }} {...holdProps}>
-        <BlockView block={asBlock(item)} shape="tile" />
-      </div>
-      {(reason || saved) && (
-        <div className={x.itemFoot}>
-          <small className={x.itemReason}>{reason ? emojify(reason) : ""}</small>
-          {saved && <span className={x.savedTag}><IconCheck size={11} /> Saved</span>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function GroupCard({ r, joined, onOpen, onJoin }: { r: Ranked<Chat>; joined: boolean; onOpen: () => void; onJoin: () => void }) {
-  const g = r.value;
-  const info = groupInfo(g);
-  const tone = g.tone ?? "graphite";
-  return (
-    <div className={x.groupCard} style={{ ["--tone" as string]: TONES[tone] }}>
-      <button className={x.groupMain} onClick={onOpen}>
-        <span className={x.groupAvatar}><Avatar glyph={initials(g.name)} tone={tone} photo={g.photo} size={52} /></span>
-        <b className={x.groupName}>{g.name}</b>
-        <small className={x.groupMeta}>{count(info.discover?.members ?? g.memberIds.length)} members</small>
-        <small className={x.groupReason}>{r.reason}</small>
-      </button>
-      <button className={`${styles.secondaryWide} ${x.join} ${joined ? x.joined : ""}`} onClick={onJoin} disabled={joined}>
-        {joined ? <><IconCheck size={14} /> Joined</> : "Join"}
-      </button>
-    </div>
-  );
-}
 
 function GroupRow({ r, joined, onOpen, onJoin }: { r: Ranked<Chat>; joined: boolean; onOpen: () => void; onJoin: () => void }) {
   const g = r.value;
@@ -445,7 +379,7 @@ function GroupRow({ r, joined, onOpen, onJoin }: { r: Ranked<Chat>; joined: bool
 function ActivityRow({ a, now, saved, chats, onItem, holdItem, onCollection, onGroup }: {
   a: Activity;
   now: number;
-  saved: Record<string, string>;
+  saved: Record<string, unknown>;
   chats: Chat[];
   onItem: (item: PublicItem, from: PublicCollection) => void;
   holdItem: (item: PublicItem, from: PublicCollection) => HoldProps;
@@ -478,7 +412,7 @@ function ActivityRow({ a, now, saved, chats, onItem, holdItem, onCollection, onG
                   ? <img src={item.image} alt="" />
                   : <span className={x.miniCard}><i aria-hidden="true"><Emoji char={KIND_ICON[item.kind] ?? "✨"} /></i><em>{KIND_LABEL[item.kind]}</em>{item.title}</span>}
               </button>
-              {saved[item.id] && <span className={x.miniSaved} aria-label="Saved"><IconCheck size={11} /></span>}
+              {!!saved[item.id] && <span className={x.miniSaved} aria-label="Saved"><IconCheck size={11} /></span>}
             </div>
           ))}
         </DragScroll>
@@ -494,19 +428,26 @@ function ActivityRow({ a, now, saved, chats, onItem, holdItem, onCollection, onG
 }
 
 /* ===========================================================================
-   Sheets and the collection page
+   Sheets
    =========================================================================== */
 
-function SaveSheet({ item, from, onClose, onPick, onNew }: { item: PublicItem; from: PublicCollection; onClose: () => void; onPick: (colId: string) => void; onNew: () => void }) {
+function SaveSheet({ item, from, current, onClose, onPick, onNew }: { item: PublicItem; from: PublicCollection; /** Where it was just saved: picking another moves it. */ current?: string; onClose: () => void; onPick: (colId: string) => void; onNew: () => void }) {
   const { me } = useChat();
   const { mind } = useMind(me);
   const suggested = suggestCollection(mind, from.topics as Topic[]);
   const list = (mind?.collections ?? []).filter((c) => !isUnassigned(c)).sort((a, b) => (a.id === suggested?.id ? -1 : b.id === suggested?.id ? 1 : 0));
   return (
-    <Sheet title="Save to Mind" onClose={onClose}>
+    <Sheet title={current ? "Move to" : "Save to Mind"} onClose={onClose}>
       {(close) => (
         <>
-          <div className={styles.mindDetail}><BlockView block={asBlock(item)} shape="row" /></div>
+          {hasPicture(item) ? (
+            // A picture as a small row, so the collections stay in view.
+            <div className={x.savePreview}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={item.image ?? item.attachment?.url ?? item.attachment?.dataUrl} alt="" draggable={false} />
+              <span><b>{item.title || KIND_LABEL[item.kind]}</b><small>From {from.emoji} {from.name}</small></span>
+            </div>
+          ) : <div className={styles.mindDetail}><BlockView block={asBlock(item)} shape="row" /></div>}
           {list.length ? (
             <>
               <p className={styles.sheetLabel}>Into</p>
@@ -514,8 +455,8 @@ function SaveSheet({ item, from, onClose, onPick, onNew }: { item: PublicItem; f
                 {list.map((c) => (
                   <button key={c.id} className={styles.actionRow} onClick={() => close(() => onPick(c.id))}>
                     <span className={styles.mindEmoji} style={{ background: `color-mix(in srgb, ${c.tone} 16%, transparent)` }}><Emoji char={c.emoji} /></span>
-                    <span className={styles.contactText}><b>{c.name}</b><small>{c.id === suggested?.id ? "Suggested: it fits what’s in here" : `${c.items.length} ${c.items.length === 1 ? "thing" : "things"}`}</small></span>
-                    {c.id === suggested?.id && <span className={x.suggested}>Suggested</span>}
+                    <span className={styles.contactText}><b>{c.name}</b><small>{c.id === suggested?.id ? "It fits what’s in here" : `${c.items.length} ${c.items.length === 1 ? "thing" : "things"}`}</small></span>
+                    {c.id === current ? <span className={x.suggested}><IconCheck size={11} /> Saved here</span> : c.id === suggested?.id && <span className={x.suggested}>Suggested</span>}
                   </button>
                 ))}
               </div>
@@ -530,25 +471,16 @@ function SaveSheet({ item, from, onClose, onPick, onNew }: { item: PublicItem; f
   );
 }
 
-function ItemSheet({ item, from, saved, onClose, onSave, onOpenCollection }: { item: PublicItem; from: PublicCollection; saved?: string; onClose: () => void; onSave: () => void; onOpenCollection: () => void }) {
-  return (
-    <Sheet title={KIND_LABEL[item.kind]} onClose={onClose} action={{ label: saved ? "Saved" : "Save", disabled: !!saved, onClick: onSave }}>
-      <div className={styles.mindDetail}><BlockView block={asBlock(item)} shape="detail" /></div>
-      <button className={x.fromRow} onClick={onOpenCollection}>
-        <span className={styles.mindEmoji} style={{ background: `color-mix(in srgb, ${from.tone} 16%, transparent)` }}><Emoji char={from.emoji} /></span>
-        <span className={styles.contactText}><b>From {from.name}</b><small>by {creator(from.by).name} · {count(from.saves)} saves</small></span>
-      </button>
-    </Sheet>
-  );
-}
-
 function GroupSheet({ groupId, reason, onClose, onJoin, onOpen }: { groupId: string; reason?: string; onClose: () => void; onJoin: (g: Chat) => void; onOpen: (g: Chat) => void }) {
   const { state, me } = useChat();
   const group = state.data.chats.find((c) => c.id === groupId);
   if (!group) return null;
   const info = groupInfo(group);
   const joined = group.memberIds.includes(me);
-  const known = group.memberIds.filter((u) => u !== me);
+  // Friends in it (people you share a chat with), not everyone.
+  const friends = friendsOf(state.data.chats, me);
+  const known = group.memberIds.filter((u) => u !== me && friends.has(u));
+  const channels = info.channels.filter((c) => !c.roles.length);
   return (
     <Sheet title={group.name} onClose={onClose}>
       {(close) => (
@@ -556,7 +488,8 @@ function GroupSheet({ groupId, reason, onClose, onJoin, onOpen }: { groupId: str
           <GroupBanner look={{ name: group.name, description: info.description, tone: group.tone ?? "graphite", photo: group.photo }} compact />
           <div className={x.groupFacts}>
             <span><IconUserGroup size={15} /> {(info.discover?.members ?? group.memberIds.length).toLocaleString()} members</span>
-            {reason && <span><IconSparkles size={14} /> {reason}</span>}
+            {/* Friends in it are named under their faces below; the reason is for groups with none. */}
+            {reason && !known.length && <span><IconSparkles size={14} /> {reason}</span>}
           </div>
           {info.discover && (
             <div className={styles.chipGrid}>
@@ -566,13 +499,21 @@ function GroupSheet({ groupId, reason, onClose, onJoin, onOpen }: { groupId: str
           {known.length > 0 && (
             <div className={x.faces}>
               {known.slice(0, 5).map((u) => { const p = userById(u); return <Avatar key={u} glyph={initials(p.fullName)} tone={p.tone} photo={p.photo} size={28} shape="circle" />; })}
-              <small>{known.map((u) => userById(u).name).slice(0, 3).join(", ")} {known.length === 1 ? "is" : "are"} in it</small>
+              <small>{peopleLine(known.map((u) => userById(u).name), "in it")}</small>
             </div>
           )}
           <p className={styles.sheetLabel}>Channels</p>
-          <div className={styles.chipGrid}>
-            {info.channels.filter((c) => !c.roles.length).map((c) => <span key={c.id} className={`${styles.choice} ${x.topic}`}>#{c.name}</span>)}
-          </div>
+          <ul className={x.channelList}>
+            {channels.map((c, i) => (
+              <li key={c.id}>
+                <span className={x.channelName}>
+                  <b>#{c.name}</b>
+                  {i === 0 && <span className={x.opensHere}>Opens here</span>}
+                </span>
+                {c.topic && <small>{c.topic}</small>}
+              </li>
+            ))}
+          </ul>
           {joined ? (
             <button className={styles.primaryWide} onClick={() => close(() => onOpen(group))}>Open {group.name}</button>
           ) : (
@@ -582,75 +523,5 @@ function GroupSheet({ groupId, reason, onClose, onJoin, onOpen }: { groupId: str
         </>
       )}
     </Sheet>
-  );
-}
-
-function CollectionPage({ pc, openSheet, closeSheet, own, leaving, added, saved, onBack, onAdd, onItem, holdItem }: {
-  pc: PublicCollection;
-  openSheet: (n: React.ReactNode) => void;
-  closeSheet: () => void;
-  /** You published it: this is how it looks to everyone else. */
-  own: boolean;
-  leaving: boolean;
-  added: boolean;
-  saved: Record<string, string>;
-  onBack: () => void;
-  onAdd: () => void;
-  onItem: (item: PublicItem) => void;
-  holdItem: (item: PublicItem) => HoldProps;
-}) {
-  const [filter, setFilter] = useState<MindFilter>(NO_FILTER);
-  const total = pc.items.length;
-  const blocks = pc.items.map((item) => ({ item, block: asBlock(item) }));
-  const shown = blocks.filter(({ block }) => passes(filter, block)).map(({ item }) => item);
-  return (
-    <div className={`${styles.screen} ${styles.chatScreen} ${x.page} ${leaving ? styles.leaving : ""}`} style={{ ["--tone" as string]: pc.tone }}>
-      <header className={x.pageBar}>
-        <button className={`${styles.circleBtn} ${styles.glass}`} onClick={onBack} aria-label="Back to Explore"><IconBack /></button>
-        <b>{pc.name}</b>
-        {own ? <span className={`${x.addPill} ${x.addPillQuiet}`}>Yours</span> : (
-          <button className={`${x.addPill} ${x.addPillBar}`} onClick={onAdd} disabled={added}>
-            {added ? <><IconCheck size={13} /> In your Mind</> : "Add to Mind"}
-          </button>
-        )}
-      </header>
-      <div className={x.pageScroll}>
-        <div className={x.pageCover} style={{ backgroundImage: coverOf(pc) }} />
-        <div className={x.pageHead}>
-          <span className={x.pageEmoji}><Emoji char={pc.emoji} /></span>
-          <h2>{pc.name}</h2>
-          <Byline id={pc.by} extra={`${count(pc.saves)} saves · ${total} things`} />
-          <p>{pc.description}</p>
-          {pc.topics.length > 0 && (
-            <ul className={x.topics} aria-label="Topics">
-              {pc.topics.map((t) => <li key={t} className={x.topic}>{TOPIC_LABEL[t]}</li>)}
-            </ul>
-          )}
-          <small className={x.pageHint}>
-            {own ? "You published this from your Mind. It’s how everyone sees it; what you change there shows here too."
-              : added ? "It’s in your Mind now: change anything in it there."
-              : "Add to Mind copies all of it, tags and all. Or hold any one thing to save just that."}
-          </small>
-        </div>
-        <section className={x.pageStack}>
-          <div className={x.stackBar}>
-            <p className={x.stackHead}><b>{isFiltering(filter) ? `${shown.length} of ${total}` : `${total} ${total === 1 ? "thing" : "things"}`}</b></p>
-            <button
-              className={`${x.filterBtn} ${isFiltering(filter) ? x.filterOn : ""}`}
-              onClick={(e) => openSheet(<FilterMenu anchor={e.currentTarget} items={blocks.map(({ block }) => block)} filter={filter} onChange={setFilter} onClose={closeSheet} />)}
-              aria-label={isFiltering(filter) ? "Filter, on" : "Filter"}
-              aria-haspopup="menu"
-            >
-              <IconFilter size={16} /> Filter
-            </button>
-          </div>
-          <FilterBar filter={filter} onChange={setFilter} />
-          <div className={x.masonry}>
-            {shown.map((item) => <ItemTile key={item.id} item={item} saved={!!saved[item.id]} onOpen={() => onItem(item)} holdProps={own ? undefined : holdItem(item)} />)}
-          </div>
-          {!shown.length && <p className={x.pageHint}>Nothing here matches the filter.</p>}
-        </section>
-      </div>
-    </div>
   );
 }

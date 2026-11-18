@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { chatIdentity, initials, TONES } from "@/lib/chat/avatar";
 import { useChatFlags, withId, type ChatList } from "@/lib/chat/chatFlags";
+import { OPEN_EXPLORE } from "@/lib/chat/exploreFlags";
 import { groupInfo, landingChannel, visibleChannels } from "@/lib/chat/groups";
 import { isLanding } from "@/lib/chat/landing";
 import { isUnassigned, useMind } from "@/lib/chat/mind";
@@ -129,6 +130,12 @@ export default function Inbox({ onOpen, pushed }: {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [tab, setTab] = useState<Tab>("chats");
+  // "Related on Explore" in Mind, or an Explore link, switches here to Explore (which opens the collection).
+  useEffect(() => {
+    const go = () => setTab("explore");
+    window.addEventListener(OPEN_EXPLORE, go);
+    return () => window.removeEventListener(OPEN_EXPLORE, go);
+  }, []);
   const [newChat, setNewChat] = useState(false);
   // The group maker, and which kind it starts on.
   const [newGroup, setNewGroup] = useState<"group" | "operation" | null>(null);

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { isOffline, NET_CHANGED, netDown, roundTrip } from "@/lib/chat/api";
-import { IconClock, IconCloudOff, IconRetry } from "./Icons";
+import { IconClock, IconClose, IconCloudOff, IconRetry } from "./Icons";
 import l from "./loading.module.css";
 
 /*
@@ -171,7 +171,7 @@ export function RetryLine({ children, onRetry }: { children: React.ReactNode; on
  * A photo or file on its way up, over its tile: a ring for a photo, a thin bar
  * along the bottom for a file. If it didn't make it, a retry arrow in its place.
  */
-export function UploadMark({ kind, value, failed, onRetry }: { kind: "image" | "file"; value: number | null; failed: boolean; onRetry: () => void }) {
+export function UploadMark({ kind, value, failed, onRetry, onCancel }: { kind: "image" | "file"; value: number | null; failed: boolean; onRetry: () => void; /** Stops the upload (and drops what was going up). */ onCancel?: () => void }) {
   if (failed) {
     return (
       <button
@@ -187,6 +187,21 @@ export function UploadMark({ kind, value, failed, onRetry }: { kind: "image" | "
     );
   }
   if (value === null) return null;
+  if (kind === "image" && onCancel) {
+    return (
+      <button
+        type="button"
+        className={`${l.uploadRing} ${l.uploadCancel}`}
+        data-upload-mark
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); onCancel(); }}
+        aria-label={`Uploading, ${Math.round(value * 100)}%. Cancel`}
+      >
+        <ProgressRing value={value} size={44} />
+        <IconClose size={14} />
+      </button>
+    );
+  }
   if (kind === "image") return <span className={l.uploadRing} data-upload-mark><ProgressRing value={value} size={44} /></span>;
   return (
     <span className={l.uploadBar} data-upload-mark role="progressbar" aria-valuenow={Math.round(value * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Uploading">

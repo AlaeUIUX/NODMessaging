@@ -21,6 +21,7 @@ import {
   AddSheet, ChecklistBuilder, EventBuilder, LocationBuilder, PaymentBuilder, PollBuilder, ReminderBuilder, type AddKind,
 } from "./CardBuilders";
 import Composer from "./Composer";
+import { MindPickSheet } from "./Share";
 import { IconBack, IconBellOff, IconBoard, IconCheck, IconChevron, IconLocation, IconMegaphone, IconMenu, IconPhone, IconQr } from "./Icons";
 import { Code } from "./operation/kit";
 import { BroadcastSheet, RequestSheet } from "./operation/OpCards";
@@ -335,6 +336,10 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
         return;
       case "file":
         fileInput.current?.click();
+        return;
+      case "mindCollection":
+      case "mindItem":
+        setOverlaySheet(<MindPickSheet chatId={chat.id} mode={kind === "mindCollection" ? "collection" : "item"} onSend={shareCard} onClose={closeSheet} />);
         return;
       case "poll":
         setOverlaySheet(<PollBuilder onSend={shareCard} onClose={closeSheet} />);

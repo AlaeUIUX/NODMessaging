@@ -145,6 +145,10 @@
 }
 
 /* Over an uploading tile: a ring in the middle (a photo), a bar along the bottom (a file), or a retry arrow. */
+/* The ring with a cross in it: a tap stops the upload. */
+.uploadCancel { border: none; padding: 0; cursor: pointer; display: grid; place-items: center; }
+.uploadCancel b { display: none; }
+.uploadCancel > svg:last-child { position: absolute; color: var(--ink); }
 .uploadRing, .uploadRetry {
   position: absolute;
   top: 50%;

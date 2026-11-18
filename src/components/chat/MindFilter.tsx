@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { modifiedAt, tagsOf, type Block, type BlockKind } from "@/lib/chat/mind";
 import { IconCheck, IconClose, IconFilter, IconMore, IconSearch } from "./Icons";
 import { KIND_LABEL } from "./MindBlocks";
@@ -41,14 +41,26 @@ export function passes(f: MindFilter, b: Block) {
 }
 
 /** Search, Filter and More in one glass capsule, where a chat has its call and board buttons. */
-export function ScopeTools({ searching, filtering, moreLabel, onSearch, onFilter, onMore }: {
+export function ScopeTools({ searching, filtering, moreLabel, tight, onSearch, onFilter, onMore }: {
   searching: boolean;
   filtering: boolean;
   moreLabel: string;
+  /** No room beside the title: only "…" shows, and Search and Filter open from its menu (see scopeActions). */
+  tight?: boolean;
   onSearch: () => void;
   onFilter: (anchor: HTMLElement) => void;
   onMore: (anchor: HTMLElement) => void;
 }) {
+  if (tight) {
+    return (
+      <div className={`${styles.mindTools} ${styles.glass}`}>
+        <button className={searching || filtering ? styles.mindToolOn : undefined} onClick={(e) => onMore(e.currentTarget)} aria-label={filtering ? `${moreLabel}, filter on` : moreLabel} aria-haspopup="menu">
+          <IconMore size={18} />
+          {filtering && <i className={styles.mindToolDot} aria-hidden="true" />}
+        </button>
+      </div>
+    );
+  }
   return (
     <div className={`${styles.mindTools} ${styles.glass}`}>
       <button className={searching ? styles.mindToolOn : undefined} onClick={onSearch} aria-label="Search in here" aria-pressed={searching}><IconSearch size={18} /></button>
@@ -59,6 +71,44 @@ export function ScopeTools({ searching, filtering, moreLabel, onSearch, onFilter
       <button onClick={(e) => onMore(e.currentTarget)} aria-label={moreLabel} aria-haspopup="menu"><IconMore size={18} /></button>
     </div>
   );
+}
+
+/** Search and Filter as the first rows of the "…" menu, for a header too narrow to show them. */
+export function scopeActions({ searching, filtering, anchor, onSearch, onFilter }: {
+  searching: boolean;
+  filtering: boolean;
+  anchor: HTMLElement;
+  onSearch: () => void;
+  onFilter: (anchor: HTMLElement) => void;
+}): HoldAction[] {
+  return [
+    { id: "search", label: searching ? "Close search" : "Search in here", icon: searching ? <IconClose size={18} /> : <IconSearch size={18} />, run: onSearch },
+    { id: "filter", label: filtering ? "Filter · on" : "Filter", icon: <IconFilter size={18} />, run: () => onFilter(anchor) },
+    "sep",
+  ];
+}
+
+/** Room a centred title gets with the full tools beside it: the header less both 112px sides, their gaps and the title's padding. */
+const FULL_SIDES = 2 * 112 + 2 * 6 + 24;
+
+/**
+ * Whether the title would be cut short with search, filter and "…" beside it.
+ * Small phones and long names fold the tools into "…" so the name can be read.
+ * Measured against the full layout, so folding never flips it back.
+ */
+export function useTightHeader(head: RefObject<HTMLElement | null>, title: RefObject<HTMLElement | null>, text: string) {
+  const [tight, setTight] = useState(false);
+  useLayoutEffect(() => {
+    const h = head.current;
+    const t = title.current;
+    if (!h || !t) return;
+    const check = () => setTight(t.scrollWidth > h.clientWidth - FULL_SIDES);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(h);
+    return () => ro.disconnect();
+  }, [head, title, text]);
+  return tight;
 }
 
 /** A field under the header that searches only what's in here; Cancel puts the page back. */

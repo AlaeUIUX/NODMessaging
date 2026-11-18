@@ -38,17 +38,125 @@ export type Week = {
   sections: Section[];
 };
 
-const shot = (name: string, alt: string): Media => ({ kind: "image", src: `/changelog/${name}.webp`, alt, frame: "device" });
+const shot = (name: string, alt: string, label?: string): Media => ({ kind: "image", src: `/changelog/${name}.webp`, alt, frame: "device", label });
 const rec = (name: string, alt: string, label?: string): Media => ({ kind: "video", src: `/changelog/${name}.mp4`, poster: `/changelog/${name}.webp`, alt, frame: "device", label });
 const clip = (name: string, alt: string): Media => ({ kind: "video", src: `/updates/${name}.mp4`, poster: `/updates/${name}.webp`, alt, frame: "wide" });
 
 export const WEEKS: Week[] = [
   {
+    slug: "2026-11-16",
+    n: 9,
+    from: "2026-11-16",
+    to: "2026-11-22",
+    open: true,
+    title: "Explore you can look through",
+    summary: [
+      "Explore is now a wall of pictures you browse, like Pinterest: collections are the main thing, each opens as its own page with no banner, and anything can be looked at closely without saving it. Saving is one tap, into the collection Mind suggests.",
+      "Each kind of thing looks like itself: a book as a book, a place with its photo, a link with where it goes, and flashcards you can flip on the wall. Mind gets Related on Explore under your collections, and this week also closes most of Vanessa's Explore and Mind gaps: sending from Mind in a chat, Skip in Sort, access requests, editing an item's words and video from your phone.",
+    ],
+    people: ["Alae"],
+    cover: [shot("explore-wall", "Explore's For you: On set: small crews as a large picture with two beside it, then a wall of drone shots in two columns.")],
+    sections: [
+      {
+        id: "wall",
+        title: "One wall to look through",
+        text: [
+          "For you is one wall of pictures in two columns, each at its own shape. Under every picture: the collection it's from and the face of the person who made it.",
+          "Every few rows a whole collection shows up: its best picture large, two more beside it and how many more it holds. Your topics sit first in the chips; Groups and Friends have their own chips, out of the wall.",
+        ],
+        media: [shot("explore-wall", "The For you wall with a collection cover at the top.")],
+        try: "Explore › For you, and scroll.",
+      },
+      {
+        id: "interests",
+        title: "Start from what you're into",
+        text: [
+          "The first time you open Explore it asks what you're into. One topic is enough; the wall starts there and learns from what you save. Skip leaves it to what's in your Mind.",
+        ],
+        media: [shot("explore-interests", "What are you into? with Cinematography and Photography picked.")],
+        try: "open Explore for the first time on a new account.",
+      },
+      {
+        id: "collection",
+        title: "A collection is its own page",
+        text: [
+          "No banner: the collection is the brand. Its name big and centred, who made it, how many people saved it, what it's about and Follow. Then collections like it, tags to narrow it down, and everything in it as a wall.",
+          "A bar at the bottom saves the whole collection to your Mind, jumps to similar ones, or shares it.",
+        ],
+        media: [shot("explore-collection", "On set: small crews, with Follow Jonas, related collections, its tags and the wall.")],
+        try: "tap any collection's name on Explore.",
+      },
+      {
+        id: "thing",
+        title: "Up close, then more like it",
+        text: [
+          "Tap a picture to see it as big as it gets, who saved it and where it's from. One big Save puts it in the collection Mind suggests, with a toast to Change it. Under it, More like this: another wall, so one picture leads to many.",
+          "Hold any picture for Open, Save, Save to… and the collection it's from.",
+        ],
+        media: [shot("explore-thing", "A drone photo up close, just saved to Trip ideas, with Change in the toast.")],
+        try: "tap a picture, then Save.",
+      },
+      {
+        id: "kinds",
+        title: "Each kind looks like itself",
+        text: [
+          "A book stands on its own as it does in Mind, cover with a spine and a shadow, its title and author under it. A place shows a photo of it and where it is; its own page adds the map. A link shows the site's mark, the title and where it goes.",
+          "Notes read as posters, big words on the collection's colour. Flashcards have Flip, which turns the card over right on the wall to show the answer.",
+          "Every card is only as tall as what's in it; only a photo stretches, cropping a little, to end a row of two columns evenly.",
+        ],
+        media: [
+          shot("explore-places", "Vienna coffee houses: Café Sperl, Café Hawelka and Café Central with photos and where they are.", "Places"),
+          shot("explore-books", "Design systems reading list: books standing on their own, links with their sites.", "Books and links"),
+          shot("explore-cards", "German for travellers: flashcards with Flip, one turned over to its answer.", "Flashcards"),
+        ],
+        try: "search Explore for coffee houses, reading list or travellers, and tap Flip.",
+      },
+      {
+        id: "creators",
+        title: "People who publish",
+        text: [
+          "Tap a name to see someone's page: their collections, how many follow them, and Follow. Following puts their collections first in For you. Three creators publish film and photo collections in the demo: Maya Chen, Jonas Brandt and Sofia Lima.",
+        ],
+        try: "tap Jonas Brandt under On set: small crews.",
+      },
+      {
+        id: "mind",
+        title: "Related on Explore, and topics when publishing",
+        text: [
+          "Under each of your collections in Mind, Related on Explore shows public collections like it; a tap opens one on Explore.",
+          "Publishing to Explore now asks for a line about the collection, and where it shows: up to three topics, guessed from what's in it.",
+        ],
+        media: [
+          shot("explore-related", "Related on Explore under the German collection.", "In Mind"),
+          shot("explore-publish", "The Publish to Explore sheet with a description and topics.", "Publishing"),
+        ],
+        try: "Mind › German, scroll to the end; then ⋯ › Publish to Explore.",
+      },
+      {
+        id: "from-mind",
+        title: "Send from Mind in a chat",
+        text: [
+          "A chat's + sheet has From Mind: send a whole collection or one thing without leaving the chat. The picker searches your Mind, narrows things by collection, and offers to give the chat access as it sends.",
+        ],
+        try: "open a chat › + › From Mind.",
+      },
+      {
+        id: "mind-gaps",
+        title: "Smaller answers to Vanessa's gaps",
+        text: [
+          "Sort has Skip, for something you can't place yet: it slides aside and waits for next time. On small phones a long collection name keeps its room, and search and filter fold into ⋯.",
+          "When someone asks for access to something of yours, a notification says who and what; it opens the share sheet with Decline and Allow. Tapping a thing in Mind shows a Details group where its words can be changed. The Video form takes a video from your phone, up to 200 MB, with a ring you can tap to cancel the upload.",
+          "On Explore, friends' activity says \"just now\", \"5m\" or \"2h\", a group with more than two of your friends says \"Reema, Charles and 2 others are here\", and a group's sheet lists its channels before you join.",
+        ],
+        try: "Mind › Sort; Mind › + › Video; Explore › Groups.",
+      },
+    ],
+  },
+  {
     slug: "2026-11-09",
     n: 8,
     from: "2026-11-09",
     to: "2026-11-15",
-    open: true,
     title: "A chat list that moves like iOS",
     summary: [
       "The chat list now works the way WhatsApp's does: drafts in the row, previews that say what a message is, swipes, an Archive, a hold-to-peek menu, Favourites and lists of your own.",

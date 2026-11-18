@@ -4,11 +4,11 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Emoji } from "@/lib/chat/emoji";
 import { isIsbnQuery } from "@/lib/chat/links";
 import { findBooks, SOURCE_LABEL, type BookHit } from "@/lib/chat/lookup";
-import { MAX_ATTACHMENT_BYTES } from "@/lib/chat/media";
+import { MAX_ATTACHMENT_BYTES, MAX_VIDEO_BYTES } from "@/lib/chat/media";
 import { allCurrencies, currencyFlag, currencyMatches, currencyName, recentCurrencies } from "@/lib/chat/money";
 import { CURRENCIES } from "@/lib/chat/receipt";
 import FileTypeIcon from "./FileTypeIcon";
-import { IconCheck, IconChevronDown, IconClose, IconFileAdd, IconImageAdd, IconPaste, IconPlay, IconSearch } from "./Icons";
+import { IconCamera, IconCheck, IconChevronDown, IconClose, IconFileAdd, IconImageAdd, IconPaste, IconPlay, IconSearch, IconVideo } from "./Icons";
 import { BookSkeleton, RetryLine } from "./Loading";
 import { fileSize } from "./Media";
 import { toneFor } from "./MindBlocks";
@@ -229,6 +229,109 @@ export function FilePicker({ file, onFile }: { file: File | null; onFile: (file:
         </button>
       )}
       {tooBig && <p className={f.hint} role="alert">That file is over 100 MB. Pick a smaller one.</p>}
+    </>
+  );
+}
+
+/* ===========================================================================
+   A video from the phone
+   =========================================================================== */
+
+/** A video picked or recorded on the phone, read for its length and a first-frame still. */
+export type PhoneClip = { file: File; url: string; duration?: string; still?: string };
+
+const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+
+/** Its length and a still (a frame just in), as the card will show them. Gives up after a few seconds. */
+function readClip(file: File): Promise<PhoneClip> {
+  const url = URL.createObjectURL(file);
+  return new Promise((resolve) => {
+    const v = document.createElement("video");
+    let duration: string | undefined;
+    const done = (still?: string) => { clearTimeout(timer); resolve({ file, url, duration, still }); };
+    const timer = setTimeout(() => done(), 4000);
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = "metadata";
+    v.onloadedmetadata = () => {
+      if (Number.isFinite(v.duration)) duration = clock(v.duration);
+      v.currentTime = Math.min(0.5, (v.duration || 1) / 4);
+    };
+    v.onseeked = () => {
+      try {
+        const w = Math.min(640, v.videoWidth || 640);
+        const h = Math.round(w * ((v.videoHeight || 360) / (v.videoWidth || 640)));
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        c.getContext("2d")?.drawImage(v, 0, 0, w, h);
+        done(c.toDataURL("image/jpeg", 0.72));
+      } catch { done(); }
+    };
+    v.onerror = () => done();
+    v.src = url;
+  });
+}
+
+/**
+ * A video from the phone: choose one from the library or record one. It shows
+ * as it will play, with its length and size, before it's added. Up to 200 MB:
+ * a bigger one is turned away with what it weighs.
+ */
+export function VideoPicker({ clip, onClip, before }: {
+  clip: PhoneClip | null;
+  onClip: (clip: PhoneClip | null) => void;
+  /** Runs first, like the OS asking for access to Photos; false stops there. */
+  before?: (from: HTMLElement) => Promise<boolean>;
+}) {
+  const library = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
+  const [tooBig, setTooBig] = useState<number | null>(null);
+  const [reading, setReading] = useState(false);
+  const take = async (x: File) => {
+    if (!x.type.startsWith("video/")) return;
+    if (x.size > MAX_VIDEO_BYTES) { setTooBig(x.size); onClip(null); return; }
+    setTooBig(null);
+    setReading(true);
+    onClip(await readClip(x));
+    setReading(false);
+  };
+  const drop = useDrop((x) => { void take(x); });
+  const choose = async (from: HTMLElement) => {
+    if (before && !(await before(from))) return;
+    library.current?.click();
+  };
+  const pick = (e: React.ChangeEvent<HTMLInputElement>) => { const x = e.target.files?.[0]; if (x) void take(x); e.target.value = ""; };
+  return (
+    <>
+      <input ref={library} type="file" accept="video/*" hidden onChange={pick} />
+      <input ref={camera} type="file" accept="video/*" capture="environment" hidden onChange={pick} />
+      {clip ? (
+        <div className={f.clip} {...drop.handlers}>
+          <video src={clip.url} poster={clip.still} controls playsInline muted preload="metadata" aria-label="The video you picked" />
+          <span className={f.clipFacts}>
+            <span>{[clip.duration, fileSize(clip.file.size)].filter(Boolean).join(" · ")}</span>
+            <button type="button" className={f.pill} onClick={(e) => { void choose(e.currentTarget); }}>Replace</button>
+            <button type="button" className={f.round} onClick={() => onClip(null)} aria-label="Remove the video"><IconClose size={13} /></button>
+          </span>
+        </div>
+      ) : (
+        <div className={f.clipPicks}>
+          <button type="button" className={`${f.pick} ${drop.over ? f.pickOver : ""}`} onClick={(e) => { void choose(e.currentTarget); }} {...drop.handlers} disabled={reading}>
+            <span className={f.pickIcon}><IconVideo size={24} /></span>
+            <b>{reading ? "Reading the video…" : "Choose a video"}</b>
+            <small>From your library · up to 200 MB</small>
+          </button>
+          <button type="button" className={f.pick} onClick={() => camera.current?.click()} disabled={reading}>
+            <span className={f.pickIcon}><IconCamera size={24} /></span>
+            <b>Record one</b>
+            <small>Opens the camera</small>
+          </button>
+        </div>
+      )}
+      {tooBig !== null && (
+        <p className={f.hint} role="alert">Too big to add: a video can be up to 200 MB, and this one is {fileSize(tooBig)}. Trim it, or pick a shorter one.</p>
+      )}
     </>
   );
 }

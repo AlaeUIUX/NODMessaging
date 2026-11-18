@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import Link from "next/link";
 import { getForceFailure, getForceNetFailure, getSimulatedOffline, setForceFailure, setForceNetFailure, setSimulatedOffline } from "@/lib/chat/api";
 import { getPrefs, resetDemoData, THEME_EVENT, useAccounts, type ThemePref } from "@/lib/chat/account";
+import { openOnExplore } from "@/lib/chat/exploreFlags";
 import { groupInfo } from "@/lib/chat/groups";
 import { mindOf } from "@/lib/chat/mind";
 import { effectiveRule, isQuiet, readMutes } from "@/lib/chat/mutes";
@@ -19,7 +20,7 @@ import Onboarding from "./Onboarding";
 import { OperationOverlays } from "./operation/Overlays";
 import { CompanionLink, PersonaSwitcher, personGroups, SecondWindowMenu } from "./operation/Personas";
 import { OperationSimulator } from "./operation/Simulator";
-import { SharedLink } from "./Share";
+import { AccessRequestWatcher, MIND_CARD_STYLES, setMindCardStyle, SharedLink, ShareSettingsLink, useMindCardStyle } from "./Share";
 import StageField from "./StageField";
 import { getPermission } from "./ui";
 import styles from "./chat.module.css";
@@ -79,6 +80,8 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
   const [offline, setOffline] = useState(getSimulatedOffline());
   // Everyone in the demo (29 people), by their crew at EWC.
   const people = personGroups(state.data.chats);
+  // How a Mind collection or item shows in a chat: four styles to compare.
+  const mindCard = useMindCardStyle();
 
   return (
     <details className={styles.dev}>
@@ -127,6 +130,16 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
             ))}
           </div>
         </div>
+        <div>
+          <span className={styles.devLabel}>Mind card in chat</span>
+          <div className={styles.devIds}>
+            {MIND_CARD_STYLES.map((m) => (
+              <button key={m.id} className={mindCard === m.id ? styles.devOn : undefined} aria-pressed={mindCard === m.id} onClick={() => setMindCardStyle(m.id)}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <label className={styles.devToggle}>
           <input
             type="checkbox"
@@ -162,7 +175,7 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
   );
 }
 
-interface Banner { id: number; chatId: string; title: string; body: string }
+interface Banner { id: number; chatId: string; title: string; body: string; /** Opens this share's settings instead of a chat. */ share?: ShareRef }
 
 /**
  * Fires reminders when they come due, in whichever chat they live (and the
@@ -326,6 +339,13 @@ function Device() {
     showBanner({ ...b, id: Date.now() + bannerSeq.current });
   }, [showBanner]);
 
+  // Someone asked for access to something in your Mind: a notification, if they're allowed.
+  const accessBanner = useCallback((r: { share: ShareRef; title: string; body: string }) => {
+    if (getPermission("notifications") !== "granted") return;
+    bannerSeq.current += 1;
+    flash({ id: Date.now() + bannerSeq.current, chatId: "", title: r.title, body: getPrefs(me).previews ? r.body : "Tap to answer", share: r.share });
+  }, [flash, me]);
+
   const show = useCallback((chat: Chat, messageId?: string) => {
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
     setLeaving(false);
@@ -448,6 +468,8 @@ function Device() {
 
   // A share link from Mind (nod.app/m/<token>, here ?mind=<token>) opens what it points at, or asks for access.
   const [linkShare, setLinkShare] = useState<ShareRef | null>(null);
+  /** Your own share's settings, opened from an access-request notification. */
+  const [requestShare, setRequestShare] = useState<ShareRef | null>(null);
   const shareOpened = useRef(false);
   useEffect(() => {
     if (shareOpened.current || !state.hydrated || !signedIn) return;
@@ -456,6 +478,17 @@ function Device() {
     shareOpened.current = true;
     dropParam("mind");
     setTimeout(() => setLinkShare(ref), 300);
+  }, [state.hydrated, signedIn]);
+
+  // A link to a public collection (nod.app/e/<id>, here ?explore=<id>) opens it on Explore.
+  const exploreOpened = useRef(false);
+  useEffect(() => {
+    if (exploreOpened.current || !state.hydrated || !signedIn) return;
+    const id = new URLSearchParams(window.location.search).get("explore");
+    if (!id) return;
+    exploreOpened.current = true;
+    dropParam("explore");
+    setTimeout(() => openOnExplore(id), 300);
   }, [state.hydrated, signedIn]);
 
   const back = (immediate?: boolean) => {
@@ -521,7 +554,9 @@ function Device() {
                 />
               )}
               {linkShare && <SharedLink key={shareToken(linkShare)} share={linkShare} onClose={() => setLinkShare(null)} />}
+              {requestShare && <ShareSettingsLink key={shareToken(requestShare)} share={requestShare} onClose={() => setRequestShare(null)} />}
               <ReminderWatcher onBanner={showBanner} />
+              <AccessRequestWatcher key={`req-${me}`} me={me} onRequest={accessBanner} />
               {/* Live Operations: the critical takeover and move prompts for this person, and the venue's own life. */}
               <OperationOverlays key={`op-${me}`} onBanner={opBanner} onOpenChat={openChatById} />
               <OperationSimulator />
@@ -534,6 +569,7 @@ function Device() {
               onClick={() => {
                 const chat = state.data.chats.find((c) => c.id === banner.chatId);
                 setBanner(null);
+                if (banner.share) { setRequestShare(banner.share); return; }
                 if (chat && chat.id !== openChat?.id) open(chat);
               }}
             >

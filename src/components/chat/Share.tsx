@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { chatIdentity, initials } from "@/lib/chat/avatar";
 import { Emoji } from "@/lib/chat/emoji";
 import { collectionItems, isUnassigned, patchBlock, startShareDraft, UNASSIGNED, useMind, type Block, type ShareRole, type Sharing } from "@/lib/chat/mind";
@@ -13,7 +13,7 @@ import {
 import { useChat, userById } from "@/lib/chat/store";
 import type { Card, Chat, Message } from "@/lib/chat/types";
 import Avatar from "./Avatar";
-import { IconBack, IconCheck, IconClose, IconCopy, IconEdit, IconFilter, IconGlobe, IconLink, IconMail, IconPadlock, IconMessage, IconSearch, IconShare } from "./Icons";
+import { IconBack, IconCheck, IconChevron, IconClose, IconCopy, IconEdit, IconFilter, IconGlobe, IconLink, IconMail, IconPadlock, IconMessage, IconSearch, IconShare } from "./Icons";
 import { BlockEditor, KIND_EMOJI, MindEditor, toggleItem } from "./Mind";
 import { LoadFailed, SharedSkeleton, useFirstLoad } from "./Loading";
 import { BlockView, KIND_LABEL, toneFor } from "./MindBlocks";
@@ -22,6 +22,7 @@ import { ConfirmAlert, Segmented, Sheet, Toggle, useChatUi } from "./ui";
 import styles from "./chat.module.css";
 import x from "./explore.module.css";
 import sh from "./share.module.css";
+import { useGlide } from "./useGlide";
 
 /**
  * Sharing from Mind, Drive-style: the share sheet (people, each who can view
@@ -346,6 +347,190 @@ export function SendSheet({ share, onClose, onSent }: { share: ShareRef; onClose
 }
 
 /* ===========================================================================
+   Sending from a chat: the + sheet's Mind section picks a collection or an item
+   =========================================================================== */
+
+/**
+ * Your Mind from inside a chat, so sending something doesn't mean leaving for
+ * Mind. "Collection" lists your collections; "Item" lists everything in them,
+ * newest first, narrowed by a collection chip or a search. Anyone in the chat
+ * who can't open it yet is given access (view or edit) as it's sent.
+ */
+export function MindPickSheet({ chatId, mode, onSend, onClose }: {
+  chatId: string;
+  mode: "collection" | "item";
+  onSend: (card: Card, summary: string) => void;
+  onClose: () => void;
+}) {
+  const { me, state } = useChat();
+  const { mind } = useMind(me);
+  const [q, setQ] = useState("");
+  const [inCol, setInCol] = useState<string | null>(null);
+  const [pick, setPick] = useState<ShareRef | null>(null);
+  const [role, setRole] = useState<ShareRole>("view");
+  const chipsRef = useRef<HTMLDivElement>(null);
+  useGlide(chipsRef, [mode]);
+  const chat = state.data.chats.find((c) => c.id === chatId);
+  if (!mind || !chat) return null;
+  const query = q.trim().toLowerCase();
+  const cols = mind.collections.filter((c) => !isUnassigned(c));
+  const shownCols = cols.filter((c) => !query || c.name.toLowerCase().includes(query));
+  const items = cols
+    .filter((c) => !inCol || c.id === inCol)
+    .flatMap((c) => collectionItems(mind, c).filter((b) => b.kind !== "chat").map((b) => ({ b, c })))
+    .filter(({ b }) => !query || `${b.title} ${b.body ?? ""}`.toLowerCase().includes(query))
+    .sort((x, y) => y.b.createdAt - x.b.createdAt)
+    .slice(0, 80);
+  const s = pick ? resolveShare(mind, pick) : null;
+  const lacking = s && pick ? chat.memberIds.filter((id) => id !== me && !accessOf(pick, s, id)) : [];
+  const label = chatIdentity(chat, me, userById).label;
+  const who = chat.kind === "dm" ? label.split(" ")[0] : "everyone here";
+
+  const go = () => {
+    if (!pick || !s) return;
+    if (lacking.length) grant(pick, lacking, role);
+    const what = describe(s);
+    const card: MindCard = { type: "mind", owner: me, collectionId: s.collection.id, blockId: s.block?.id, title: what.title, emoji: what.emoji };
+    onSend(card, `${what.kind}: ${what.title}`);
+  };
+  const same = (r: ShareRef) => !!pick && pick.collectionId === r.collectionId && pick.blockId === r.blockId;
+  const choose = (r: ShareRef) => setPick(same(r) ? null : r);
+
+  return (
+    <Sheet title={mode === "collection" ? "Send a collection" : "Send from Mind"} onClose={onClose} action={{ label: "Send", disabled: !pick, onClick: go }}>
+      <div className={sh.field}>
+        <IconSearch size={18} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={mode === "collection" ? "Search your collections" : "Search your Mind"} aria-label="Search your Mind" autoComplete="off" />
+      </div>
+      {mode === "item" && (
+        <div ref={chipsRef} className={sh.pickChips} role="group" aria-label="Collection">
+          <button type="button" className={`${styles.chip} ${!inCol ? styles.chipOn : ""}`} onClick={() => setInCol(null)}>All</button>
+          {cols.map((c) => (
+            <button key={c.id} type="button" className={`${styles.chip} ${inCol === c.id ? styles.chipOn : ""}`} onClick={() => setInCol(inCol === c.id ? null : c.id)}>
+              <Emoji char={c.emoji} /> {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className={sh.list} role="radiogroup" aria-label={mode === "collection" ? "Collections" : "Items"}>
+        {mode === "collection" ? shownCols.map((c) => {
+          const r: ShareRef = { owner: me, collectionId: c.id };
+          const on = same(r);
+          const n = collectionItems(mind, c).length;
+          return (
+            <button key={c.id} type="button" role="radio" aria-checked={on} className={`${sh.row} ${on ? sh.rowOn : ""}`} onClick={() => choose(r)}>
+              <span className={sh.whatIcon} style={{ ["--tone" as string]: c.tone }}><Emoji char={c.emoji} /></span>
+              <span className={sh.rowText}><b>{c.name}</b><small>{n} {n === 1 ? "item" : "items"}{c.published ? " · On Explore" : ""}</small></span>
+              <span className={`${sh.check} ${on ? sh.checkOn : ""}`} aria-hidden="true">{on && <IconCheck size={12} />}</span>
+            </button>
+          );
+        }) : items.map(({ b, c }) => {
+          const r: ShareRef = { owner: me, collectionId: c.id, blockId: b.id };
+          const on = same(r);
+          return (
+            <button key={b.id} type="button" role="radio" aria-checked={on} className={`${sh.row} ${sh.pickItem} ${on ? sh.rowOn : ""}`} onClick={() => choose(r)}>
+              <span className={sh.pickBlock}><BlockView block={b} shape="row" /></span>
+              {!inCol && <small className={sh.pickWhere}><Emoji char={c.emoji} /></small>}
+              <span className={`${sh.check} ${on ? sh.checkOn : ""}`} aria-hidden="true">{on && <IconCheck size={12} />}</span>
+            </button>
+          );
+        })}
+        {(mode === "collection" ? !shownCols.length : !items.length) && (
+          <p className={sh.note}>{query ? `Nothing in your Mind matches “${q.trim()}”.` : "Nothing here yet."}</p>
+        )}
+      </div>
+      {pick && s && (lacking.length > 0 ? (
+        <div className={sh.access}>
+          <div className={sh.accessLine}>
+            <span className={sh.accessIcon}><IconPadlock size={17} /></span>
+            <span className={sh.rowText}><b>Give {who} access</b><small>Without it, they’d only see a request button.</small></span>
+          </div>
+          <Segmented value={role} options={ROLES} onChange={setRole} />
+        </div>
+      ) : (
+        <p className={sh.note}>{chat.kind === "dm" ? `${label.split(" ")[0]} can already open it.` : "Everyone in this chat can already open it."}</p>
+      ))}
+    </Sheet>
+  );
+}
+
+/* ===========================================================================
+   How the card looks in a chat: four styles to compare (Developer › Mind card)
+   =========================================================================== */
+
+export type MindCardStyle = "card" | "cover" | "compact" | "shelf";
+export const MIND_CARD_STYLES: { id: MindCardStyle; label: string }[] = [
+  { id: "card", label: "Card" },
+  { id: "cover", label: "Cover" },
+  { id: "compact", label: "Compact" },
+  { id: "shelf", label: "Shelf" },
+];
+const STYLE_KEY = "nod.dev.mindCard";
+const STYLE_EVENT = "nod:mind-card-style";
+const readStyle = (): MindCardStyle => {
+  try {
+    const v = localStorage.getItem(STYLE_KEY);
+    return MIND_CARD_STYLES.some((x) => x.id === v) ? (v as MindCardStyle) : "card";
+  } catch { return "card"; }
+};
+const onStyle = (fn: () => void) => {
+  window.addEventListener(STYLE_EVENT, fn);
+  window.addEventListener("storage", fn);
+  return () => { window.removeEventListener(STYLE_EVENT, fn); window.removeEventListener("storage", fn); };
+};
+export const useMindCardStyle = () => useSyncExternalStore(onStyle, readStyle, () => "card" as MindCardStyle);
+export function setMindCardStyle(v: MindCardStyle) {
+  try { localStorage.setItem(STYLE_KEY, v); } catch { /* lasts this visit */ }
+  window.dispatchEvent(new Event(STYLE_EVENT));
+}
+
+/** A collection's cover: up to four of its pictures (or kinds) in a grid, else its icon on its colour. */
+function Mosaic({ items, emoji }: { items: Block[]; emoji: string }) {
+  const pics = items.filter(pictured);
+  const kinds = new Set<string>();
+  const others = items.filter((b) => !pictured(b) && !kinds.has(b.kind) && kinds.add(b.kind));
+  const tiles = [...pics, ...others].slice(0, 4);
+  if (tiles.length < 2) return <span className={sh.coverEmoji}><Emoji char={emoji} /></span>;
+  return (
+    <span className={`${sh.mosaic} ${tiles.length === 3 ? sh.mosaic3 : ""}`} aria-hidden="true">
+      {tiles.map((b) => (
+        <span key={b.id} className={sh.peekTile} style={{ ["--c" as string]: toneFor(b.title) }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {pictured(b) ? <img src={b.image} alt="" loading="lazy" /> : <Emoji char={KIND_EMOJI[b.kind] ?? "📌"} />}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** The Shelf style: the collection's things in a row you scroll sideways, each opening on its own. */
+function ShelfRow({ items, onItem, onMore }: { items: Block[]; onItem?: (b: Block) => void; onMore?: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useGlide(ref, [items.length]);
+  const shown = items.slice(0, 8);
+  return (
+    <div ref={ref} className={sh.shelf} onPointerDown={(e) => e.stopPropagation()}>
+      {shown.map((b) => (
+        <button key={b.id} type="button" className={sh.shelfItem} onClick={() => onItem?.(b)} tabIndex={onItem ? 0 : -1}>
+          <span className={sh.shelfPic} style={{ ["--c" as string]: toneFor(b.title) }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {pictured(b) ? <img src={b.image} alt="" loading="lazy" /> : <Emoji char={KIND_EMOJI[b.kind] ?? "📌"} />}
+          </span>
+          <span className={sh.shelfTitle}>{b.title || KIND_LABEL[b.kind]}</span>
+          <small>{KIND_LABEL[b.kind]}</small>
+        </button>
+      ))}
+      {items.length > shown.length && (
+        <button type="button" className={`${sh.shelfItem} ${sh.shelfMore}`} onClick={onMore} tabIndex={onMore ? 0 : -1}>
+          <span className={sh.shelfPic}>+{items.length - shown.length}</span>
+          <span className={sh.shelfTitle}>See all</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ===========================================================================
    The card in a chat
    =========================================================================== */
 
@@ -379,6 +564,7 @@ function Peek({ s }: { s: Shared }) {
  * Without access it says so and offers to ask; once it's gone it says that.
  */
 export function MindShareCard({ card, interactive }: { message: Message; card: MindCard; interactive: boolean }) {
+  const style = useMindCardStyle();
   const { me } = useChat();
   const ui = useChatUi();
   const { mind } = useMind(card.owner);
@@ -444,6 +630,75 @@ export function MindShareCard({ card, interactive }: { message: Message; card: M
     );
   };
 
+  // An item of yours not shared on its own is still open to whoever has its collection: say so.
+  const ownAudience = audienceLabel(sharingOf(s), nameOf);
+  const viaCollection = s.block && ownAudience === "Only you" ? audienceLabel(sharingOf({ ...s, block: null }), nameOf) : null;
+  const roleText = owner ? (viaCollection && viaCollection !== "Only you" ? `${viaCollection}, in ${s.collection.name}` : ownAudience) : roleLabel(access);
+  const actions = interactive && (
+    <div className={sh.actions}>
+      <button className={`${styles.pillBtn} ${sh.primary}`} onClick={() => open()}>Open</button>
+      {access === "edit" && !s.block && <button className={styles.pillBtn} onClick={edit}><IconEdit size={14} /> Edit</button>}
+      {canCopy && (s.block
+        ? <button className={styles.pillBtn} onClick={() => open(true)}><IconCopy size={14} /> Save a copy</button>
+        : copied ? <span className={sh.waiting}><IconCheck size={13} /> In your Mind</span>
+        : <button className={styles.pillBtn} onClick={() => { const c = cloneCollection(ref, me); if (c) ui.toast(`A copy is in your Mind: ${c.emoji} ${c.name}`); }}><IconCopy size={14} /> Make a copy</button>)}
+      {owner && <button className={styles.pillBtn} onClick={settings}><IconShare size={14} /> Sharing</button>}
+    </div>
+  );
+  const items = s.block ? [] : collectionItems(s.mind, s.collection).filter((b) => b.kind !== "chat").sort((a, b) => b.createdAt - a.createdAt);
+  const tap = interactive
+    ? { role: "button", tabIndex: 0, onClick: () => open(), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter") open(); }, "aria-label": `Open ${what.title}` }
+    : {};
+
+  // Compact: one line, like a contact card. Tap opens it; copying is on its page.
+  if (style === "compact") {
+    return (
+      <div className={`${styles.card} ${sh.card} ${sh.compact}`} {...tap}>
+        <span className={`${sh.icon} ${sh.iconSmall}`} style={{ ["--tone" as string]: s.collection.tone }}><Emoji char={card.emoji} /></span>
+        <span className={sh.headText}>
+          <b className={styles.cardTitle}>{card.title}</b>
+          <small className={sh.compactSub}>{s.block ? `${what.kind} · ${what.meta}` : `Collection · ${what.meta}`}</small>
+          <small className={sh.compactFrom}>From {whose} Mind · {roleText}</small>
+        </span>
+        {interactive && <IconChevron size={16} />}
+      </div>
+    );
+  }
+
+  // Cover: the picture first, edge to edge, like a link preview; the words and buttons under it.
+  if (style === "cover") {
+    return (
+      <div className={`${styles.card} ${styles.cardFlush} ${sh.card} ${sh.coverCard}`}>
+        <div className={sh.cover} style={{ ["--tone" as string]: s.collection.tone }} {...tap}>
+          {s.block ? <span className={sh.coverItem}><BlockView block={s.block} shape="tile" /></span> : <Mosaic items={items} emoji={card.emoji} />}
+        </div>
+        <div className={`${styles.cardPad} ${sh.coverBody}`}>
+          <span className={sh.headText}>
+            <b className={styles.cardTitle}>{card.title}</b>
+            <span className={styles.cardSub}>{s.block ? `${what.kind} · ${what.meta}` : `Collection · ${what.meta}`} · From {whose} Mind</span>
+          </span>
+          {actions}
+        </div>
+      </div>
+    );
+  }
+
+  // Shelf: what's in the collection, in a row you can scroll through without opening it.
+  if (style === "shelf" && !s.block) {
+    const openItem = (b: Block) => ui.openSheet(<SharedItemSheet share={{ ...ref, blockId: b.id }} onClose={ui.closeSheet} onToast={ui.toast} />);
+    return (
+      <div className={`${styles.card} ${sh.card}`}>
+        {kicker}
+        {head(what.meta, s.collection.tone)}
+        {items.length > 0 && <ShelfRow items={items} onItem={interactive ? openItem : undefined} onMore={interactive ? () => open() : undefined} />}
+        <div className={sh.foot}>
+          <span className={`${sh.role} ${access === "edit" || owner ? sh.roleEdit : ""}`}>{roleText}</span>
+        </div>
+        {actions}
+      </div>
+    );
+  }
+
   return (
     <div className={`${styles.card} ${sh.card}`}>
       {kicker}
@@ -458,19 +713,9 @@ export function MindShareCard({ card, interactive }: { message: Message; card: M
         </>
       )}
       <div className={sh.foot}>
-        <span className={`${sh.role} ${access === "edit" || owner ? sh.roleEdit : ""}`}>{owner ? audienceLabel(sharingOf(s), nameOf) : roleLabel(access)}</span>
+        <span className={`${sh.role} ${access === "edit" || owner ? sh.roleEdit : ""}`}>{roleText}</span>
       </div>
-      {interactive && (
-        <div className={sh.actions}>
-          <button className={`${styles.pillBtn} ${sh.primary}`} onClick={() => open()}>Open</button>
-          {access === "edit" && !s.block && <button className={styles.pillBtn} onClick={edit}><IconEdit size={14} /> Edit</button>}
-          {canCopy && (s.block
-            ? <button className={styles.pillBtn} onClick={() => open(true)}><IconCopy size={14} /> Save a copy</button>
-            : copied ? <span className={sh.waiting}><IconCheck size={13} /> In your Mind</span>
-            : <button className={styles.pillBtn} onClick={() => { const c = cloneCollection(ref, me); if (c) ui.toast(`A copy is in your Mind: ${c.emoji} ${c.name}`); }}><IconCopy size={14} /> Make a copy</button>)}
-          {owner && <button className={styles.pillBtn} onClick={settings}><IconShare size={14} /> Sharing</button>}
-        </div>
-      )}
+      {actions}
     </div>
   );
 }
@@ -682,6 +927,54 @@ export function SharedItemSheet({ share, onClose, onToast, saving: startSaving =
  * on screen, with its own toast. It stays a moment after closing so a
  * "Saved to…" toast can finish.
  */
+/**
+ * Someone asked for access to something of yours: a notification names them
+ * and what they asked for. It watches your Mind (where requests land, from any
+ * tab) and only speaks of requests that arrive after it started.
+ */
+export function AccessRequestWatcher({ me, onRequest }: { me: string; onRequest: (r: { share: ShareRef; title: string; body: string }) => void }) {
+  const { mind } = useMind(me);
+  const seen = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!mind) return;
+    const now: { key: string; share: ShareRef; userId: string; role: ShareRole; what: string }[] = [];
+    for (const c of mind.collections) {
+      for (const r of c.sharing?.requests ?? []) now.push({ key: `${c.id}::${r.userId}:${r.role}`, share: { owner: me, collectionId: c.id }, userId: r.userId, role: r.role, what: `${c.emoji} ${c.name}` });
+      for (const id of c.items) {
+        const b = mind.blocks[id];
+        for (const r of b?.sharing?.requests ?? []) now.push({ key: `${c.id}:${id}:${r.userId}:${r.role}`, share: { owner: me, collectionId: c.id, blockId: id }, userId: r.userId, role: r.role, what: b.title || KIND_LABEL[b.kind] });
+      }
+    }
+    const first = seen.current === null;
+    const known = (seen.current ??= new Set());
+    for (const r of now) {
+      if (known.has(r.key)) continue;
+      known.add(r.key);
+      if (!first) onRequest({ share: r.share, title: `${shareName(r.userId).name} wants to ${r.role}`, body: `${r.what} · Tap to answer` });
+    }
+  }, [mind, me, onRequest]);
+  return null;
+}
+
+/** Your own share's settings, opened from a notification: who has it, and the request waiting at the top. */
+export function ShareSettingsLink({ share, onClose }: { share: ShareRef; onClose: () => void }) {
+  const [sending, setSending] = useState(false);
+  const [toast, setToast] = useState<{ text: string; id: number } | null>(null);
+  const flash = (text: string) => {
+    const id = Math.random();
+    setToast({ text, id });
+    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 2200);
+  };
+  return (
+    <>
+      {sending
+        ? <SendSheet share={share} onClose={onClose} onSent={(t) => { flash(t); setTimeout(onClose, 1200); }} />
+        : <ShareSheet share={share} onClose={onClose} onSend={() => setSending(true)} />}
+      {toast && <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${sh.linkToast}`} role="status">{toast.text}</div>}
+    </>
+  );
+}
+
 export function SharedLink({ share, onClose }: { share: ShareRef; onClose: () => void }) {
   const [shown, setShown] = useState(true);
   const [toast, setToast] = useState<{ text: string; id: number } | null>(null);
