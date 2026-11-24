@@ -26,7 +26,7 @@ import {
 import { useChat, userById } from "@/lib/chat/store";
 import type { Chat } from "@/lib/chat/types";
 import Avatar from "./Avatar";
-import { BlockView, KIND_LABEL, whenOf } from "./MindBlocks";
+import { BlockView, KIND_LABEL, SortFace, whenOf } from "./MindBlocks";
 import { DateField } from "./DatePicker";
 import { DragScroll } from "./Composer";
 import { LAND, LandingGlow, Poof, RECEIVE } from "./Landing";
@@ -2956,7 +2956,7 @@ function SortSheet({ ctx, onDone }: { ctx: Ctx; onDone?: () => void }) {
                     aria-hidden={depth !== 0 && !leaving ? true : undefined}
                     aria-roledescription={depth === 0 ? "card" : undefined}
                   >
-                    <BlockView block={item} shape="detail" />
+                    <SortFace block={item} />
                   </div>
                 );
               })}

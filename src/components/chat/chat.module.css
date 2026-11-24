@@ -4384,6 +4384,9 @@ figure.mb { margin: 0; }
 .mbk_flashcard { padding: 0 !important; background: none; box-shadow: none; overflow: visible; perspective: 800px; cursor: pointer; }
 .mbCardInner { position: relative; display: grid; width: 100%; transform-style: preserve-3d; transition: transform var(--t-slow) var(--ease-out); }
 .mbFlipped .mbCardInner { transform: rotateY(180deg); }
+.mbFlipHint { font: var(--t-caption1); color: var(--ink-3); }
+.mbBack .mbFlipHint { color: inherit; opacity: .7; }
+
 .mbFace {
   grid-area: 1 / 1;
   position: relative;
@@ -5364,3 +5367,106 @@ mark.searchMark { padding: 0 1px; border-radius: 3px; background: color-mix(in s
 
 .devGroups { display: grid; gap: 8px; max-height: 236px; overflow-y: auto; overscroll-behavior: contain; margin-right: -8px; padding-right: 8px; }
 .devGroupLabel { display: block; margin: 0 0 4px; font: var(--t-caption2); font-weight: var(--w-control); color: var(--ink-3); }
+
+/* A form sheet: plain white, no glass, so fields and switches read clearly. */
+/* Off switches need more than a whisper of grey on white. */
+.bsheetSolid .toggle[aria-checked="false"] { background: color-mix(in srgb, var(--ink) 18%, transparent); }
+.bsheetSolid { background: var(--surface); box-shadow: 0 -1px 0 var(--line), 0 -12px 40px -12px rgba(28, 25, 23, .18); }
+
+/* ---- More options: the rarely used choices, folded under one row that says what's set ---- */
+.moreOptions { margin-top: 8px; border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.moreOptionsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.moreOptionsRow > span { display: grid; gap: 1px; min-width: 0; }
+.moreOptionsRow b { font: var(--t-body); font-weight: var(--w-emph); }
+.moreOptionsRow small { font: var(--t-footnote); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.moreOptionsRow > svg { flex-shrink: 0; color: var(--ink-3); transition: transform var(--t-mid) var(--ease-out); }
+.moreOptionsOpen .moreOptionsRow > svg { transform: rotate(180deg); }
+.moreOptionsBody { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--t-mid) var(--ease-out); }
+.moreOptionsOpen .moreOptionsBody { grid-template-rows: 1fr; }
+.moreOptionsBody > div { min-height: 0; overflow: hidden; padding: 0 14px; }
+.moreOptionsOpen .moreOptionsBody > div { padding-bottom: 12px; }
+.moreOptionsBody .settingRows { margin-top: 0; }
+
+/* ---- Event: one native date-and-time picker, the way iOS shows a date ---- */
+.whenPicker { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 6px 8px 6px 16px; border-radius: var(--r-md); background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink); font: var(--t-body); }
+.whenPicker input {
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink);
+  font: var(--t-body);
+  font-variant-numeric: tabular-nums;
+  color-scheme: light dark;
+}
+.whenPicker input { outline: none; }
+.whenPicker input:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.whenSays { margin: 6px 2px 0; font: var(--t-footnote); color: var(--ink-3); }
+
+/* ---- Sort's pile: a face per kind, made for one card size ---- */
+.sf { position: relative; display: flex; gap: 14px; height: 100%; padding: 18px; color: var(--ink); text-align: left; box-sizing: border-box; overflow: hidden; margin: 0; }
+.sfText { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sfText small { font: var(--t-footnote); color: var(--ink-3); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sfTitle { font: var(--t-title3); font-weight: var(--w-emph); letter-spacing: -.01em; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; text-wrap: balance; }
+.sfFacts { font-variant-numeric: tabular-nums; }
+
+/* A book: its cover standing at full height, its words beside it. */
+.sfBook { align-items: center; }
+.sfBook .sfCover { height: 100%; width: auto; flex-shrink: 0; }
+.sfBook .sfText { flex: 1; gap: 4px; }
+.sfBook .mbShelf { margin-top: 6px; }
+
+/* A photo or a video: the picture is the card; its name sits on a shade at the bottom. */
+.sfMedia { padding: 0; background: var(--c, var(--fill)); align-items: center; justify-content: center; }
+.sfMedia > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.sfMedia > .mbPlay { position: relative; z-index: 1; width: 48px; height: 48px; }
+.sfCaption { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; display: grid; gap: 2px; padding: 36px 16px 14px; background: linear-gradient(transparent, rgba(0, 0, 0, .62)); color: #fff; }
+.sfCaption b { font: var(--t-headline); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sfCaption small { font: var(--t-footnote); color: rgba(255, 255, 255, .82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* A link: its picture or the site's letter on top, then what it is and where it goes. */
+.sfLink { flex-direction: column; padding: 0; gap: 0; }
+.sfSite { flex: 1; min-height: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--c) 16%, var(--surface)); overflow: hidden; }
+.sfSite img { width: 100%; height: 100%; object-fit: cover; }
+.sfSite i { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 16px; background: var(--c); color: #fff; font: var(--t-title2); font-style: normal; font-weight: var(--w-emph); }
+.sfLink .sfText { padding: 14px 18px 16px; }
+.sfLink .sfTitle { font: var(--t-headline); -webkit-line-clamp: 2; }
+
+/* A palette: the colours as wide bands, the name under them. */
+.sfPalette { flex-direction: column; }
+.sfSwatches { flex: 1; display: flex; border-radius: var(--r-sm); overflow: hidden; }
+.sfSwatches i { flex: 1; }
+
+/* A flashcard: its front, large, in the middle. */
+.sfCentre { flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; }
+.sfBig { font: var(--t-title1); font-weight: var(--w-emph); letter-spacing: -.02em; text-wrap: balance; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.sfCentre small { font: var(--t-footnote); color: var(--ink-3); }
+
+/* A quote: a big mark, the words, who said it. */
+.sfQuote { flex-direction: column; justify-content: center; gap: 6px; }
+.sfQuote > span { font: 700 44px/28px Georgia, serif; color: var(--accent); height: 22px; }
+.sfQuote blockquote { margin: 0; font: var(--t-title3); font-weight: 500; letter-spacing: -.01em; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.sfQuote figcaption { font: var(--t-footnote); color: var(--ink-3); }
+
+/* A note: its title and as much of it as fits, fading out rather than cut. */
+.sfNote { flex-direction: column; gap: 8px; }
+.sfNote p { margin: 0; flex: 1; min-height: 0; font: var(--t-callout); color: var(--ink-2); white-space: pre-line; overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+
+/* The rest: their own compact face, whole, in the middle of the card. */
+.sfTile { align-items: safe center; justify-content: center; }
+.sfTile > .mb { width: 100%; background: none; box-shadow: none; padding: 0; }

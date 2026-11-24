@@ -1,19 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { initials } from "@/lib/chat/avatar";
 import { sortStops } from "@/lib/chat/ops";
 import { until } from "@/lib/chat/open";
 import {
   addDays, allStops, atMinutes, canEditPlan, costPerPerson, dayLabel, euros, focusDayIndex, fromHhmm,
-  hhmm, midnight, minutesOf, parsePlanText, parseStopLine, planStatus, rangeLabel, timeLabel, timeParts, toStop,
+  hhmm, midnight, minutesOf, parseStopLine, planStatus, rangeLabel, timeLabel, timeParts, toStop,
   type ParsedStop,
 } from "@/lib/chat/plan";
 import { useChat, userById } from "@/lib/chat/store";
 import type { Card, CardOp, Message, PlanCard, PlanDay, PlanStop, Rsvp } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { useCalendar } from "./DatePicker";
-import { IconCalendar, IconCheck, IconLock, IconPlus, IconRoute, IconTrash } from "./Icons";
+import { IconCalendar, IconCheck, IconClose, IconLock, IconPlus, IconRoute, IconTrash } from "./Icons";
 import { Sheet, Toggle, uid, useChatUi, useNow } from "./ui";
 import styles from "./chat.module.css";
 import s from "./plans.module.css";
@@ -59,61 +59,6 @@ function readLine(p: ParsedStop, day: number) {
    Builder
 --------------------------------------------------------------------------- */
 
-const TEMPLATES: { id: string; label: string; title: string; lines: string }[] = [
-  {
-    id: "trip",
-    label: "Trip day",
-    title: "A day in Lisbon",
-    lines: [
-      "9:00 Pastéis de nata @ Manteigaria €3",
-      "10:00 Tram 28 up to Alfama €3",
-      "11:00 Castelo de São Jorge €15",
-      "13:30 Lunch @ Time Out Market €20",
-      "16:00 LX Factory and Ler Devagar",
-      "19:00 Sunset @ Miradouro da Senhora do Monte",
-      "20:30 Dinner @ Cervejaria Ramiro €35",
-    ].join("\n"),
-  },
-  {
-    id: "launch",
-    label: "Launch day",
-    title: "Launch day",
-    lines: [
-      "8:30 Final checks @ Office",
-      "9:45 Stand-up: go or no-go",
-      "10:00 Go live",
-      "10:15 Announce on LinkedIn and the blog",
-      "12:30 Team lunch @ Brasserie Lipp €25",
-      "15:00 First numbers review",
-      "18:30 Drinks @ The Roof €15",
-    ].join("\n"),
-  },
-  {
-    id: "offsite",
-    label: "Team offsite",
-    title: "Team offsite",
-    lines: [
-      "9:30 Coffee and kickoff @ Studio Loft",
-      "10:00 H2 review: where we are",
-      "12:30 Lunch @ Nour €22",
-      "14:00 Workshop: next quarter's bets",
-      "16:30 Walk by the river",
-      "19:00 Dinner @ Maison Lune €45",
-    ].join("\n"),
-  },
-  {
-    id: "dinner",
-    label: "Dinner night",
-    title: "Dinner night",
-    lines: [
-      "Book a table for six",
-      "19:00 Aperitivo @ Bar del Fico €12",
-      "20:30 Dinner @ Da Enzo al 29 €35",
-      "22:30 Gelato @ Fatamorgana €4",
-    ].join("\n"),
-  },
-];
-
 /** Today, tomorrow and the coming Saturday (the one after, if that's already today or tomorrow). */
 function dayChoices(now: number) {
   const today = midnight(now);
@@ -127,111 +72,234 @@ function dayChoices(now: number) {
   ];
 }
 
-/** New plan: templates, one stop per line ("13:00 Lunch @ Figlmüller"), then send. */
+/** One stop as it's being written: separate fields, no syntax to learn. An empty time is "Anytime". */
+type DraftStop = { id: string; time: string; title: string; place: string; cost: string };
+type DraftDay = { id: string; stops: DraftStop[] };
+
+const blankStop = (): DraftStop => ({ id: uid(), time: "", title: "", place: "", cost: "" });
+const blankDay = (): DraftDay => ({ id: uid(), stops: [blankStop()] });
+const toParsed = (d: DraftStop): ParsedStop | null => {
+  const title = d.title.trim();
+  if (!title) return null;
+  const price = Number(d.cost.replace(",", "."));
+  const p: ParsedStop = { minutes: d.time ? fromHhmm(d.time) : null, title };
+  if (d.place.trim()) p.place = d.place.trim();
+  if (Number.isFinite(price) && price > 0) p.cost = Math.round(price * 100) / 100;
+  return p;
+};
+
+const PLAN_STEPS = ["New plan", "When", "Stops", "Review"] as const;
+
+/**
+ * New plan, one step at a time: what it's called, the day it starts, the stops
+ * (each with its own time, place and price fields), then a look at the whole thing before it's sent.
+ */
 export function PlanBuilder({ onSend, onClose }: { onSend: Send; onClose: () => void }) {
   const { me } = useChat();
   const [choices] = useState(() => dayChoices(Date.now()));
+  const [step, setStep] = useState(0);
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(choices[0].date);
-  const [text, setText] = useState("");
-  const [template, setTemplate] = useState<string | null>(null);
+  const [days, setDays] = useState<DraftDay[]>(() => [blankDay()]);
   const [everyone, setEveryone] = useState(true);
-  const parsed = parsePlanText(text);
-  const count = parsed.reduce((n, d) => n + d.length, 0);
+  /** The stop whose "what" field should take the cursor next (a new row). */
+  const focusId = useRef<string | null>(null);
   const custom = !choices.some((c) => c.date === date);
   // Any other day comes from the calendar, from today on.
   const calendar = useCalendar({ value: date, min: choices[0].date, onPick: setDate });
 
-  const applyTemplate = (id: string) => {
-    const t = TEMPLATES.find((x) => x.id === id)!;
-    // Keep a title the person typed; replace one that came from another template.
-    if (!title.trim() || TEMPLATES.some((x) => x.title === title)) setTitle(t.title);
-    setText(t.lines);
-    setTemplate(id);
+  const parsed = days.map((d) => d.stops.map(toParsed).filter((p): p is ParsedStop => !!p));
+  const count = parsed.reduce((n, d) => n + d.length, 0);
+  const perPerson = parsed.flat().reduce((n, p) => n + (p.cost ?? 0), 0);
+
+  // After a row is added, the cursor goes to it.
+  useEffect(() => {
+    if (!focusId.current) return;
+    document.querySelector<HTMLInputElement>(`[data-stop-title="${focusId.current}"]`)?.focus();
+    focusId.current = null;
+  });
+
+  const setStop = (dayId: string, stopId: string, patch: Partial<DraftStop>) => {
+    setDays((ds) => ds.map((d) => (d.id !== dayId ? d : { ...d, stops: d.stops.map((x) => (x.id === stopId ? { ...x, ...patch } : x)) })));
   };
+  const addStop = (dayId: string, after?: string) => {
+    const fresh = blankStop();
+    setDays((ds) => ds.map((d) => {
+      if (d.id !== dayId) return d;
+      const i = after ? d.stops.findIndex((x) => x.id === after) + 1 : d.stops.length;
+      return { ...d, stops: [...d.stops.slice(0, i), fresh, ...d.stops.slice(i)] };
+    }));
+    focusId.current = fresh.id;
+  };
+  const removeStop = (dayId: string, stopId: string) =>
+    setDays((ds) => ds.map((d) => (d.id !== dayId ? d : { ...d, stops: d.stops.length > 1 ? d.stops.filter((x) => x.id !== stopId) : [blankStop()] })));
+  const addDay = () => {
+    const day = blankDay();
+    setDays((ds) => [...ds, day]);
+    focusId.current = day.stops[0].id;
+  };
+  const removeDay = (dayId: string) => setDays((ds) => ds.filter((d) => d.id !== dayId));
 
   const send = () => {
-    const days: PlanDay[] = parsed
+    const out: PlanDay[] = parsed
       .map((stops, i) => {
         const day = addDays(date, i);
         return { id: uid(), date: day, stops: sortStops(stops.map((p) => toStop(p, day, uid()))) };
       })
       .filter((d) => d.stops.length);
     onSend(
-      { type: "plan", title: title.trim(), days, rsvps: { [me]: "going" }, everyoneCanEdit: everyone, editors: [] },
+      { type: "plan", title: title.trim(), days: out, rsvps: { [me]: "going" }, everyoneCanEdit: everyone, editors: [] },
       `Plan: ${title.trim()}`,
     );
   };
 
+  const next = () => setStep((n) => n + 1);
+  const action = step === 0 ? { label: "Next", disabled: !title.trim(), onClick: next, keepOpen: true }
+    : step === 1 ? { label: "Next", onClick: next, keepOpen: true }
+      : step === 2 ? { label: "Next", disabled: !count, onClick: next, keepOpen: true }
+        : { label: "Send", disabled: !title.trim() || !count, onClick: send };
+
   return (
-    <Sheet title="New plan" onClose={onClose} action={{ label: "Send", disabled: !title.trim() || !count, onClick: send }}>
-      <input className={styles.bigInput} data-autofocus placeholder="What’s the plan?" aria-label="Plan title" value={title} onChange={(e) => setTitle(e.target.value)} />
-
-      <p className={styles.sheetLabel}>Start from</p>
-      <div className={styles.chipGrid}>
-        {TEMPLATES.map((t) => (
-          <button key={t.id} className={`${styles.choice} ${template === t.id ? styles.choiceOn : ""}`} aria-pressed={template === t.id} onClick={() => applyTemplate(t.id)}>
-            {t.label}
-          </button>
-        ))}
+    <Sheet
+      title={PLAN_STEPS[step]}
+      solid
+      onClose={onClose}
+      onStepBack={step > 0 ? () => setStep((n) => n - 1) : undefined}
+      action={action}
+    >
+      <div className={s.planProgress} role="progressbar" aria-label="New plan" aria-valuemin={1} aria-valuemax={PLAN_STEPS.length} aria-valuenow={step + 1} aria-valuetext={`Step ${step + 1} of ${PLAN_STEPS.length}`}>
+        {PLAN_STEPS.map((name, i) => <i key={name} className={i <= step ? s.planProgressOn : ""} />)}
+        <span>Step {step + 1} of {PLAN_STEPS.length}</span>
       </div>
+      <div key={step} className={s.planStep}>
+        {step === 0 && (
+          <>
+            <input
+              className={styles.bigInput}
+              data-autofocus
+              placeholder="What’s the plan?"
+              aria-label="Plan title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && title.trim()) next(); }}
+              enterKeyHint="next"
+            />
+            <p className={s.planLede}>Give it a name people will recognise, like “Saturday in Vienna”. Next you pick the day, then add the stops one by one.</p>
+          </>
+        )}
 
-      <p className={styles.sheetLabel}>When</p>
-      <div className={styles.chipGrid}>
-        {choices.map((c) => (
-          <button key={c.id} className={`${styles.choice} ${date === c.date ? styles.choiceOn : ""}`} aria-pressed={date === c.date} onClick={() => setDate(c.date)}>
-            {c.label}
-          </button>
-        ))}
-        <button
-          className={`${styles.choice} ${s.dateChip} ${custom ? styles.choiceOn : ""}`}
-          aria-pressed={custom}
-          aria-haspopup="dialog"
-          aria-expanded={calendar.open}
-          onClick={(e) => calendar.show(e.currentTarget)}
-        >
-          <IconCalendar size={15} />
-          <span>{custom ? dayLabel(date) : "Other day"}</span>
-        </button>
-        {calendar.node}
-      </div>
+        {step === 1 && (
+          <>
+            <p className={s.planAsk}>When does it start?</p>
+            <div className={styles.chipGrid}>
+              {choices.map((c) => (
+                <button key={c.id} className={`${styles.choice} ${date === c.date ? styles.choiceOn : ""}`} aria-pressed={date === c.date} onClick={() => setDate(c.date)}>
+                  {c.label}
+                </button>
+              ))}
+              <button
+                className={`${styles.choice} ${s.dateChip} ${custom ? styles.choiceOn : ""}`}
+                aria-pressed={custom}
+                aria-haspopup="dialog"
+                aria-expanded={calendar.open}
+                onClick={(e) => calendar.show(e.currentTarget)}
+              >
+                <IconCalendar size={15} />
+                <span>{custom ? dayLabel(date) : "Other day"}</span>
+              </button>
+              {calendar.node}
+            </div>
+            <p className={s.planLede}>{dayLabel(date)}. A plan can run over more days; you add them with its stops.</p>
+          </>
+        )}
 
-      <p className={styles.sheetLabel}>Stops</p>
-      <textarea
-        className={s.lines}
-        rows={6}
-        aria-label="One stop per line"
-        placeholder={"One stop per line\n13:00 Lunch @ Figlmüller\nMuseum @ Belvedere €16\nDay 2"}
-        value={text}
-        onChange={(e) => { setText(e.target.value); setTemplate(null); }}
-      />
-      {count > 0 ? (
-        <div className={s.preview} aria-live="polite">
-          {parsed.map((stops, i) => (
-            <div key={i} className={s.previewDay}>
-              {parsed.length > 1 && <b>{dayLabel(addDays(date, i))}</b>}
-              {stops.map((p, j) => (
-                <p key={j} className={s.previewRow}>
-                  <span className={s.previewTime}>{p.minutes === null ? "Anytime" : timeLabel(atMinutes(date, p.minutes))}</span>
-                  <span className={s.previewText}>
-                    {p.title}
-                    {p.place && <em> · {p.place}</em>}
-                    {p.cost ? <i> · {euros(p.cost)}</i> : null}
-                  </span>
-                </p>
+        {step === 2 && (
+          <>
+            <p className={s.planAsk}>What happens, in order?</p>
+            <p className={s.planLede}>Only the name is needed. A stop without a time is “Anytime”.</p>
+            {days.map((d, di) => (
+              <section key={d.id} className={s.draftDay} aria-label={dayLabel(addDays(date, di))}>
+                {days.length > 1 && (
+                  <header className={s.draftDayHead}>
+                    <b>{dayLabel(addDays(date, di))}</b>
+                    {di > 0 && <button type="button" onClick={() => removeDay(d.id)} aria-label={`Remove ${dayLabel(addDays(date, di))}`}><IconTrash size={15} /></button>}
+                  </header>
+                )}
+                <ol className={s.draftStops}>
+                  {d.stops.map((x, i) => (
+                    <li key={x.id} className={s.draftStop}>
+                      <input
+                        className={s.draftTime}
+                        type="time"
+                        value={x.time}
+                        onChange={(e) => setStop(d.id, x.id, { time: e.target.value })}
+                        aria-label={`Time of stop ${i + 1}`}
+                      />
+                      <input
+                          data-stop-title={x.id}
+                          className={s.draftTitle}
+                          placeholder={i === 0 ? "e.g. Lunch" : "Next stop"}
+                          value={x.title}
+                          onChange={(e) => setStop(d.id, x.id, { title: e.target.value })}
+                          onKeyDown={(e) => { if (e.key === "Enter" && x.title.trim()) { e.preventDefault(); addStop(d.id, x.id); } }}
+                          aria-label={`Stop ${i + 1}`}
+                          enterKeyHint="next"
+                        />
+                      <button type="button" className={s.draftRemove} onClick={() => removeStop(d.id, x.id)} aria-label={`Remove stop ${i + 1}`}><IconClose size={14} /></button>
+                      <div className={s.draftMore}>
+                        <input placeholder="Where (optional)" value={x.place} onChange={(e) => setStop(d.id, x.id, { place: e.target.value })} aria-label={`Where stop ${i + 1} is`} />
+                        <label className={s.draftCost}>
+                          <span aria-hidden="true">€</span>
+                          <input inputMode="decimal" placeholder="Cost" value={x.cost} onChange={(e) => setStop(d.id, x.id, { cost: e.target.value.replace(/[^\d.,]/g, "") })} aria-label={`Cost per person of stop ${i + 1}`} />
+                        </label>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+                <button type="button" className={styles.addRow} onClick={() => addStop(d.id)}><IconPlus size={16} /> Add a stop</button>
+              </section>
+            ))}
+            <button type="button" className={`${styles.addRow} ${s.draftAddDay}`} onClick={addDay}><IconCalendar size={16} /> Add {dayLabel(addDays(date, days.length))}</button>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <div className={s.reviewHead}>
+              <b>{title.trim()}</b>
+              <small>
+                {[
+                  parsed.filter((p) => p.length).length > 1 ? `${dayLabel(date)} – ${dayLabel(addDays(date, parsed.length - 1))}` : dayLabel(date),
+                  `${count} ${count === 1 ? "stop" : "stops"}`,
+                  perPerson > 0 ? `≈ ${euros(perPerson)} per person` : "",
+                ].filter(Boolean).join(" · ")}
+              </small>
+            </div>
+            <div className={s.preview}>
+              {parsed.map((stops, i) => stops.length > 0 && (
+                <div key={i} className={s.previewDay}>
+                  {parsed.length > 1 && <b>{dayLabel(addDays(date, i))}</b>}
+                  {[...stops].sort((a, b) => (a.minutes ?? 9999) - (b.minutes ?? 9999)).map((p, j) => (
+                    <p key={j} className={s.previewRow}>
+                      <span className={s.previewTime}>{p.minutes === null ? "Anytime" : timeLabel(atMinutes(date, p.minutes))}</span>
+                      <span className={s.previewText}>
+                        {p.title}
+                        {p.place && <em> · {p.place}</em>}
+                        {p.cost ? <i> · {euros(p.cost)}</i> : null}
+                      </span>
+                    </p>
+                  ))}
+                </div>
               ))}
             </div>
-          ))}
-        </div>
-      ) : (
-        <p className={styles.sheetNote}>Start a line with a time (13:00, 9am), add a place after @ and a price with €. “Day 2” starts the next day.</p>
-      )}
-
-      <div className={styles.settingRows}>
-        <label className={styles.settingRow}>
-          <span><b>Everyone can edit</b><small>{everyone ? "Anyone here can tick, add and change stops." : "Only you change stops. Everyone can still say if they’re in."}</small></span>
-          <Toggle on={everyone} onChange={setEveryone} label="Everyone can edit" />
-        </label>
+            <div className={styles.settingRows}>
+              <label className={styles.settingRow}>
+                <span><b>Everyone can edit</b><small>{everyone ? "Anyone here can tick, add and change stops." : "Only you change stops. Everyone can still say if they’re in."}</small></span>
+                <Toggle on={everyone} onChange={setEveryone} label="Everyone can edit" />
+              </label>
+            </div>
+          </>
+        )}
       </div>
     </Sheet>
   );

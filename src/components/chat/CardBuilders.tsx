@@ -12,7 +12,7 @@ import {
   IconBrush, IconGame, IconSparkles, IconWheel, IconBoard, IconReceipt, IconRoute, IconFlag, IconMegaphone, IconFolder, IconBookmark,
 } from "./Icons";
 import MiniMap from "./MiniMap";
-import { Segmented, Sheet, Toggle, uid } from "./ui";
+import { MoreOptions, Segmented, Sheet, Toggle, uid } from "./ui";
 import styles from "./chat.module.css";
 import iv from "./invoice.module.css";
 
@@ -152,6 +152,7 @@ export function PollBuilder({ onSend, onClose }: { onSend: Send; onClose: () => 
   return (
     <Sheet
       title="New poll"
+      solid
       onClose={onClose}
       action={{
         label: "Send",
@@ -192,20 +193,23 @@ export function PollBuilder({ onSend, onClose }: { onSend: Send; onClose: () => 
           </button>
         )}
       </div>
-      <div className={styles.settingRows}>
-        <label className={styles.settingRow}>
-          <span><b>Multiple choice</b><small>People can pick more than one answer.</small></span>
-          <Toggle on={multiple} onChange={setMultiple} label="Multiple choice" />
-        </label>
-        <label className={styles.settingRow}>
-          <span><b>Anonymous votes</b><small>Results show counts, never names.</small></span>
-          <Toggle on={anonymous} onChange={setAnonymous} label="Anonymous votes" />
-        </label>
-        <div className={styles.settingRow}>
-          <span><b>Closes in</b><small>You can always end it early.</small></span>
+      {/* A question and its options is all most polls need; the rest waits under one row. */}
+      <MoreOptions summary={[multiple ? "Several answers" : "One answer", anonymous ? "Anonymous" : "Names shown", `Closes in ${CLOSES.find((c) => c.id === closes)!.label}`].join(" · ")}>
+        <div className={styles.settingRows}>
+          <label className={styles.settingRow}>
+            <span><b>Multiple choice</b><small>People can pick more than one answer.</small></span>
+            <Toggle on={multiple} onChange={setMultiple} label="Multiple choice" />
+          </label>
+          <label className={styles.settingRow}>
+            <span><b>Anonymous votes</b><small>Results show counts, never names.</small></span>
+            <Toggle on={anonymous} onChange={setAnonymous} label="Anonymous votes" />
+          </label>
+          <div className={styles.settingRow}>
+            <span><b>Closes in</b><small>You can always end it early.</small></span>
+          </div>
+          <Segmented value={closes} options={CLOSES.map((c) => ({ id: c.id, label: c.label }))} onChange={setCloses} />
         </div>
-        <Segmented value={closes} options={CLOSES.map((c) => ({ id: c.id, label: c.label }))} onChange={setCloses} />
-      </div>
+      </MoreOptions>
     </Sheet>
   );
 }
@@ -222,6 +226,7 @@ export function ChecklistBuilder({ onSend, onClose, ownerName }: { onSend: Send;
   return (
     <Sheet
       title="New checklist"
+      solid
       onClose={onClose}
       action={{
         label: "Send",
@@ -295,6 +300,7 @@ export function ReminderBuilder({ onSend, onClose, seed }: { onSend: Send; onClo
   return (
     <Sheet
       title="New reminder"
+      solid
       onClose={onClose}
       action={{
         label: "Set",
@@ -353,7 +359,7 @@ export function LocationBuilder({ onSend, onClose, granted, onEnable }: {
   }, isLive ? "Shared live location" : `Location: ${p.place}`);
 
   return (
-    <Sheet title="Location" onClose={onClose}>
+    <Sheet title="Location" solid onClose={onClose}>
       {(close) => (<>
       {granted ? (
         <>
@@ -396,46 +402,58 @@ export function LocationBuilder({ onSend, onClose, granted, onEnable }: {
    Event
 --------------------------------------------------------------------------- */
 
+/** "2026-11-25T12:30", what a datetime-local input reads and writes, in local time. */
+const toLocalInput = (ms: number) => {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+/** "Tomorrow at 12:30", "Sat 29 Nov at 20:00": the picked moment said back. */
+function whenLine(ms: number) {
+  const d = new Date(ms);
+  const day = new Date(d); day.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((day.getTime() - today.getTime()) / 86_400_000);
+  const date = diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  return `${date} at ${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+/** New event: what, one native date-and-time picker (the iOS wheel on a phone), and where. */
 export function EventBuilder({ onSend, onClose }: { onSend: Send; onClose: () => void }) {
   const [title, setTitle] = useState("");
   const [place, setPlace] = useState("");
-  const days = [0, 1, 2, 3, 4].map((d) => {
-    const date = new Date();
-    date.setDate(date.getDate() + d);
-    return { id: String(d), label: d === 0 ? "Today" : d === 1 ? "Tomorrow" : date.toLocaleDateString(undefined, { weekday: "short" }), date };
-  });
-  const times = ["09:00", "12:30", "18:00", "20:00"];
-  const [day, setDay] = useState("1");
-  const [time, setTime] = useState("12:30");
-  const startsAt = () => {
-    const d = new Date(days.find((x) => x.id === day)!.date);
-    const [h, m] = time.split(":").map(Number);
-    d.setHours(h, m, 0, 0);
+  const [startsAt, setStartsAt] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(12, 30, 0, 0);
     return d.getTime();
-  };
+  });
+  const [min] = useState(() => toLocalInput(Date.now()));
   return (
     <Sheet
       title="New event"
+      solid
       onClose={onClose}
       action={{
         label: "Send",
         disabled: !title.trim(),
-        onClick: () => onSend({ type: "event", title: title.trim(), startsAt: startsAt(), place: place.trim() || "To be decided", rsvps: {} }, `Event: ${title.trim()}`),
+        onClick: () => onSend({ type: "event", title: title.trim(), startsAt, place: place.trim() || "To be decided", rsvps: {} }, `Event: ${title.trim()}`),
       }}
     >
       <input className={styles.bigInput} data-autofocus placeholder="What’s happening?" value={title} onChange={(e) => setTitle(e.target.value)} />
-      <p className={styles.sheetLabel}>Day</p>
-      <div className={styles.chipGrid}>
-        {days.map((d) => (
-          <button key={d.id} className={`${styles.choice} ${day === d.id ? styles.choiceOn : ""}`} onClick={() => setDay(d.id)}>{d.label}</button>
-        ))}
-      </div>
-      <p className={styles.sheetLabel}>Time</p>
-      <div className={styles.chipGrid}>
-        {times.map((t) => (
-          <button key={t} className={`${styles.choice} ${time === t ? styles.choiceOn : ""}`} onClick={() => setTime(t)}>{t}</button>
-        ))}
-      </div>
+      <p className={styles.sheetLabel}>When</p>
+      <label className={styles.whenPicker}>
+        <span>Starts</span>
+        <input
+          type="datetime-local"
+          value={toLocalInput(startsAt)}
+          min={min}
+          onChange={(e) => { const t = new Date(e.target.value).getTime(); if (Number.isFinite(t)) setStartsAt(t); }}
+          aria-label="Starts"
+        />
+      </label>
+      <p className={styles.whenSays} aria-live="polite">{whenLine(startsAt)}</p>
       <p className={styles.sheetLabel}>Where</p>
       <input className={styles.plainInput} placeholder="Add a place" value={place} onChange={(e) => setPlace(e.target.value)} />
     </Sheet>

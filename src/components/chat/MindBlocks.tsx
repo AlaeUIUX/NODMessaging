@@ -416,20 +416,34 @@ function VideoPlayer({ video, title, autoPlay, children }: { video: VideoRef; ti
   );
 }
 
+/**
+ * A flashcard. In a collection a tap opens it, like anything else, so its front and back can be
+ * changed there; opened, the card itself flips with a tap.
+ */
 function FlashcardBlock({ block, shape, cls }: { block: Block; shape: BlockShape; cls: string }) {
   const [flipped, setFlipped] = useState(false);
+  if (shape !== "detail") {
+    return (
+      <div className={cls}>
+        <span className={styles.mbCardInner}>
+          <span className={styles.mbFace}>{block.due && <i className={styles.mbDueDot} aria-label="Due" />}<b>{block.title}</b></span>
+        </span>
+      </div>
+    );
+  }
   return (
     <div
       className={`${cls} ${flipped ? styles.mbFlipped : ""}`}
-      onClick={(e) => { if (shape !== "detail") { e.stopPropagation(); setFlipped((f) => !f); } }}
+      onClick={(e) => { e.stopPropagation(); setFlipped((f) => !f); }}
       role="button"
       tabIndex={0}
-      aria-label={flipped ? `${block.title}: ${block.back}` : `Flashcard: ${block.title}. Tap to flip.`}
+      aria-pressed={flipped}
+      aria-label={flipped ? `${block.title}: ${block.back}. Tap to see the front.` : `Flashcard: ${block.title}. Tap to see the back.`}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFlipped((f) => !f); } }}
     >
       <span className={styles.mbCardInner}>
-        <span className={styles.mbFace}>{block.due && <i className={styles.mbDueDot} aria-label="Due" />}<b>{block.title}</b></span>
-        <span className={`${styles.mbFace} ${styles.mbBack}`}><b>{block.back}</b></span>
+        <span className={styles.mbFace}>{block.due && <i className={styles.mbDueDot} aria-label="Due" />}<b>{block.title}</b><small className={styles.mbFlipHint}>Tap to see the back</small></span>
+        <span className={`${styles.mbFace} ${styles.mbBack}`}><b>{block.back}</b><small className={styles.mbFlipHint}>Tap to see the front</small></span>
       </span>
     </div>
   );
@@ -569,4 +583,130 @@ function LivePreview({ message, shape, me }: { message: Message; shape: BlockSha
       <span className={styles.mbQuoteText} style={{ WebkitLineClamp: lines }}>{emojify(stripFormatting(message.body))}</span>
     </span>
   );
+}
+
+/* ---------------------------------------------------------------------------
+   Sort's pile: one card size for everything, so each kind gets a face laid
+   out for that size. Pictures fill it; a book is its cover beside its words;
+   words are set to fit. Nothing is cut halfway down.
+--------------------------------------------------------------------------- */
+
+/** A thing as it sits on top of Sort's pile. */
+export function SortFace({ block }: { block: Block }) {
+  switch (block.kind) {
+    case "book": {
+      const facts = [block.year, block.pages ? `${block.pages} pages` : ""].filter(Boolean).join(" · ");
+      const shelf = block.shelf === "reading" ? "Reading" : block.shelf === "read" ? "Finished" : "Want to read";
+      return (
+        <div className={`${styles.sf} ${styles.sfBook}`}>
+          <span className={`${styles.mbCover} ${block.image ? styles.mbCoverArt : ""} ${styles.sfCover}`} style={{ ["--c" as string]: toneFor(block.title) }}>
+            <b>{block.title}</b>
+            {block.image && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={block.image} alt="" loading="lazy" draggable={false} onError={(e) => { e.currentTarget.hidden = true; }} />
+            )}
+          </span>
+          <span className={styles.sfText}>
+            <b className={styles.sfTitle}>{block.title}</b>
+            {block.source && <small>{block.source}</small>}
+            {facts && <small className={styles.sfFacts}>{facts}</small>}
+            <span className={styles.mbShelf}>{shelf}</span>
+          </span>
+        </div>
+      );
+    }
+    case "image": return <SortPhoto block={block} />;
+    case "video": {
+      const video = block.url ? parseVideo(block.url) : null;
+      const site = block.attachment ? "From your phone" : video ? videoProvider(video) : block.url ? hostOf(block.url) : "";
+      return (
+        <div className={`${styles.sf} ${styles.sfMedia}`} style={{ ["--c" as string]: toneFor(block.title) }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {block.image && <img src={block.image} alt="" loading="lazy" draggable={false} />}
+          <span className={styles.mbPlay}><IconPlay size={18} /></span>
+          <span className={styles.sfCaption}>
+            <b>{block.title}</b>
+            <small>{[block.duration, block.source, site].filter((x, i, all) => x && all.indexOf(x) === i).join(" · ")}</small>
+          </span>
+        </div>
+      );
+    }
+    case "link": {
+      const host = block.source ?? (block.url ? hostOf(block.url) : "");
+      return (
+        <div className={`${styles.sf} ${styles.sfLink}`}>
+          <span className={styles.sfSite} style={{ ["--c" as string]: toneFor(host || block.title) }}>
+            {block.image
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={block.image} alt="" loading="lazy" draggable={false} />
+              : <i>{(host || "?")[0].toUpperCase()}</i>}
+          </span>
+          <span className={styles.sfText}>
+            <b className={styles.sfTitle}>{block.title}</b>
+            {host && <small>{host}</small>}
+          </span>
+        </div>
+      );
+    }
+    case "palette": return (
+      <div className={`${styles.sf} ${styles.sfPalette}`}>
+        <span className={styles.sfSwatches}>
+          {block.colors?.map((c, i) => <i key={`${i}${c}`} style={{ background: c }} />)}
+        </span>
+        <span className={styles.sfText}>
+          <b className={styles.sfTitle}>{block.title || "Palette"}</b>
+          <small>{block.colors?.map(colorName).join(" · ")}</small>
+        </span>
+      </div>
+    );
+    case "flashcard": return (
+      <div className={`${styles.sf} ${styles.sfCentre}`}>
+        <b className={styles.sfBig}>{block.title}</b>
+        <small>The answer is on the back</small>
+      </div>
+    );
+    case "quote": return (
+      <figure className={`${styles.sf} ${styles.sfQuote}`}>
+        <span aria-hidden="true">“</span>
+        <blockquote>{block.title}</blockquote>
+        {block.body && <figcaption>{block.body}</figcaption>}
+      </figure>
+    );
+    case "note": {
+      const body = block.body ? stripFormatting(block.body) : "";
+      return (
+        <div className={`${styles.sf} ${styles.sfNote}`}>
+          {block.title && <b className={styles.sfTitle}>{block.title}</b>}
+          {body && <p>{body}</p>}
+        </div>
+      );
+    }
+    default:
+      // To-dos, reminders, progress, money, dates, habits, files and chat messages already have a
+      // compact face built for a card this size: shown whole, in the middle.
+      return (
+        <div className={`${styles.sf} ${styles.sfTile}`}>
+          <BlockView block={block} shape="tile" />
+        </div>
+      );
+  }
+}
+
+function SortPhoto({ block }: { block: Block }) {
+  return (
+    <div className={`${styles.sf} ${styles.sfMedia}`} style={{ ["--c" as string]: toneFor(block.title || "image") }}>
+      {block.attachment
+        ? <UploadedPicture att={block.attachment} />
+        // eslint-disable-next-line @next/next/no-img-element
+        : block.image && <img src={block.image} alt="" draggable={false} />}
+      {block.title && <span className={styles.sfCaption}><b>{block.title}</b></span>}
+    </div>
+  );
+}
+
+/** A picture uploaded from the phone, read from where it's kept. */
+function UploadedPicture({ att }: { att: NonNullable<Block["attachment"]> }) {
+  const src = useMediaUrl(att);
+  // eslint-disable-next-line @next/next/no-img-element
+  return src ? <img src={src} alt="" draggable={false} /> : null;
 }

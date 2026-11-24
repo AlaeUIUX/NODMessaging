@@ -308,3 +308,64 @@
   cursor: pointer;
 }
 .addPreview { margin: 0 14px; font: var(--t-caption1); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* ---- New plan, step by step ---- */
+/* Where you are: four segments and "Step 2 of 4", with room above and below. */
+.planProgress { display: grid; grid-template-columns: repeat(4, 1fr); align-items: center; gap: 6px; margin: 4px 0 22px; }
+.planProgress i { height: 4px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 10%, transparent); transition: background var(--t-mid) var(--ease-out); }
+.planProgress i.planProgressOn { background: var(--accent); }
+.planProgress span { grid-column: 1 / -1; margin-top: 4px; font: var(--t-caption1); font-weight: var(--w-control); color: var(--ink-3); }
+.planStep { display: grid; gap: 16px; animation: planStepIn 260ms var(--ease-out) both; }
+@keyframes planStepIn { from { opacity: 0; transform: translateX(14px); } }
+@media (prefers-reduced-motion: reduce) { .planStep { animation: none; } }
+.planStep > .sheetLabel, .planStep > p { margin: 0; }
+.planAsk { font: var(--t-title3); font-weight: var(--w-emph); color: var(--ink); letter-spacing: -.01em; }
+.planLede { font: var(--t-footnote); color: var(--ink-3); text-wrap: pretty; }
+
+/* A stop being written: its time on the left, what and where on the right. */
+.draftDay { display: grid; gap: 10px; }
+.draftDayHead { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+.draftDayHead b { font: var(--t-footnote); font-weight: var(--w-emph); color: var(--ink-3); letter-spacing: .02em; }
+.draftDayHead button { display: grid; place-items: center; width: 32px; height: 32px; border: none; border-radius: 50%; background: none; color: var(--ink-3); cursor: pointer; }
+.draftStops { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.draftStop {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "time title remove" "more more more";
+  align-items: center;
+  gap: 10px;
+  padding: 12px 6px 12px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line), 0 1px 2px rgba(28, 25, 23, .04);
+}
+.draftStop:focus-within { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
+.draftTime {
+  width: 132px;
+  height: 40px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--ink);
+  font: var(--t-subhead);
+  font-variant-numeric: tabular-nums;
+  color-scheme: light dark;
+}
+.draftTime { grid-area: time; }
+.draftStop input { min-width: 0; border: none; outline: none; background: none; color: var(--ink); }
+.draftStop input::placeholder { color: var(--ink-3); }
+.draftTitle { grid-area: title; height: 40px; font: var(--t-body); font-size: 16px; font-weight: var(--w-emph); }
+/* Where and the price: their own line under it, the full width of the row. */
+.draftMore { grid-area: more; display: grid; grid-template-columns: 1fr 96px; gap: 8px; padding-right: 6px; }
+.draftMore > input, .draftCost { height: 38px; padding: 0 12px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--ink) 4%, transparent); font: var(--t-subhead); font-size: 16px; }
+.draftCost { display: flex; align-items: center; gap: 4px; color: var(--ink-3); }
+.draftCost input { flex: 1; width: 100%; height: 100%; font: inherit; font-size: 16px; font-variant-numeric: tabular-nums; }
+.draftRemove { grid-area: remove; display: grid; place-items: center; width: 32px; height: 36px; border: none; background: none; color: var(--ink-3); cursor: pointer; }
+.draftAddDay { color: var(--ink-2); }
+
+/* The last look before sending. */
+.reviewHead { display: grid; gap: 2px; padding: 0 2px; }
+.reviewHead b { font: var(--t-title2); font-weight: var(--w-emph); letter-spacing: -.01em; color: var(--ink); }
+.reviewHead small { font: var(--t-footnote); color: var(--ink-3); }

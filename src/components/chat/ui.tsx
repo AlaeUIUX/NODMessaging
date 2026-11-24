@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Chat, Message, User } from "@/lib/chat/types";
 import { animateSpring, project, SPRINGS, VelocityTracker } from "@/lib/chat/motion";
-import { IconBack, IconBell, IconCamera, IconImage, IconLocation, IconMic, IconUserGroup } from "./Icons";
+import { IconBack, IconBell, IconCamera, IconChevronDown, IconImage, IconLocation, IconMic, IconUserGroup } from "./Icons";
 import styles from "./chat.module.css";
 
 /* ---------------------------------------------------------------------------
@@ -228,9 +228,13 @@ export function PermissionAlert({ kind, onResolve }: { kind: PermissionKind; onR
 --------------------------------------------------------------------------- */
 
 export function Sheet({
-  title, onClose, onClosing, onBack, action, children, footer,
+  title, onClose, onClosing, onBack, onStepBack, solid, action, children, footer,
 }: {
   title: string;
+  /** A plain white sheet instead of glass: forms you fill in, where the fields and switches must read clearly. */
+  solid?: boolean;
+  /** A step inside this same sheet: the top-left reads Back and goes to the step before, without closing. */
+  onStepBack?: () => void;
   onClose: () => void;
   /** Runs the moment the sheet starts closing (Cancel, scrim, Escape), before the exit animation. */
   onClosing?: () => void;
@@ -356,7 +360,7 @@ export function Sheet({
       <div ref={scrimRef} className={`${styles.bsheetScrim} ${closing ? styles.bsheetClosing : ""}`} onClick={() => close()} />
       <section
         ref={sheetRef}
-        className={`${styles.bsheet} ${styles.glassStrong} ${closing ? styles.bsheetClosing : ""}`}
+        className={`${styles.bsheet} ${solid ? styles.bsheetSolid : styles.glassStrong} ${closing ? styles.bsheetClosing : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -368,9 +372,11 @@ export function Sheet({
       >
         <div className={styles.sheetHandle} data-sheet-handle><div className={styles.grabber} /></div>
         <header className={styles.bsheetHead} data-sheet-handle>
-          {onBack
-            ? <button className={styles.bsheetBack} onClick={() => close(onBack)}><IconBack size={18} />Back</button>
-            : <button onClick={() => close()}>Cancel</button>}
+          {onStepBack
+            ? <button className={styles.bsheetBack} onClick={onStepBack}><IconBack size={18} />Back</button>
+            : onBack
+              ? <button className={styles.bsheetBack} onClick={() => close(onBack)}><IconBack size={18} />Back</button>
+              : <button onClick={() => close()}>Cancel</button>}
           <h3>{title}</h3>
           {action?.href && !action.disabled ? (
             <a className={styles.bsheetAction} href={action.href} target="_blank" rel="noopener noreferrer" onClick={() => close(action.onClick)}>
@@ -396,6 +402,26 @@ export function Sheet({
         {footer}
       </section>
     </>
+  );
+}
+
+/**
+ * The choices most people never touch, folded under one row. Closed, the row says what's set
+ * ("One answer · Names shown · Closes in 24 hours"), so nothing is hidden by surprise; a tap
+ * opens them in place.
+ */
+export function MoreOptions({ summary, children, label = "More options" }: { summary: string; children: ReactNode; label?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`${styles.moreOptions} ${open ? styles.moreOptionsOpen : ""}`}>
+      <button type="button" className={styles.moreOptionsRow} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span><b>{label}</b>{!open && <small>{summary}</small>}</span>
+        <IconChevronDown size={18} />
+      </button>
+      <div className={styles.moreOptionsBody} inert={!open}>
+        <div>{children}</div>
+      </div>
+    </div>
   );
 }
 
