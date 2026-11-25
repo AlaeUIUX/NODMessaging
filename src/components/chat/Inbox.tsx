@@ -31,6 +31,7 @@ import AnalyticsTab from "./Analytics";
 import ExploreTab from "./Explore";
 import StatusBar from "./StatusBar";
 import { previewParts, RowPreview, SwipeRow, type RowData, type SwipeAction } from "./InboxRow";
+import { pendingRequests } from "./Share";
 import { useGlide } from "./useGlide";
 import { ChatHold } from "./InboxHold";
 import { AddToListSheet, ListSheet, MoreSheet, type SheetAction } from "./InboxSheets";
@@ -75,7 +76,7 @@ function timeLabel(ts: number) {
 function NavDock({ tab, onTab, dots, ping }: {
   tab: Tab;
   onTab: (t: Tab) => void;
-  dots?: Partial<Record<Tab, "unread" | "sort">>;
+  dots?: Partial<Record<Tab, "unread" | "sort" | "request">>;
   ping?: Tab | null;
 }) {
   const [stretch, setStretch] = useState(false);
@@ -110,7 +111,7 @@ function NavDock({ tab, onTab, dots, ping }: {
                 {dots?.[t.id] && <span className={`${nav.dot} ${nav[dots[t.id]!]}`} aria-hidden="true" />}
               </span>
               {t.label}
-              {dots?.[t.id] && <span className={nav.hidden}>{dots[t.id] === "unread" ? ", unread messages" : ", things to sort"}</span>}
+              {dots?.[t.id] && <span className={nav.hidden}>{dots[t.id] === "unread" ? ", unread messages" : dots[t.id] === "request" ? ", people asking for access" : ", things to sort"}</span>}
             </button>
           ))}
         </div>
@@ -252,6 +253,8 @@ export default function Inbox({ onOpen, pushed }: {
   // Mind's dot: things waiting in Unassigned. Something just saved from a chat nudges the tab once you're back.
   const { mind } = useMind(me);
   const toSort = mind?.collections.find(isUnassigned)?.items.length ?? 0;
+  // Someone asking for access outranks sorting: it's a person waiting on you (red, like unread).
+  const asking = pendingRequests(mind, me).length;
   const mindPing = !pushed && isLanding("tab:mind");
 
   // The chip you're on scrolls into view, like WhatsApp's (a new list's chip lands at the end).
@@ -649,7 +652,7 @@ export default function Inbox({ onOpen, pushed }: {
       <NavDock
         tab={tab}
         onTab={setTab}
-        dots={{ chats: unreadChats ? "unread" : undefined, mind: toSort ? "sort" : undefined }}
+        dots={{ chats: unreadChats ? "unread" : undefined, mind: asking ? "request" : toSort ? "sort" : undefined }}
         ping={mindPing ? "mind" : null}
       />
       {holdRow && hold && (

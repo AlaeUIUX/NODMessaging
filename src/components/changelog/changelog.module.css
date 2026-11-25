@@ -279,6 +279,54 @@
 .device video, .device img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .deviceLabel { font-size: 13px; font-weight: 600; color: #57534E; letter-spacing: -.005em; }
 .stageBig { aspect-ratio: 4 / 3; }
+
+/* On a phone the whole iPhone shrunk onto a card is too small to read. Instead
+   it fills the card's width and the card shows the part that matters (each
+   picture's `--focus`, 0 top to 1 bottom); a pair becomes a row to swipe. */
+@media (max-width: 600px) {
+  .stageDevice, .stageDevice.stageBig {
+    aspect-ratio: 4 / 5;
+    justify-content: flex-start;
+    gap: 10px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .stageDevice::-webkit-scrollbar { display: none; }
+  .stageDevice .deviceCol {
+    position: relative;
+    flex: 0 0 100%;
+    height: 100%;
+    padding: 0;
+    overflow: hidden;
+    scroll-snap-align: center;
+    container-type: size;
+  }
+  /* Two: each a little narrower, so the next one peeks in. */
+  .stageDevice .deviceCol:not(:only-child) { flex-basis: 86%; }
+  .stageDevice .device, .stageDevice .deviceLabel + .device {
+    position: absolute;
+    left: 4cqw;
+    width: 92cqw;
+    height: auto;
+    max-width: none;
+    /* The device is 92cqw wide, so 187.6cqw tall: centre its focus, never past either end. */
+    top: clamp(calc(100cqh - 191.6cqw), calc(50cqh - var(--focus, .4) * 187.6cqw), 4cqw);
+  }
+  .stageDevice .device img, .stageDevice .device video { height: auto; }
+  .stageDevice .deviceLabel {
+    position: absolute;
+    z-index: 1;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .88);
+    box-shadow: 0 1px 6px rgba(28, 25, 23, .12);
+  }
+}
 .stageWide video { display: block; width: 100%; height: 100%; object-fit: cover; }
 
 /* A week without pictures: its number, and what's in it. */

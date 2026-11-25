@@ -38,7 +38,7 @@ import {
 import { ActionMenu, FilterBar, FilterMenu, isFiltering, NO_FILTER, passes, scopeActions, ScopeSearch, ScopeTools, useTightHeader, type MindFilter } from "./MindFilter";
 import { RelatedOnExplore } from "./ExplorePages";
 import PaletteEditor from "./PaletteEditor";
-import { PersonAvatar, SendSheet, SharedItemSheet, SharedPage, ShareSheet } from "./Share";
+import { pendingRequests, PersonAvatar, requestLine, RequestsSheet, requestsIn, SendSheet, SharedItemSheet, SharedPage, ShareSheet, type PendingRequest } from "./Share";
 import {
   IconArrowRight, IconArrowUp, IconBack, IconBell, IconCheck, IconChevron, IconClose, IconEdit, IconGrid,
   IconFolder, IconGlobe, IconInbox, IconLink, IconListView, IconMessage, IconOpen, IconPalette, IconPlus, IconSearch, IconShare, IconShelf, IconSmile, IconTrash, IconUndo, IconUserGroup, IconVideo,
@@ -180,6 +180,8 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
 
   if (!mind) return <div className={styles.inboxBody} />;
   const col = folder ? mind.collections.find((c) => c.id === folder.id) ?? null : null;
+  // Everyone asking for access to something of yours, wherever it is.
+  const requests = pendingRequests(mind, me);
   if (folder && !col) setFolder(null);
 
   const ctx: Ctx = {
@@ -242,8 +244,16 @@ export default function MindTab({ onOpenChat, onSettings }: { onOpenChat: (chat:
           {home.state === "loading" ? <FolderSkeleton count={kept || 6} />
             : home.state === "failed" ? <LoadFailed what="your Mind" onRetry={home.retry} />
             : q ? <SearchResults ctx={ctx} q={q} />
-            : mind.collections.length ? <FolderGrid ctx={ctx} shared={shared} onOpenShared={() => setSharedOpen({ leaving: false })} />
-            : <EmptyMind ctx={ctx} />}
+            : mind.collections.length ? (
+              <FolderGrid
+                ctx={ctx}
+                shared={shared}
+                onOpenShared={() => setSharedOpen({ leaving: false })}
+                requests={requests}
+                onOpenRequests={() => setSheet(<RequestsSheet me={me} onClose={() => setSheet(null)} onOpenShare={(ref) => openShare(ctx, ref)} onToast={flash} />)}
+              />
+            )
+            : <EmptyMind ctx={ctx} shared={shared} onOpenShared={() => setSharedOpen({ leaving: false })} />}
         </div>
       </div>
 
@@ -391,7 +401,13 @@ export function MindEditor({ source, title, note = "Editing for everyone", share
    Collections, shown as folders
    =========================================================================== */
 
-function FolderGrid({ ctx, shared, onOpenShared }: { ctx: Ctx; shared: SharedEntry[]; onOpenShared: () => void }) {
+function FolderGrid({ ctx, shared, onOpenShared, requests, onOpenRequests }: {
+  ctx: Ctx;
+  shared: SharedEntry[];
+  onOpenShared: () => void;
+  requests: PendingRequest[];
+  onOpenRequests: () => void;
+}) {
   const rootRef = useRef<HTMLDivElement>(null);
   // Unassigned isn't one of them: it waits in the tray above until it's sorted away.
   const cols = ctx.mind.collections.filter((c) => !isUnassigned(c));
@@ -432,6 +448,7 @@ function FolderGrid({ ctx, shared, onOpenShared }: { ctx: Ctx; shared: SharedEnt
   });
   return (
     <div className={styles.mindStack} ref={rootRef} style={{ position: "relative" }} {...hold.rootHandlers}>
+      {requests.length > 0 && <RequestsRow requests={requests} onOpen={onOpenRequests} />}
       {shared.length > 0 && <SharedRow entries={shared} onOpen={onOpenShared} />}
       <TraySlot ctx={ctx} />
       <div className={styles.mindSectionBar}>
@@ -492,6 +509,34 @@ function SharedRow({ entries, onOpen }: { entries: SharedEntry[]; onOpen: () => 
       </span>
       <span className={styles.mindPageSide}>
         <em className={styles.sharedCount}>{entries.length}</em>
+        <IconChevron size={14} />
+      </span>
+    </button>
+  );
+}
+
+/**
+ * On Mind home while anyone is asking for access to something of yours: their
+ * faces, who and what (or how many), and the count. Opens Requests, the one
+ * list of them all. It goes away once every request is answered.
+ */
+function RequestsRow({ requests, onOpen }: { requests: PendingRequest[]; onOpen: () => void }) {
+  const people = [...new Set(requests.map((r) => r.userId))];
+  const first = requests[0];
+  const line = requests.length === 1
+    ? `${shareName(first.userId).name} · ${requestLine(first).replace(/^Wants/, "wants")}`
+    : `${namesOf(people.slice(0, 2))}${people.length > 2 ? ` and ${people.length - 2} more` : ""} want access`;
+  return (
+    <button className={`${styles.folderRow} ${styles.requestsRow}`} onClick={onOpen} aria-label={`Requests: ${requests.length} waiting. ${line}`}>
+      <span className={styles.sharedFaces} aria-hidden="true">
+        {people.slice(0, 3).map((id) => <PersonAvatar key={id} id={id} size={28} />)}
+      </span>
+      <span className={styles.mindPageText}>
+        <b>Asking for access</b>
+        <small>{emojify(line)}</small>
+      </span>
+      <span className={styles.mindPageSide}>
+        <em className={styles.requestsCount}>{requests.length}</em>
         <IconChevron size={14} />
       </span>
     </button>
@@ -697,6 +742,7 @@ function SortTray({ ctx, col, leaving }: { ctx: Ctx; col: Collection; leaving?: 
 /** A collection as a row: the same little folder, its name, what's in it. */
 function FolderRow({ ctx, col, i, hold, before, lifted, q }: { ctx: Ctx; col: Collection; i: number; hold?: HoldBind; before?: boolean; lifted?: boolean; q?: string }) {
   const items = collectionItems(ctx.mind, col);
+  const asking = requestsIn(ctx.mind, col.id);
   // Something just went in: the row takes it with a bump and a glint.
   const arriving = items.some((b) => isLanding(b.id));
   return (
@@ -712,6 +758,7 @@ function FolderRow({ ctx, col, i, hold, before, lifted, q }: { ctx: Ctx; col: Co
         <small>{q ? "Collection · " : ""}{countLabel(col, items.length)}</small>
       </span>
       <span className={styles.mindPageSide}>
+        {asking > 0 && <span className={styles.folderAsk} title={`${asking} asking for access`}>{asking}</span>}
         {isShared(col.sharing) && <span className={styles.folderPub} title="Shared"><IconUserGroup size={12} /></span>}
         {col.published && <span className={styles.folderPub} title="On Explore"><IconGlobe size={12} /></span>}
         <IconChevron size={14} />
@@ -724,6 +771,8 @@ function FolderRow({ ctx, col, i, hold, before, lifted, q }: { ctx: Ctx; col: Co
 function FolderCard({ ctx, col, i, hold, before, lifted }: { ctx: Ctx; col: Collection; i: number; hold?: HoldBind; before?: boolean; lifted?: boolean }) {
   const items = collectionItems(ctx.mind, col);
   const peek = [...items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3);
+  // People asking for it, or for something in it: a count on the card, like an app's badge.
+  const asking = requestsIn(ctx.mind, col.id);
   // Something just went in: the folder takes it with a bump, and its peek of it drops into place.
   const arriving = items.some((b) => isLanding(b.id));
   return (
@@ -737,6 +786,7 @@ function FolderCard({ ctx, col, i, hold, before, lifted }: { ctx: Ctx; col: Coll
       <span className={styles.folderTop}>
         <span className={styles.folderIcon}><Emoji char={col.emoji} /></span>
         <span className={styles.folderBadges}>
+          {asking > 0 && <span className={styles.folderAsk} title={`${asking} asking for access`}>{asking}</span>}
           {isShared(col.sharing) && <span className={styles.folderPub} title="Shared"><IconUserGroup size={12} /></span>}
           {col.published && <span className={styles.folderPub} title="On Explore"><IconGlobe size={12} /></span>}
         </span>
@@ -767,13 +817,24 @@ function shelvesOf(items: Block[]) {
 /** "12 items", or for Unassigned, how many are waiting for a place. */
 const countLabel = (col: Collection, n: number) => (isUnassigned(col) ? `${n} to sort` : `${n} item${n === 1 ? "" : "s"}`);
 
-function EmptyMind({ ctx }: { ctx: Ctx }) {
+/**
+ * Nothing of your own yet. What others shared with you still comes first (a
+ * new person's first share is often why they opened Mind at all), then the
+ * way to start your own.
+ */
+function EmptyMind({ ctx, shared, onOpenShared }: { ctx: Ctx; shared: SharedEntry[]; onOpenShared: () => void }) {
+  const from = [...new Set(shared.map((e) => e.owner))];
   return (
     <div className={styles.mindStack}>
+      {shared.length > 0 && <SharedRow entries={shared} onOpen={onOpenShared} />}
       <div className={styles.mindStarter}>
         <Logo size={36} />
-        <h2>Your Mind is empty</h2>
-        <p>Make a collection for anything: a project, a trip, a room. Or just add something: it waits in Unassigned until you sort it into one.</p>
+        <h2>{shared.length ? "Nothing of your own yet" : "Your Mind is empty"}</h2>
+        <p>
+          {shared.length
+            ? `What ${namesOf(from.slice(0, 2))}${from.length > 2 ? " and others" : ""} shared is above. Make a collection of your own for anything: a project, a trip, a room. Or add something, and it waits in Unassigned until you sort it.`
+            : "Make a collection for anything: a project, a trip, a room. Or just add something: it waits in Unassigned until you sort it into one."}
+        </p>
         <button className={styles.mindPrimary} onClick={() => ctx.openSheet(<NewFolderSheet ctx={ctx} />)}>
           <IconPlus size={14} /> New collection
         </button>

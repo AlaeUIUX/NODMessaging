@@ -1,9 +1,10 @@
 import styles from "./chat.module.css";
 
-export default function StatusBar() {
+/** `left`: what the top left says (the time; the lock screen leaves it empty, its time is big below). */
+export default function StatusBar({ left = "9:41" }: { left?: string }) {
   return (
     <div className={styles.statusbar} aria-hidden="true">
-      <span>9:41</span>
+      <span>{left}</span>
       <span className={styles.sbIcons}>
         <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor">
           <rect x="0" y="8" width="3" height="4" rx="1" /><rect x="5" y="5.5" width="3" height="6.5" rx="1" />

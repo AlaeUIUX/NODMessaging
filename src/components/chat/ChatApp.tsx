@@ -6,15 +6,18 @@ import { getForceFailure, getForceNetFailure, getSimulatedOffline, setForceFailu
 import { getPrefs, resetDemoData, THEME_EVENT, useAccounts, type ThemePref } from "@/lib/chat/account";
 import { openOnExplore } from "@/lib/chat/exploreFlags";
 import { groupInfo } from "@/lib/chat/groups";
-import { mindOf } from "@/lib/chat/mind";
+import { setLocked, isLocked, useLocked } from "@/lib/chat/lock";
+import { emojify } from "@/lib/chat/emoji";
+import { isUnassigned, mindOf } from "@/lib/chat/mind";
 import { effectiveRule, isQuiet, readMutes } from "@/lib/chat/mutes";
 import { findLink, zoneById } from "@/lib/chat/operation";
-import { parseShareToken, shareToken, type ShareRef } from "@/lib/chat/share";
+import { NO_SHARING, parseShareToken, requestAccess, shareToken, type ShareRef } from "@/lib/chat/share";
 import { ChatProvider, useChat, userById } from "@/lib/chat/store";
 import type { Chat } from "@/lib/chat/types";
 import ChatView from "./ChatView";
 import { IconArrowRight, IconChecklist, IconMoneyReceive, IconMoon, IconPin, IconSun, IconUserGroup } from "./Icons";
 import Inbox from "./Inbox";
+import LockScreen, { type LockNote } from "./LockScreen";
 import Logo from "./Logo";
 import Onboarding from "./Onboarding";
 import { OperationOverlays } from "./operation/Overlays";
@@ -82,6 +85,19 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
   const people = personGroups(state.data.chats);
   // How a Mind collection or item shows in a chat: four styles to compare.
   const mindCard = useMindCardStyle();
+  const locked = useLocked();
+
+  // Someone asks for one of your collections, from another phone: the shared one first, by someone who hasn't got it yet.
+  const askForAccess = () => {
+    const mind = mindOf(me);
+    const own = mind.collections.filter((c) => !isUnassigned(c));
+    const col = own.find((c) => c.sharing && Object.keys(c.sharing.people).some((id) => id !== me)) ?? own[0];
+    if (!col) return;
+    const s = { ...NO_SHARING, ...col.sharing };
+    const asked = new Set(s.requests.map((r) => r.userId));
+    const who = ["reema", "jamshad", "charles", "salman", "maya"].find((id) => id !== me && s.people[id] !== "edit" && !asked.has(id));
+    if (who) requestAccess({ owner: me, collectionId: col.id }, who, "edit");
+  };
 
   return (
     <details className={styles.dev}>
@@ -113,6 +129,18 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
           </div>
           <p className={styles.devPersona}>
             <b>Mind:</b> {MIND_PERSONAS[me] ?? "A fresh, empty Mind"}
+          </p>
+        </div>
+        <div>
+          <span className={styles.devLabel}>Phone</span>
+          <div className={styles.devIds}>
+            <button className={locked ? styles.devOn : undefined} aria-pressed={locked} onClick={() => setLocked(!locked)}>
+              {locked ? "Unlock" : "Lock the phone"}
+            </button>
+            <button onClick={askForAccess}>Someone asks for access</button>
+          </div>
+          <p className={styles.devPersona}>
+            Locked, the app counts as closed: its notifications land on the lock screen (with notifications allowed). A request someone makes waits in Mind › Asking for access either way.
           </p>
         </div>
         <div>
@@ -265,6 +293,15 @@ function Device() {
   const [instant, setInstant] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [banner, setBanner] = useState<Banner | null>(null);
+  // The phone locked (Developer): what arrived meanwhile, as lock-screen notifications.
+  const locked = useLocked();
+  const [lockNotes, setLockNotes] = useState<(LockNote & { banner: Banner })[]>([]);
+  const [wasLocked, setWasLocked] = useState(locked);
+  if (wasLocked !== locked) {
+    setWasLocked(locked);
+    if (locked) setBanner(null);
+    else setLockNotes([]);
+  }
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deviceRef = useRef<HTMLDivElement>(null);
   // Another identity: whatever chat was open belongs to the previous one.
@@ -327,8 +364,12 @@ function Device() {
     setBanner({ id: -1, chatId: "", title: "Storage is full", body: "New messages stay in this tab, but they won't be there after a reload." });
   }
 
-  /** Drops a banner in for five seconds, whatever the mutes say (see showBanner). */
+  /** Drops a banner in for five seconds, whatever the mutes say (see showBanner). Locked, it goes to the lock screen instead. */
   const flash = useCallback((b: Banner) => {
+    if (isLocked()) {
+      setLockNotes((ns) => [{ id: b.id, title: b.title, body: b.body, at: Date.now(), banner: b }, ...ns]);
+      return;
+    }
     setBanner(b);
     setTimeout(() => setBanner((cur) => (cur?.id === b.id ? null : cur)), 5000);
   }, []);
@@ -537,6 +578,16 @@ function Device() {
     return () => window.removeEventListener("popstate", onPop);
   }, [hide, show, switchChannel]);
 
+  /** A banner or lock-screen notification, tapped: a request opens its share settings; anything else, its chat on the card it's about. */
+  const openBanner = (b: Banner) => {
+    if (b.share) { setRequestShare(b.share); return; }
+    const chat = state.data.chats.find((c) => c.id === b.chatId);
+    if (!chat) return;
+    // On the card it's about: opening the chat there, or, when that chat is already open, scrolling to it.
+    if (chat.id !== openChat?.id) open(chat, b.messageId);
+    else if (b.messageId) window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { chatId: chat.id, messageId: b.messageId } }));
+  };
+
   return (
     <div ref={deviceRef} className={styles.device} data-device>
       <i className={`${styles.key} ${styles.keyAction}`} />
@@ -575,23 +626,22 @@ function Device() {
             <button
               key={banner.id}
               className={`${styles.banner} ${styles.glassStrong}`}
-              onClick={() => {
-                const chat = state.data.chats.find((c) => c.id === banner.chatId);
-                setBanner(null);
-                if (banner.share) { setRequestShare(banner.share); return; }
-                if (!chat) return;
-                // On the card it's about: opening the chat there, or, when that chat is already open, scrolling to it.
-                if (chat.id !== openChat?.id) open(chat, banner.messageId);
-                else if (banner.messageId) window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { chatId: chat.id, messageId: banner.messageId } }));
-              }}
+              onClick={() => { setBanner(null); openBanner(banner); }}
             >
               <span className={styles.bannerIcon}><Logo size={18} /></span>
               <span className={styles.bannerText}>
                 <b>{banner.title}</b>
-                <span>{banner.body}</span>
+                <span>{emojify(banner.body)}</span>
               </span>
               <small>now</small>
             </button>
+          )}
+          {locked && (
+            <LockScreen
+              notes={lockNotes}
+              onUnlock={() => setLocked(false)}
+              onOpen={(n) => { setLocked(false); openBanner((n as LockNote & { banner: Banner }).banner); }}
+            />
           )}
           <div className={styles.homeBar} />
         </div>

@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { chatIdentity, initials } from "@/lib/chat/avatar";
-import { Emoji } from "@/lib/chat/emoji";
-import { collectionItems, isUnassigned, patchBlock, startShareDraft, UNASSIGNED, useMind, type Block, type ShareRole, type Sharing } from "@/lib/chat/mind";
+import { Emoji, emojify } from "@/lib/chat/emoji";
+import { collectionItems, isUnassigned, patchBlock, startShareDraft, UNASSIGNED, useMind, type Block, type Mind, type ShareRole, type Sharing } from "@/lib/chat/mind";
 import { allPeople, usePeopleVersion } from "@/lib/chat/people";
 import {
   accessOf, answerRequest, audienceLabel, cloneCollection, copyAllowed, copyIn, copyItem, grant, refOf, requestAccess, setRole as setPersonRole,
@@ -927,30 +927,139 @@ export function SharedItemSheet({ share, onClose, onToast, saving: startSaving =
  * on screen, with its own toast. It stays a moment after closing so a
  * "Saved to…" toast can finish.
  */
+/* ---------------------------------------------------------------------------
+   Requests: everyone asking for access to something of yours, in one place
+--------------------------------------------------------------------------- */
+
+/** One person asking for one of your collections, or one thing in it. */
+export interface PendingRequest {
+  key: string;
+  share: ShareRef;
+  userId: string;
+  role: ShareRole;
+  at: number;
+  /** What they asked for: "🇩🇪 German", or an item's title. */
+  what: string;
+  /** For an item, the collection it's in ("🇩🇪 German"); null for a whole collection. */
+  where: string | null;
+}
+
+/** Every request waiting on you, across your collections and the things in them, newest first. */
+export function pendingRequests(mind: Mind | null | undefined, me: string): PendingRequest[] {
+  if (!mind) return [];
+  const out: PendingRequest[] = [];
+  for (const c of mind.collections) {
+    const name = `${c.emoji} ${c.name}`;
+    for (const r of c.sharing?.requests ?? []) {
+      out.push({ key: `${c.id}::${r.userId}:${r.role}`, share: { owner: me, collectionId: c.id }, userId: r.userId, role: r.role, at: r.at, what: name, where: null });
+    }
+    for (const id of c.items) {
+      const b = mind.blocks[id];
+      for (const r of b?.sharing?.requests ?? []) {
+        out.push({ key: `${c.id}:${id}:${r.userId}:${r.role}`, share: { owner: me, collectionId: c.id, blockId: id }, userId: r.userId, role: r.role, at: r.at, what: b.title || KIND_LABEL[b.kind], where: isUnassigned(c) ? null : name });
+      }
+    }
+  }
+  return out.sort((a, b) => b.at - a.at);
+}
+
+/** How many requests wait on one collection, counting the things in it. */
+export const requestsIn = (mind: Mind, collectionId: string) => {
+  const c = mind.collections.find((x) => x.id === collectionId);
+  if (!c) return 0;
+  return (c.sharing?.requests.length ?? 0) + c.items.reduce((n, id) => n + (mind.blocks[id]?.sharing?.requests.length ?? 0), 0);
+};
+
+/** "now", "5 min ago", "2 h ago", "Yesterday", "Mon 23 Nov". */
+function askedAgo(at: number) {
+  const min = Math.round((Date.now() - at) / 60_000);
+  if (min < 1) return "now";
+  if (min < 60) return `${min} min ago`;
+  if (min < 24 * 60) return `${Math.round(min / 60)} h ago`;
+  if (min < 48 * 60) return "Yesterday";
+  return new Date(at).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+}
+
+/** "Wants to edit · 🇩🇪 German", "Wants to view · Sage & oak, in 🏠 Home". */
+export const requestLine = (r: PendingRequest) =>
+  `Wants to ${r.role === "edit" ? "edit" : "view"} · ${r.what}${r.where ? `, in ${r.where}` : ""}`;
+
+/**
+ * Everyone asking for access to something of yours, newest first: who, what
+ * (a collection, or one thing and where it is) and whether to view or edit,
+ * with Decline and Allow on each. Someone you can't name is allowed from the
+ * thing's own share sheet, where it says plainly who they are (or aren't).
+ * Tapping a row opens that share sheet, to see who else has it.
+ */
+export function RequestsSheet({ me, onClose, onOpenShare, onToast }: {
+  me: string;
+  onClose: () => void;
+  onOpenShare: (share: ShareRef) => void;
+  onToast?: (text: string) => void;
+}) {
+  const { mind } = useMind(me);
+  const list = pendingRequests(mind, me);
+  return (
+    <Sheet title="Requests" onClose={onClose}>
+      {(close) => (
+        <>
+          <p className={sh.requestsLede}>
+            {list.length
+              ? `${list.length === 1 ? "One person is" : `${list.length} requests are`} waiting for an answer. Allowing gives them what they asked for; declining tells them no.`
+              : "No one is asking for access right now. When someone does, they show up here and on the Mind tab."}
+          </p>
+          {list.length > 0 && (
+            <div className={sh.list}>
+              {list.map((r) => {
+                const who = shareName(r.userId);
+                const name = who.known || who.handle ? who.name : "Someone not in your contacts";
+                return (
+                  <div key={r.key} className={`${sh.row} ${sh.requestRow}`}>
+                    <button type="button" className={sh.requestWho} onClick={() => close(() => onOpenShare(r.share))} aria-label={`${name}: ${requestLine(r)}. Open its sharing`}>
+                      <PersonAvatar id={r.userId} size={38} />
+                      <span className={sh.rowText}>
+                        <b>{name}</b>
+                        <small className={sh.requestWhat}>{emojify(requestLine(r))}</small>
+                        <small>{askedAgo(r.at)}{who.known ? "" : who.handle ? " · Not in your contacts" : " · You can\u2019t see who this is yet"}</small>
+                      </span>
+                    </button>
+                    <span className={sh.requestActions}>
+                      <button type="button" className={sh.quiet} onClick={() => { answerRequest(r.share, r.userId, false); onToast?.(`Declined ${who.name}`); }}>Decline</button>
+                      {who.known ? (
+                        <button type="button" className={sh.addPill} onClick={() => { answerRequest(r.share, r.userId, true); onToast?.(`${who.name} can ${r.role} ${r.what} now`); }}>Allow</button>
+                      ) : (
+                        <button type="button" className={sh.addPill} onClick={() => close(() => onOpenShare(r.share))}>Allow…</button>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </Sheet>
+  );
+}
+
 /**
  * Someone asked for access to something of yours: a notification names them
  * and what they asked for. It watches your Mind (where requests land, from any
- * tab) and only speaks of requests that arrive after it started.
+ * tab) and only speaks of requests that arrive after it started; the ones that
+ * came while the app was closed wait in Requests (Mind home) and on the Mind tab.
  */
 export function AccessRequestWatcher({ me, onRequest }: { me: string; onRequest: (r: { share: ShareRef; title: string; body: string }) => void }) {
   const { mind } = useMind(me);
   const seen = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (!mind) return;
-    const now: { key: string; share: ShareRef; userId: string; role: ShareRole; what: string }[] = [];
-    for (const c of mind.collections) {
-      for (const r of c.sharing?.requests ?? []) now.push({ key: `${c.id}::${r.userId}:${r.role}`, share: { owner: me, collectionId: c.id }, userId: r.userId, role: r.role, what: `${c.emoji} ${c.name}` });
-      for (const id of c.items) {
-        const b = mind.blocks[id];
-        for (const r of b?.sharing?.requests ?? []) now.push({ key: `${c.id}:${id}:${r.userId}:${r.role}`, share: { owner: me, collectionId: c.id, blockId: id }, userId: r.userId, role: r.role, what: b.title || KIND_LABEL[b.kind] });
-      }
-    }
+    const now = pendingRequests(mind, me);
     const first = seen.current === null;
     const known = (seen.current ??= new Set());
-    for (const r of now) {
+    for (const r of [...now].reverse()) {
       if (known.has(r.key)) continue;
       known.add(r.key);
-      if (!first) onRequest({ share: r.share, title: `${shareName(r.userId).name} wants to ${r.role}`, body: `${r.what} · Tap to answer` });
+      if (!first) onRequest({ share: r.share, title: `${shareName(r.userId).name} wants to ${r.role}`, body: `${r.what}${r.where ? `, in ${r.where}` : ""} · Tap to answer` });
     }
   }, [mind, me, onRequest]);
   return null;

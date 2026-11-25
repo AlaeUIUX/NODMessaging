@@ -19,6 +19,8 @@
 }
 .unread { background: var(--danger); }
 .sort { background: var(--accent); }
+/* Someone's asking for access to something in your Mind. */
+.request { background: var(--danger); }
 @keyframes dotIn { from { transform: scale(0); } }
 
 .ping { animation: ping 560ms 120ms var(--ease-spring); }

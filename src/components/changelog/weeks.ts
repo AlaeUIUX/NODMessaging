@@ -6,11 +6,15 @@
  */
 
 export type Media =
-  /** A recording or still of the app in its iPhone, the whole device, on a card. `label` names it in a pair. */
-  | { kind: "video"; src: string; poster: string; alt: string; frame: "device"; label?: string }
-  | { kind: "image"; src: string; alt: string; frame: "device"; label?: string }
+  /**
+   * A recording or still of the app in its iPhone, the whole device, on a card. `label` names it in a pair.
+   * `focus` (0 top, 1 bottom) is the part of the screen that matters: on a phone the device is shown
+   * big enough to read and cropped to it.
+   */
+  | { kind: "video"; src: string; poster: string; alt: string; frame: "device"; label?: string; focus?: number }
+  | { kind: "image"; src: string; alt: string; frame: "device"; label?: string; focus?: number }
   /** A 16:10 clip that already has its own stage (the 2 November clips). */
-  | { kind: "video"; src: string; poster: string; alt: string; frame: "wide"; label?: undefined };
+  | { kind: "video"; src: string; poster: string; alt: string; frame: "wide"; label?: undefined; focus?: undefined };
 
 export type Section = {
   id: string;
@@ -38,8 +42,8 @@ export type Week = {
   sections: Section[];
 };
 
-const shot = (name: string, alt: string, label?: string): Media => ({ kind: "image", src: `/changelog/${name}.webp`, alt, frame: "device", label });
-const rec = (name: string, alt: string, label?: string): Media => ({ kind: "video", src: `/changelog/${name}.mp4`, poster: `/changelog/${name}.webp`, alt, frame: "device", label });
+const shot = (name: string, alt: string, label?: string, focus?: number): Media => ({ kind: "image", src: `/changelog/${name}.webp`, alt, frame: "device", label, focus });
+const rec = (name: string, alt: string, label?: string, focus?: number): Media => ({ kind: "video", src: `/changelog/${name}.mp4`, poster: `/changelog/${name}.webp`, alt, frame: "device", label, focus });
 const clip = (name: string, alt: string): Media => ({ kind: "video", src: `/updates/${name}.mp4`, poster: `/updates/${name}.webp`, alt, frame: "wide" });
 
 export const WEEKS: Week[] = [
@@ -55,7 +59,7 @@ export const WEEKS: Week[] = [
       "Every time is now picked on the iPhone's own wheels, and the forms got simpler: a poll folds its extra settings away, an event's start is one row, a plan is made in four steps, and Sort shows each kind of thing the way it looks.",
     ],
     people: ["Alae"],
-    cover: [shot("checklist-swipe", "A checklist in a chat with Salman, one line swiped to show a red Delete at its edge.")],
+    cover: [shot("checklist-swipe", "A checklist in a chat with Salman, one line swiped to show a red Delete at its edge.", undefined, .52)],
     sections: [
       {
         id: "swipe",
@@ -65,7 +69,7 @@ export const WEEKS: Week[] = [
           "Swipe past the same point as in the chat list (where a long swipe archives) and Delete takes over the whole line, with the same spring and a small vibration. Let go and the line is deleted. Undo on the note at the bottom puts it back where it was.",
           "Only people who can edit the checklist can swipe. With a keyboard, the Delete key does the same.",
         ],
-        media: [shot("checklist-swipe", "The Move prep checklist with Pack the kitchen swiped open, Delete in red at the edge.")],
+        media: [shot("checklist-swipe", "The Move prep checklist with Pack the kitchen swiped open, Delete in red at the edge.", undefined, .52)],
         try: "open the chat with Salman › swipe left on a line of Move prep.",
       },
       {
@@ -77,8 +81,8 @@ export const WEEKS: Week[] = [
           "For Vanessa: this stands in for the system date picker (UIDatePicker), the compact pill that opens the wheels, with minutes in steps of five. The prototype draws its own copy so it can show which one to use.",
         ],
         media: [
-          shot("time-plan", "A new plan's stop, Brunch, with the wheels open on 11:30 AM and Anytime underneath.", "Plan stop"),
-          shot("time-event", "A new event: Starts, with the day in one pill and 7:00 PM in the other, the wheels open over it.", "Event"),
+          shot("time-plan", "A new plan's stop, Brunch, with the wheels open on 11:30 AM and Anytime underneath.", "Plan stop", .5),
+          shot("time-event", "A new event: Starts, with the day in one pill and 7:00 PM in the other, the wheels open over it.", "Event", .58),
         ],
         try: "a chat › + › Plan or Event.",
       },
@@ -89,7 +93,7 @@ export const WEEKS: Week[] = [
           "In an open plan the name has a pencil: tap it to rename. Each day has a bin once there's more than one. A day goes with its stops, and Undo brings it all back.",
           "Both are new shared changes, so the server needs to handle them (renaming, removing a day) like it handles adding a stop.",
         ],
-        media: [shot("plan-open", "The open Vienna weekend plan: the name with a pencil, and a bin beside each day.")],
+        media: [shot("plan-open", "The open Vienna weekend plan: the name with a pencil, and a bin beside each day.", undefined, .3)],
         try: "the chat with Charles › Vienna weekend › Open plan.",
       },
       {
@@ -107,7 +111,7 @@ export const WEEKS: Week[] = [
           "Live sharing now says it plainly: your pin moves while NOD is open on your phone, and when it's closed people see where you last were.",
           "The prototype searches OpenStreetMap, through our own server so phones don't contact it directly. On iPhone it would be Apple's own place search (MapKit).",
         ],
-        media: [shot("location-search", "The Location sheet searching ramen: places in Vienna, nearest first, each with its address.")],
+        media: [shot("location-search", "The Location sheet searching ramen: places in Vienna, nearest first, each with its address.", undefined, .3)],
         try: "a chat › + › Location.",
       },
       {
@@ -117,7 +121,7 @@ export const WEEKS: Week[] = [
           "A poll keeps several answers, anonymous votes and when it closes under More options, folded until you want them. The poll, checklist, reminder, event, location and plan forms are plain white, so switches and fields are easier to see.",
           "An event's start is one row: the day in one pill, the time in the other. A plan is made in four steps (its name, the day, the stops, a last look) with Next until the end, and no templates.",
         ],
-        media: [shot("poll-more", "A new poll with two options and More options folded: One answer, Names shown, Closes in 24 hours.")],
+        media: [shot("poll-more", "A new poll with two options and More options folded: One answer, Names shown, Closes in 24 hours.", undefined, .78)],
         try: "a chat › + › Poll.",
       },
       {
@@ -127,7 +131,7 @@ export const WEEKS: Week[] = [
           "In Sort, each kind of thing has its own card: a book with its cover, author and year, a video with its still, a link with its site, a palette with its swatches, a flashcard's front, a quote, a note. The cards waiting behind are solid, so nothing shows through.",
           "A flashcard in Mind opens with a tap, and its front and back can be changed there. In its sheet, a tap flips it.",
         ],
-        media: [shot("sort-faces", "Sort with a book: the cover of Hammer's German Grammar, its author, year and pages, and Reading.")],
+        media: [shot("sort-faces", "Sort with a book: the cover of Hammer's German Grammar, its author, year and pages, and Reading.", undefined, .62)],
         try: "Mind › Sort.",
       },
       {

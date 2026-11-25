@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { IconCheck, IconLink, IconMoon, IconSun } from "@/components/chat/Icons";
 import type { Media, Week } from "./weeks";
 import s from "./changelog.module.css";
@@ -127,12 +127,12 @@ export function Stage({ media, week, big }: { media?: Media[]; week: Week; big?:
   return (
     <span ref={root} className={`${s.stage} ${s.stageDevice} ${big ? s.stageBig : ""}`}>
       {media.map((m) => (
-        <span key={m.src} className={s.deviceCol}>
+        <span key={m.src} className={s.deviceCol} style={m.focus === undefined ? undefined : ({ ["--focus" as string]: m.focus } as CSSProperties)}>
           {m.label && <span className={s.deviceLabel}>{m.label}</span>}
           <span className={s.device}>
             {m.kind === "video"
               ? <video src={m.src} poster={m.poster} muted loop playsInline preload="metadata" aria-label={m.alt} />
-              : <Image src={m.src} alt={m.alt} width={568} height={1158} sizes="(max-width: 720px) 45vw, 320px" />}
+              : <Image src={m.src} alt={m.alt} width={568} height={1158} sizes="(max-width: 600px) 90vw, (max-width: 720px) 45vw, 320px" />}
           </span>
         </span>
       ))}

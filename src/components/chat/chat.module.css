@@ -4337,6 +4337,10 @@ div.actionRow:hover { background: transparent; }
 
 /* Shared with you: its row on Mind home (the faces of who shared, a count), and the rows inside. */
 .sharedRow { --tone: var(--accent); }
+/* Someone's waiting on you: the count is red, like an app's badge. */
+.requestsRow { --tone: var(--danger); }
+.requestsCount { min-width: 22px; height: 22px; padding: 0 7px; border-radius: var(--r-pill); background: var(--danger); color: #fff; font: var(--t-caption1); font-style: normal; font-weight: var(--w-emph); line-height: 22px; text-align: center; }
+.folderAsk { min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--r-pill); background: var(--danger); color: #fff; font: var(--t-caption2, 11px/20px system-ui); font-weight: var(--w-emph); line-height: 20px; text-align: center; }
 .sharedFaces { display: flex; flex-shrink: 0; padding-left: 4px; }
 .sharedFaces > * { margin-left: -9px; box-shadow: 0 0 0 2px var(--surface); border-radius: var(--r-pill); }
 .sharedFaces > :first-child { margin-left: 0; }

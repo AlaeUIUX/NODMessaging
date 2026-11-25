@@ -1,0 +1,155 @@
+/* ==========================================================================
+   The lock screen (LockScreen.tsx): what NOD's notifications look like while
+   the app is closed. iOS's own layout: date, the big time, notifications from
+   the bottom up, the torch and camera, and the bar to swipe up.
+   ========================================================================== */
+
+.lock {
+  position: absolute;
+  inset: 0;
+  z-index: 96;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 14px;
+  overflow: hidden;
+  color: #fff;
+  background:
+    radial-gradient(120% 70% at 20% 0%, #D6C2AE 0%, transparent 60%),
+    radial-gradient(90% 60% at 100% 40%, #8C6E5A 0%, transparent 70%),
+    linear-gradient(170deg, #B49A86 0%, #6A5446 45%, #2A221D 100%);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 320ms var(--ease-out), opacity 320ms var(--ease-out);
+  animation: lockIn 360ms var(--ease-out) both;
+}
+.lock :global(*) { -webkit-tap-highlight-color: transparent; }
+/* The status bar draws in the ink colour: white here, on the wallpaper. */
+.lock { --ink: #fff; --bg: transparent; }
+@keyframes lockIn { from { opacity: 0; } }
+.leaving { transform: translateY(-100%) !important; opacity: .4; }
+
+.padlock { margin-top: 56px; display: grid; place-items: center; opacity: .9; }
+.date { margin: 8px 0 0; font-size: 19px; font-weight: 600; letter-spacing: -.01em; opacity: .92; }
+.time {
+  margin: -4px 0 0;
+  font-size: 96px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -.04em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 24px rgba(0, 0, 0, .12);
+}
+
+/* Notifications sit low, above the torch and camera, newest on top. */
+.notes {
+  margin-top: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 18px;
+}
+.notesHead { display: flex; align-items: center; justify-content: space-between; padding: 0 6px 2px; }
+.notesHead b { font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+.notesHead button {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .22);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.note {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 22px;
+  background: rgba(246, 240, 234, .62);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  color: #1C1917;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  animation: noteIn 420ms var(--ease-spring) both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+@keyframes noteIn { from { opacity: 0; transform: translateY(16px) scale(.96); } }
+.note:active { transform: scale(.98); }
+/* One app's notifications, stacked: the cards behind peek out underneath. */
+.stacked { margin-bottom: 14px; }
+.stacked::before, .stacked::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -7px;
+  height: 20px;
+  border-radius: 0 0 18px 18px;
+  background: rgba(246, 240, 234, .42);
+  z-index: -1;
+}
+.stacked::after { left: 24px; right: 24px; bottom: -13px; background: rgba(246, 240, 234, .26); }
+.stacked[data-more="1"]::after { display: none; }
+
+.appIcon {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: #1C1917;
+  color: #fff;
+}
+.noteText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.noteHead { display: flex; align-items: baseline; gap: 8px; }
+.noteHead b { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.noteHead small { flex-shrink: 0; font-size: 13px; color: rgba(28, 25, 23, .55); }
+.noteBody { font-size: 15px; line-height: 1.3; letter-spacing: -.01em; }
+.noteMore { margin-top: 2px; font-size: 13px; color: rgba(28, 25, 23, .55); }
+
+.foot { width: 100%; display: flex; justify-content: space-between; padding: 0 30px 6px; }
+.round {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, .28);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+
+.swipe {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 40px 10px;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, .8);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.swipe i { width: 134px; height: 5px; border-radius: 3px; background: #fff; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lock, .note { animation: none; }
+  .lock { transition: opacity 200ms; }
+  .leaving { transform: none !important; opacity: 0; }
+}

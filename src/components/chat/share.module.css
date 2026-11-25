@@ -260,3 +260,25 @@ button.row:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
 .shelfTitle { font: var(--t-footnote); font-weight: var(--w-emph); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .shelfItem small { font: var(--t-caption1); color: var(--ink-3); }
 .shelfMore .shelfPic { font: var(--t-title3); font-weight: var(--w-emph); color: var(--ink-2); }
+
+/* ---- Requests: everyone asking for access, in one list ---- */
+.requestsLede { margin: 0 2px 4px; font: var(--t-footnote); color: var(--ink-3); text-wrap: pretty; }
+.requestRow { flex-wrap: wrap; align-items: center; row-gap: 8px; padding: 10px 4px; }
+.requestWho {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rowText small.requestWhat { color: var(--ink-2); white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* Decline and Allow under the words, so what's asked for always shows in full. */
+.requestActions { display: flex; gap: 8px; width: 100%; padding-left: 50px; }
+.requestActions > button { flex: 1; justify-content: center; height: 34px; }
