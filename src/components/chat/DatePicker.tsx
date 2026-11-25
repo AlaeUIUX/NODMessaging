@@ -30,19 +30,19 @@ function firstWeekday() {
   return /^(en-US|en-CA|ja|ko|zh-TW|he|pt-BR)/i.test(navigator.language) ? 0 : 1;
 }
 
-type CalendarPlace = { screen: HTMLElement; top: number; left: number; origin: string };
+export type CalendarPlace = { screen: HTMLElement; top: number; left: number; origin: string };
 
 /** Where the calendar goes for what was pressed: under it if there's room, else above, over the whole screen. */
-function placeNear(el: HTMLElement): CalendarPlace {
+export function placeNear(el: HTMLElement, width = CAL_W, height = CAL_H): CalendarPlace {
   // The screen the sheet sits on, not the sheet: a sheet scrolls and would clip it.
   const screen = (el.closest('[role="dialog"]')?.parentElement ?? document.body) as HTMLElement;
   const box = screen.getBoundingClientRect();
   const r = el.getBoundingClientRect();
-  const w = Math.min(CAL_W, box.width - 24);
+  const w = Math.min(width, box.width - 24);
   const left = Math.max(12, Math.min(r.right - box.left - w, box.width - w - 12));
   const below = r.bottom - box.top + 8;
-  const top = below + CAL_H <= box.height - 24 ? below : Math.max(56, r.top - box.top - 8 - CAL_H);
-  return { screen, top, left, origin: `${r.left + r.width / 2 - box.left - left}px ${top === below ? 0 : CAL_H}px` };
+  const top = below + height <= box.height - 24 ? below : Math.max(56, r.top - box.top - 8 - height);
+  return { screen, top, left, origin: `${r.left + r.width / 2 - box.left - left}px ${top === below ? 0 : height}px` };
 }
 
 /**

@@ -44,11 +44,114 @@ const clip = (name: string, alt: string): Media => ({ kind: "video", src: `/upda
 
 export const WEEKS: Week[] = [
   {
+    slug: "2026-11-23",
+    n: 10,
+    from: "2026-11-23",
+    to: "2026-11-29",
+    open: true,
+    title: "Swipe to delete, iPhone time wheels, and Vanessa's card brief",
+    summary: [
+      "This week answers Vanessa's product brief for the cards in a chat. A checklist line swipes away the way a row does in Reminders, a plan can be renamed and lose a day, a reminder's notification opens on its card, and Location searches real places instead of four fixed ones.",
+      "Every time is now picked on the iPhone's own wheels, and the forms got simpler: a poll folds its extra settings away, an event's start is one row, a plan is made in four steps, and Sort shows each kind of thing the way it looks.",
+    ],
+    people: ["Alae"],
+    cover: [shot("checklist-swipe", "A checklist in a chat with Salman, one line swiped to show a red Delete at its edge.")],
+    sections: [
+      {
+        id: "swipe",
+        title: "Swipe a checklist line to delete it",
+        text: [
+          "Swipe a line to the left and a red Delete grows in from the edge, under your finger. The checkbox and the words stay where they are. A short swipe leaves Delete there to tap.",
+          "Swipe past the same point as in the chat list (where a long swipe archives) and Delete takes over the whole line, with the same spring and a small vibration. Let go and the line is deleted. Undo on the note at the bottom puts it back where it was.",
+          "Only people who can edit the checklist can swipe. With a keyboard, the Delete key does the same.",
+        ],
+        media: [shot("checklist-swipe", "The Move prep checklist with Pack the kitchen swiped open, Delete in red at the edge.")],
+        try: "open the chat with Salman › swipe left on a line of Move prep.",
+      },
+      {
+        id: "time",
+        title: "Times on the iPhone's wheels",
+        text: [
+          "Every time is a pill that opens the wheels beside it: hour, minutes in steps of five, and AM or PM where your region uses it. They spin, snap, go round and round, tick at every step, and set the time as they turn. Tap outside to close them.",
+          "It's in a new plan's stops, a stop in an open plan, an event's start and a reminder in Mind. A plan stop has Anytime under the wheels, for a stop without a time.",
+          "For Vanessa: this stands in for the system date picker (UIDatePicker), the compact pill that opens the wheels, with minutes in steps of five. The prototype draws its own copy so it can show which one to use.",
+        ],
+        media: [
+          shot("time-plan", "A new plan's stop, Brunch, with the wheels open on 11:30 AM and Anytime underneath.", "Plan stop"),
+          shot("time-event", "A new event: Starts, with the day in one pill and 7:00 PM in the other, the wheels open over it.", "Event"),
+        ],
+        try: "a chat › + › Plan or Event.",
+      },
+      {
+        id: "plan",
+        title: "Rename a plan, or remove a day",
+        text: [
+          "In an open plan the name has a pencil: tap it to rename. Each day has a bin once there's more than one. A day goes with its stops, and Undo brings it all back.",
+          "Both are new shared changes, so the server needs to handle them (renaming, removing a day) like it handles adding a stop.",
+        ],
+        media: [shot("plan-open", "The open Vienna weekend plan: the name with a pencil, and a bin beside each day.")],
+        try: "the chat with Charles › Vienna weekend › Open plan.",
+      },
+      {
+        id: "notify",
+        title: "A reminder's notification opens on its card",
+        text: [
+          "Tapping a reminder's notification opens its chat scrolled to the card, which flashes. If that chat is already open, it scrolls there. Plan stops and tasks that come due do the same.",
+        ],
+      },
+      {
+        id: "location",
+        title: "Search for a place",
+        text: [
+          "The Location sheet starts with a search for places and addresses, nearest first. Send current location uses where the phone really is, places you've sent come back under Recent, and Directions open the exact spot.",
+          "Live sharing now says it plainly: your pin moves while NOD is open on your phone, and when it's closed people see where you last were.",
+          "The prototype searches OpenStreetMap, through our own server so phones don't contact it directly. On iPhone it would be Apple's own place search (MapKit).",
+        ],
+        media: [shot("location-search", "The Location sheet searching ramen: places in Vienna, nearest first, each with its address.")],
+        try: "a chat › + › Location.",
+      },
+      {
+        id: "forms",
+        title: "Simpler forms",
+        text: [
+          "A poll keeps several answers, anonymous votes and when it closes under More options, folded until you want them. The poll, checklist, reminder, event, location and plan forms are plain white, so switches and fields are easier to see.",
+          "An event's start is one row: the day in one pill, the time in the other. A plan is made in four steps (its name, the day, the stops, a last look) with Next until the end, and no templates.",
+        ],
+        media: [shot("poll-more", "A new poll with two options and More options folded: One answer, Names shown, Closes in 24 hours.")],
+        try: "a chat › + › Poll.",
+      },
+      {
+        id: "sort",
+        title: "Sort shows each thing as itself",
+        text: [
+          "In Sort, each kind of thing has its own card: a book with its cover, author and year, a video with its still, a link with its site, a palette with its swatches, a flashcard's front, a quote, a note. The cards waiting behind are solid, so nothing shows through.",
+          "A flashcard in Mind opens with a tap, and its front and back can be changed there. In its sheet, a tap flips it.",
+        ],
+        media: [shot("sort-faces", "Sort with a book: the cover of Hammer's German Grammar, its author, year and pages, and Reading.")],
+        try: "Mind › Sort.",
+      },
+      {
+        id: "small",
+        title: "Smaller fixes",
+        text: [
+          "Checklist lines line up with the card's title; a rule for bullet lists in messages was pushing them in. The Undo note now shows above an open sheet, where it can be tapped.",
+        ],
+      },
+      {
+        id: "open",
+        title: "Still to decide",
+        text: [
+          "From Vanessa's brief, for later: changing a checklist's title, editing a poll's options after it's sent, editing or snoozing a reminder (with the reminders design, M3), links on plan stops, and named editors on plans.",
+          "Server work the brief lists: clearing a poll vote, live location moving on other phones and Stop sharing sticking, and now renaming a plan and removing a day.",
+        ],
+      },
+    ],
+  },
+  {
     slug: "2026-11-16",
     n: 9,
     from: "2026-11-16",
     to: "2026-11-22",
-    open: true,
     title: "Send from Mind, and Vanessa's second Mind review",
     summary: [
       "This week answers most of Vanessa's second review of Mind, from 16 November. A chat's + sheet can send something from your Mind without leaving the chat, the words in anything you saved can be changed, and the Video form takes a video straight from your phone.",

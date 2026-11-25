@@ -2333,6 +2333,8 @@
 .progress { height: 4px; border-radius: var(--r-pill); margin: 10px 0 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); overflow: hidden; }
 .progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width var(--t-slow) var(--ease-spring); }
 .checkList { list-style: none; margin: 0; padding: 0; display: grid; }
+/* A message's own bullet lists are indented (.bubble ul); a checklist card's lines line up with its title. */
+.bubble .checkList { padding: 0; }
 .checkItem {
   display: flex;
   align-items: center;
@@ -2783,6 +2785,26 @@
 .placeList b { display: block; font-size: var(--fs-body); font-weight: 500; }
 .placeList small { display: block; font-size: 13px; color: var(--ink-3); }
 .placePin { width: 36px; height: 36px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--ink) 6%, transparent); display: flex; align-items: center; justify-content: center; }
+/* Location sheet: search first, then where you are and what you sent lately. */
+.placeClear {
+  width: 22px;
+  height: 22px;
+  margin-right: -4px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+  color: var(--surface);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.sheetSearch input[type="search"] { -webkit-appearance: none; appearance: none; }
+.sheetSearch input[type="search"]::-webkit-search-cancel-button,
+.sheetSearch input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; display: none; }
+.placeResults { display: grid; gap: 4px; min-height: 120px; align-content: start; }
+.placeNote { margin: 4px 2px; font: var(--t-footnote); color: var(--ink-3); }
+.locNote { margin: 2px 0 0; font: var(--t-footnote); color: var(--ink-3); }
 .permissionOff, .accessSheet {
   display: flex;
   flex-direction: column;
@@ -3222,6 +3244,46 @@
   animation: fadeIn var(--t-mid) var(--ease-out);
 }
 .checkList li + li { box-shadow: inset 0 1px 0 var(--line); }
+/* A line that swipes left to delete (SwipeLine): the line stays still and Delete grows in over it from the right. */
+.checkRow { display: flex; }
+.checkRow > * { flex: 1; min-width: 0; }
+/* Runs out to the card's right edge (its 16px padding), so Delete comes in from the card's edge. */
+.swipeLine { position: relative; overflow: hidden; touch-action: pan-y; margin: 0 -16px; padding: 0 16px; }
+.swipeLine[data-collapsing] { transition: height 220ms var(--ease-out), opacity 220ms var(--ease-out); opacity: 0; }
+.swipeLineAct {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 1;
+  width: 0;
+  padding: 0;
+  border: none;
+  background: var(--danger);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+}
+/* Taken over the whole line: the label rides at its leading edge, where the finger is. */
+.swipeLine[data-armed] .swipeLineAct { justify-content: flex-start; }
+.swipeLineActInner {
+  width: 84px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  line-height: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: clamp(0, calc((var(--p, 0) - .3) * 2.2), 1);
+}
+.swipeLineAct:active { filter: brightness(.9); }
+.checkEmpty { margin: 6px 2px 2px; font: var(--t-footnote); color: var(--ink-3); }
 
 /* ---- chat background: static white for now ---- */
 .theme { --chat-bg: #FFFFFF; --card-bg: #FFFFFF; }
@@ -4757,6 +4819,8 @@ a.mbThumb { color: inherit; text-decoration: none; }
 .mb_detail .mbSwatches small { padding-bottom: 8px; font: var(--t-caption2); font-weight: var(--w-emph); letter-spacing: .04em; opacity: .85; }
 
 /* chat toast with actions (Save to Mind) */
+/* A sheet is open (an Undo from inside it): above the sheet, at the foot of the screen, so it can be tapped. */
+.toast.toastOverSheet { z-index: 90; bottom: calc(env(safe-area-inset-bottom, 0px) + 28px); }
 .toast.toastActions { height: auto; min-height: 46px; padding: 6px 6px 6px 14px; gap: 8px; white-space: nowrap; pointer-events: auto; }
 .toastText { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .toastBtn { height: 32px; padding: 0 12px; flex-shrink: 0; border: none; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); font: var(--t-footnote); font-weight: var(--w-emph); cursor: pointer; }

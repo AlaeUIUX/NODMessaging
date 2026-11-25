@@ -16,7 +16,8 @@ export interface ChatUi {
   members: User[];
   openSheet: (node: ReactNode) => void;
   closeSheet: () => void;
-  toast: (text: string) => void;
+  /** A short note at the bottom of the screen; `actions` (Undo) keep it up a little longer. */
+  toast: (text: string, actions?: { label: string; run: () => void }[]) => void;
   /** Resolves true when the permission is (or becomes) granted. */
   ask: (kind: PermissionKind) => Promise<boolean>;
   /** Opens a photo full screen, or a collection's grid ("all"). */
@@ -36,6 +37,9 @@ export interface ChatUi {
   /** Moves the chat to another of the group's channels (a zone's, #broadcasts). */
   switchChannel?: (channelId: string) => void;
 }
+
+/** Window event asking the open chat to scroll to one of its messages: `{ chatId, messageId }`. */
+export const JUMP_EVENT = "nod:jump-to-message";
 
 const Ctx = createContext<ChatUi | null>(null);
 export const ChatUiProvider = Ctx.Provider;

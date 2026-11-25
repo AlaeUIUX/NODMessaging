@@ -173,20 +173,20 @@ const EDGE_KEEP = 20;
  * where it stopped. Springs are given as UIKit gives them: a response (how
  * long one swing takes) and a damping ratio (1 = no bounce).
  */
-const SPRING_ROW = { response: .38, damping: .86 };
+export const SPRING_ROW = { response: .38, damping: .86 };
 /** The outermost action taking over (or giving back) the others' room. */
-const SPRING_ARM = { response: .3, damping: 1 };
+export const SPRING_ARM = { response: .3, damping: 1 };
 /** How far ahead a flick is projected (UIScrollView's normal deceleration). */
-const PROJECT_S = .2;
+export const PROJECT_S = .2;
 /** Past this share of the width the outermost action takes over; back under the lower one and it lets go. */
-const ARM_AT = .6;
-const DISARM_AT = .5;
+export const ARM_AT = .6;
+export const DISARM_AT = .5;
 
 type Side = "" | "l" | "r";
 interface Spring { response: number; damping: number }
 
 /** One step of a damped spring (semi-implicit Euler: stable at any frame rate). */
-function step(x: number, v: number, target: number, s: Spring, dt: number) {
+export function step(x: number, v: number, target: number, s: Spring, dt: number) {
   const k = (2 * Math.PI / s.response) ** 2;
   const c = 2 * s.damping * Math.sqrt(k);
   const a = -k * (x - target) - c * v;

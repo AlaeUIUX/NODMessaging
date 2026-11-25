@@ -1,0 +1,79 @@
+/* ==========================================================================
+   The time wheels (TimeWheel.tsx): iOS's UIDatePicker wheels, in the same
+   glass popover as the calendar (datepicker.module.css).
+   ========================================================================== */
+
+.pop { width: 260px; height: auto; padding: 10px; }
+
+.wheels {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  height: calc(var(--item) * var(--rows));
+  /* The drum fades out above and below, as the real wheels do. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32%, #000 68%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 32%, #000 68%, transparent);
+}
+
+/* The band across the middle: what's in it is the time. */
+.band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--item) * (var(--rows) - 1) / 2);
+  height: var(--item);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  pointer-events: none;
+}
+
+.wheel {
+  position: relative;
+  width: 64px;
+  height: 100%;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  /* Rows above the first and below the last, so either can come to the middle. */
+  padding: calc(var(--item) * (var(--rows) - 1) / 2) 0;
+  box-sizing: border-box;
+  perspective: 420px;
+  outline: none;
+  border-radius: 9px;
+}
+.wheel::-webkit-scrollbar { display: none; }
+.wheel:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+
+.item {
+  height: var(--item);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  scroll-snap-align: center;
+  color: var(--ink);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+  backface-visibility: hidden;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.clear {
+  width: 100%;
+  height: 40px;
+  margin-top: 8px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--accent);
+  font: var(--t-body);
+  cursor: pointer;
+}
+.clear:active { filter: brightness(.95); }
+
+/* An event's day and time, side by side in one row. */
+.pills { display: flex; align-items: center; gap: 6px; }

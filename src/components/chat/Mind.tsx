@@ -28,6 +28,7 @@ import type { Chat } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { BlockView, KIND_LABEL, SortFace, whenOf } from "./MindBlocks";
 import { DateField } from "./DatePicker";
+import { TimeField } from "./TimeWheel";
 import { DragScroll } from "./Composer";
 import { LAND, LandingGlow, Poof, RECEIVE } from "./Landing";
 import { AmountField, BookSearch, FilePicker, PasteButton, PasteField, PhotoPicker, VideoPicker, VideoPreview, type PhoneClip } from "./MindFields";
@@ -1906,7 +1907,6 @@ const SOONS = [
   { id: "morning", label: "Tomorrow morning" },
   { id: "week", label: "Next week" },
 ] as const;
-const hhmm = (t: number) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 /** The same day, at the time typed into a time field ("18:30"). */
 function atTime(t: number, value: string) {
   const [h, min] = value.split(":").map(Number);
@@ -1936,10 +1936,11 @@ function WhenField({ value, onChange }: { value: number; onChange: (t: number) =
         ))}
       </div>
       <DateField label="Day" value={value} onChange={(t) => { setQuick(null); onChange(t); }} />
-      <label className={styles.mindField}>
-        <span>Time</span>
-        <input type="time" value={hhmm(value)} onChange={(e) => { setQuick(null); onChange(atTime(value, e.target.value)); }} aria-label="Time" />
-      </label>
+      <TimeField
+        label="Time"
+        value={new Date(value).getHours() * 60 + new Date(value).getMinutes()}
+        onChange={(m) => { if (m === null) return; setQuick(null); onChange(atTime(value, `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`)); }}
+      />
       <p className={`${styles.mindWhenSays} ${styles[`mbWhen_${w.state}`]}`}><IconBell size={13} /> {w.label}{w.rel ? `, ${w.rel}` : ""}</p>
     </div>
   );

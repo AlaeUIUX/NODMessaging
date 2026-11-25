@@ -8,10 +8,11 @@ import type { AvatarTone, Card, Invoice, User } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import {
   IconAttachment, IconBell, IconCalendar, IconCamera, IconCheck, IconChecklist, IconClose, IconImage, IconLocation,
-  IconMoneyReceive, IconMoneySend, IconPlus, IconPoll, IconSmile,
+  IconMoneyReceive, IconMoneySend, IconPlus, IconPoll, IconSearch, IconSmile,
   IconBrush, IconGame, IconSparkles, IconWheel, IconBoard, IconReceipt, IconRoute, IconFlag, IconMegaphone, IconFolder, IconBookmark,
 } from "./Icons";
 import MiniMap from "./MiniMap";
+import { DateTimeField } from "./TimeWheel";
 import { MoreOptions, Segmented, Sheet, Toggle, uid } from "./ui";
 import styles from "./chat.module.css";
 import iv from "./invoice.module.css";
@@ -333,12 +334,73 @@ export function ReminderBuilder({ onSend, onClose, seed }: { onSend: Send; onClo
    Location — only reachable once permission is settled
 --------------------------------------------------------------------------- */
 
-const PLACES = [
-  { place: "NOD Studio", address: "Mariahilfer Str. 88, Vienna", x: .52, y: .46 },
-  { place: "Konjō Ramen", address: "Kettenbrückengasse 7, Vienna", x: .34, y: .62 },
-  { place: "The Mexicano", address: "Neubaugasse 12, Vienna", x: .66, y: .3 },
-  { place: "Westbahnhof", address: "Europaplatz 2, Vienna", x: .22, y: .38 },
-];
+/** A place to send: a name, a line of address and where it is. */
+type Spot = { place: string; address: string; lat: number; lng: number };
+
+/** Stands in for where you are when the browser can't say (a desktop, location refused): the demo's own street. */
+const DEMO_HERE: Spot = { place: "Mariahilfer Straße 88", address: "1060 Vienna", lat: 48.1966, lng: 16.3466 };
+
+/** The drawn map has no real streets: a place's pin lands somewhere steady for it, away from the edges. */
+const pinOf = (s: Spot) => ({
+  x: .22 + (Math.abs(Math.round(s.lng * 1e4)) % 100) / 100 * .56,
+  y: .24 + (Math.abs(Math.round(s.lat * 1e4)) % 100) / 100 * .5,
+});
+
+const recentKey = (me: string) => `nod.places.recent.${me}`;
+function readRecent(me: string): Spot[] {
+  try { return JSON.parse(localStorage.getItem(recentKey(me)) ?? "[]") as Spot[]; } catch { return []; }
+}
+function rememberPlace(me: string, s: Spot) {
+  try {
+    const rest = readRecent(me).filter((r) => !(r.place === s.place && r.address === s.address));
+    localStorage.setItem(recentKey(me), JSON.stringify([s, ...rest].slice(0, 5)));
+  } catch { /* private window: no recents */ }
+}
+
+type Search = { q: string; state: "loading" | "done" | "failed"; hits: (Spot & { id: string })[] };
+
+/** Places by name or address, near where you are. Waits for a pause in typing, and drops answers to older queries. */
+function usePlaceSearch(query: string, near: Spot) {
+  const [search, setSearch] = useState<Search | null>(null);
+  const q = query.trim();
+  useEffect(() => {
+    if (q.length < 2) return;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      fetch(`/api/places?q=${encodeURIComponent(q)}&lat=${near.lat}&lon=${near.lng}`, { signal: ctrl.signal })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((d: { results: Search["hits"] }) => setSearch({ q, state: "done", hits: d.results }))
+        .catch(() => { if (!ctrl.signal.aborted) setSearch({ q, state: "failed", hits: [] }); });
+    }, 280);
+    return () => { clearTimeout(t); ctrl.abort(); };
+  }, [q, near.lat, near.lng]);
+  if (q.length < 2) return null;
+  // An answer for something no longer in the field counts as still looking.
+  return search?.q === q ? search : { q, state: "loading" as const, hits: [] };
+}
+
+/** Where the phone is, as an address. Falls back to the demo's street when the browser can't or won't say. */
+function useHere(granted: boolean) {
+  const [here, setHere] = useState<Spot & { real: boolean }>({ ...DEMO_HERE, real: false });
+  useEffect(() => {
+    if (!granted || !("geolocation" in navigator)) return;
+    let gone = false;
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      const at = { lat: coords.latitude, lng: coords.longitude };
+      try {
+        const r = await fetch(`/api/places?reverse=1&lat=${at.lat}&lon=${at.lng}`);
+        const hit = r.ok ? ((await r.json()) as { results: Spot[] }).results[0] : undefined;
+        if (!gone) setHere({ place: hit?.place ?? "Current location", address: hit?.address ?? "", ...at, real: true });
+      } catch {
+        if (!gone) setHere({ place: "Current location", address: "", ...at, real: true });
+      }
+    }, () => { /* refused or unavailable: the demo street stays */ }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 });
+    return () => { gone = true; };
+  }, [granted]);
+  return here;
+}
+
+const coordsLine = (s: Spot) => `${s.lat.toFixed(4)}, ${s.lng.toFixed(4)}`;
 
 export function LocationBuilder({ onSend, onClose, granted, onEnable }: {
   onSend: Send;
@@ -346,53 +408,95 @@ export function LocationBuilder({ onSend, onClose, granted, onEnable }: {
   granted: boolean;
   onEnable: () => void;
 }) {
+  const { me } = useChat();
   const [live, setLive] = useState<"off" | "15" | "60">("off");
-  const here = PLACES[0];
-  const send = (p: typeof PLACES[number], isLive: boolean, minutes = 0) => onSend({
-    type: "location",
-    place: isLive ? "Live location" : p.place,
-    address: p.address,
-    live: isLive,
-    until: isLive ? minutesFromNow(minutes) : null,
-    x: p.x,
-    y: p.y,
-  }, isLive ? "Shared live location" : `Location: ${p.place}`);
+  const [query, setQuery] = useState("");
+  const [recent] = useState(() => readRecent(me));
+  const here = useHere(granted);
+  const search = usePlaceSearch(query, here);
+
+  const send = (p: Spot, isLive: boolean, minutes = 0) => {
+    if (!isLive) rememberPlace(me, p);
+    onSend({
+      type: "location",
+      place: isLive ? "Live location" : p.place,
+      address: isLive ? `Near ${p.place}` : p.address || coordsLine(p),
+      live: isLive,
+      until: isLive ? minutesFromNow(minutes) : null,
+      lat: p.lat,
+      lng: p.lng,
+      ...pinOf(p),
+    }, isLive ? "Shared live location" : `Location: ${p.place}`);
+  };
+
+  const list = (spots: Spot[], close: (then?: () => void) => void) => (
+    <div className={styles.placeList}>
+      {spots.map((p) => (
+        <button key={`${p.place}|${p.address}|${p.lat}`} onClick={() => close(() => send(p, false))}>
+          <span className={styles.placePin}><IconLocation size={18} /></span>
+          <span><b>{p.place}</b>{p.address && <small>{p.address}</small>}</span>
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <Sheet title="Location" solid onClose={onClose}>
       {(close) => (<>
-      {granted ? (
+      <label className={styles.sheetSearch}>
+        <IconSearch size={18} />
+        <input
+          type="search"
+          placeholder="Search for a place or address"
+          aria-label="Search for a place or address"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          enterKeyHint="search"
+        />
+        {query && <button type="button" className={styles.placeClear} onClick={() => setQuery("")} aria-label="Clear search"><IconClose size={14} /></button>}
+      </label>
+
+      {search ? (
+        <div className={styles.placeResults} aria-live="polite">
+          {search.state === "loading" && <p className={styles.placeNote}>Searching…</p>}
+          {search.state === "failed" && <p className={styles.placeNote}>Places can’t be searched right now. Check your connection and try again.</p>}
+          {search.state === "done" && !search.hits.length && <p className={styles.placeNote}>Nothing found for “{search.q}”. Try a street, a shop or a station.</p>}
+          {search.hits.length > 0 && list(search.hits, close)}
+        </div>
+      ) : (
         <>
-          <div className={styles.mapFrame}><MiniMap x={here.x} y={here.y} live /></div>
-          <button className={styles.primaryWide} onClick={() => close(() => send(here, false))}>
-            Send current location
-            <small>{here.address}</small>
-          </button>
-          <p className={styles.sheetLabel}>Share live location</p>
-          <Segmented value={live} options={[{ id: "off", label: "Off" }, { id: "15", label: "15 min" }, { id: "60", label: "1 hour" }]} onChange={setLive} />
-          {live !== "off" && (
-            <button className={styles.secondaryWide} onClick={() => close(() => send(here, true, Number(live)))}>
-              Start sharing for {live === "15" ? "15 minutes" : "1 hour"}
-            </button>
+          {granted ? (
+            <>
+              <div className={styles.mapFrame}><MiniMap {...pinOf(here)} live /></div>
+              <button className={styles.primaryWide} onClick={() => close(() => send(here, false))}>
+                Send current location
+                <small>{[here.place, here.address || coordsLine(here)].join(", ")}</small>
+              </button>
+              <p className={styles.sheetLabel}>Share live location</p>
+              <Segmented value={live} options={[{ id: "off", label: "Off" }, { id: "15", label: "15 min" }, { id: "60", label: "1 hour" }]} onChange={setLive} />
+              {live !== "off" && (
+                <button className={styles.secondaryWide} onClick={() => close(() => send(here, true, Number(live)))}>
+                  Start sharing for {live === "15" ? "15 minutes" : "1 hour"}
+                </button>
+              )}
+              <p className={styles.placeNote}>Your pin moves while NOD is open on your phone. When it’s closed, people see where you last were.</p>
+            </>
+          ) : (
+            <div className={styles.permissionOff}>
+              <span className={styles.accessIcon} aria-hidden="true"><IconLocation size={24} /></span>
+              <b>Location access is off</b>
+              <p>NOD can’t see where you are. You can still search for a place, or turn location on.</p>
+              <button className={styles.secondaryWide} onClick={onEnable}>Turn on location</button>
+            </div>
+          )}
+          {recent.length > 0 && (
+            <>
+              <p className={styles.sheetLabel}>Recent</p>
+              {list(recent, close)}
+            </>
           )}
         </>
-      ) : (
-        <div className={styles.permissionOff}>
-          <span className={styles.accessIcon} aria-hidden="true"><IconLocation size={24} /></span>
-          <b>Location access is off</b>
-          <p>NOD can’t see where you are. You can still pick a place, or turn location on.</p>
-          <button className={styles.secondaryWide} onClick={onEnable}>Turn on location</button>
-        </div>
       )}
-      <p className={styles.sheetLabel}>Or choose a place</p>
-      <div className={styles.placeList}>
-        {PLACES.map((p) => (
-          <button key={p.place} onClick={() => close(() => send(p, false))}>
-            <span className={styles.placePin}><IconLocation size={18} /></span>
-            <span><b>{p.place}</b><small>{p.address}</small></span>
-          </button>
-        ))}
-      </div>
       </>)}
     </Sheet>
   );
@@ -402,13 +506,6 @@ export function LocationBuilder({ onSend, onClose, granted, onEnable }: {
    Event
 --------------------------------------------------------------------------- */
 
-/** "2026-11-25T12:30", what a datetime-local input reads and writes, in local time. */
-const toLocalInput = (ms: number) => {
-  const d = new Date(ms);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-};
-
 /** "Tomorrow at 12:30", "Sat 29 Nov at 20:00": the picked moment said back. */
 function whenLine(ms: number) {
   const d = new Date(ms);
@@ -416,10 +513,10 @@ function whenLine(ms: number) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const diff = Math.round((day.getTime() - today.getTime()) / 86_400_000);
   const date = diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
-  return `${date} at ${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+  return `${date} at ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
 }
 
-/** New event: what, one native date-and-time picker (the iOS wheel on a phone), and where. */
+/** New event: what, when (the day in a calendar pill, the time on iOS's wheels, in one row, as Calendar has it), and where. */
 export function EventBuilder({ onSend, onClose }: { onSend: Send; onClose: () => void }) {
   const [title, setTitle] = useState("");
   const [place, setPlace] = useState("");
@@ -429,7 +526,7 @@ export function EventBuilder({ onSend, onClose }: { onSend: Send; onClose: () =>
     d.setHours(12, 30, 0, 0);
     return d.getTime();
   });
-  const [min] = useState(() => toLocalInput(Date.now()));
+  const [min] = useState(() => Date.now());
   return (
     <Sheet
       title="New event"
@@ -443,16 +540,7 @@ export function EventBuilder({ onSend, onClose }: { onSend: Send; onClose: () =>
     >
       <input className={styles.bigInput} data-autofocus placeholder="What’s happening?" value={title} onChange={(e) => setTitle(e.target.value)} />
       <p className={styles.sheetLabel}>When</p>
-      <label className={styles.whenPicker}>
-        <span>Starts</span>
-        <input
-          type="datetime-local"
-          value={toLocalInput(startsAt)}
-          min={min}
-          onChange={(e) => { const t = new Date(e.target.value).getTime(); if (Number.isFinite(t)) setStartsAt(t); }}
-          aria-label="Starts"
-        />
-      </label>
+      <DateTimeField label="Starts" value={startsAt} min={min} onChange={setStartsAt} />
       <p className={styles.whenSays} aria-live="polite">{whenLine(startsAt)}</p>
       <p className={styles.sheetLabel}>Where</p>
       <input className={styles.plainInput} placeholder="Add a place" value={place} onChange={(e) => setPlace(e.target.value)} />

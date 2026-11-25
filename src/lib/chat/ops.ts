@@ -56,6 +56,13 @@ function reducePlan(card: PlanCard, op: CardOp): PlanCard {
     case "plan.addDay":
       if (card.days.some((d) => d.id === op.day.id)) return card;
       return { ...card, days: [...card.days, op.day].sort((a, b) => a.date - b.date) };
+    case "plan.removeDay":
+      if (card.days.length < 2 || !card.days.some((d) => d.id === op.dayId)) return card;
+      return { ...card, days: card.days.filter((d) => d.id !== op.dayId) };
+    case "plan.rename": {
+      const title = op.title.trim();
+      return title && title !== card.title ? { ...card, title } : card;
+    }
     case "plan.rsvp": {
       if ((card.rsvps[op.userId] ?? null) === op.value) return card;
       const rsvps = { ...card.rsvps };

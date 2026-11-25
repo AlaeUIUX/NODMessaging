@@ -54,7 +54,7 @@ import { MoveSheet } from "./Mind";
 import { MediaGrid, MediaViewer, ReceiptSheet } from "./MediaViewer";
 import ReactionSheet from "./ReactionSheet";
 import StatusBar from "./StatusBar";
-import { ChatUiProvider, getPermission, PermissionAlert, setPermission, smooth, useBackLayer, useNow, type PermissionKind } from "./ui";
+import { ChatUiProvider, getPermission, JUMP_EVENT, PermissionAlert, setPermission, smooth, useBackLayer, useNow, type PermissionKind } from "./ui";
 import styles from "./chat.module.css";
 
 interface MenuState {
@@ -524,6 +524,16 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
     setTimeout(() => setHighlighted(null), 1200);
   }, []);
 
+  // A notification about a card in this chat, tapped while the chat is open (see ChatApp's banner).
+  useEffect(() => {
+    const onJump = (e: Event) => {
+      const d = (e as CustomEvent<{ chatId: string; messageId: string }>).detail;
+      if (d.chatId === chat.id) jumpTo(d.messageId);
+    };
+    window.addEventListener(JUMP_EVENT, onJump);
+    return () => window.removeEventListener(JUMP_EVENT, onJump);
+  }, [chat.id, jumpTo]);
+
   // Opened pointing at one message (Analytics, a jump from elsewhere): let the
   // thread's own mount scroll (to the bottom) settle first, then jump to it.
   useEffect(() => {
@@ -899,7 +909,7 @@ export default function ChatView({ chat: opened, leaving, onBack, focusMessageId
       <input ref={fileInput} type="file" multiple hidden onChange={(e) => { pickFiles(e.target.files); e.target.value = ""; }} />
 
       {toast && (
-        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${toast.actions ? styles.toastActions : ""} ${toast.leaving ? styles.toastLeaving : ""}`} role="status">
+        <div key={toast.id} className={`${styles.toast} ${styles.glassStrong} ${toast.actions ? styles.toastActions : ""} ${overlaySheet ? styles.toastOverSheet : ""} ${toast.leaving ? styles.toastLeaving : ""}`} role="status">
           {toast.mind ? <MindMark /> : <IconCheck />}
           <span className={styles.toastText}>{emojify(toast.text)}</span>
           {toast.actions?.map((a) => (

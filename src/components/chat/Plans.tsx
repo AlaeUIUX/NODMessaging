@@ -13,8 +13,9 @@ import { useChat, userById } from "@/lib/chat/store";
 import type { Card, CardOp, Message, PlanCard, PlanDay, PlanStop, Rsvp } from "@/lib/chat/types";
 import Avatar from "./Avatar";
 import { useCalendar } from "./DatePicker";
-import { IconCalendar, IconCheck, IconClose, IconLock, IconPlus, IconRoute, IconTrash } from "./Icons";
-import { Sheet, Toggle, uid, useChatUi, useNow } from "./ui";
+import { TimePill } from "./TimeWheel";
+import { IconCalendar, IconCheck, IconClose, IconEdit, IconLock, IconPlus, IconRoute, IconTrash } from "./Icons";
+import { Sheet, Toggle, uid, useChatUi, useNow, useOptionalChatUi } from "./ui";
 import styles from "./chat.module.css";
 import s from "./plans.module.css";
 
@@ -228,12 +229,12 @@ export function PlanBuilder({ onSend, onClose }: { onSend: Send; onClose: () => 
                 <ol className={s.draftStops}>
                   {d.stops.map((x, i) => (
                     <li key={x.id} className={s.draftStop}>
-                      <input
+                      <TimePill
                         className={s.draftTime}
-                        type="time"
-                        value={x.time}
-                        onChange={(e) => setStop(d.id, x.id, { time: e.target.value })}
-                        aria-label={`Time of stop ${i + 1}`}
+                        value={x.time ? fromHhmm(x.time) : null}
+                        onChange={(m) => setStop(d.id, x.id, { time: m === null ? "" : hhmm(m) })}
+                        label={`Time of stop ${i + 1}`}
+                        clearable
                       />
                       <input
                           data-stop-title={x.id}
@@ -433,6 +434,7 @@ function PlanSheet({ message, onClose }: { message: Message; onClose: () => void
   const { state, me, cardOp } = useChat();
   const now = useNow(30_000);
   const [editing, setEditing] = useState<string | null>(null);
+  const ui = useOptionalChatUi();
   const live = state.data.messages[message.chatId]?.find((m) => m.id === message.id);
   const card = live && !live.deletedAt && live.card?.type === "plan" ? live.card : null;
 
@@ -455,11 +457,18 @@ function PlanSheet({ message, onClose }: { message: Message; onClose: () => void
     const last = card.days[card.days.length - 1];
     op({ kind: "plan.addDay", day: { id: uid(), date: last ? addDays(last.date, 1) : midnight(now), stops: [] } });
   };
+  // A day goes with its stops, no confirm: Undo on the toast brings the day back as it was.
+  const removeDay = (day: PlanDay) => {
+    op({ kind: "plan.removeDay", dayId: day.id });
+    const n = day.stops.length;
+    const what = n ? `${dayLabel(day.date)} and its ${n === 1 ? "stop" : `${n} stops`}` : dayLabel(day.date);
+    if (ui) ui.toast(`Removed ${what}`, [{ label: "Undo", run: () => op({ kind: "plan.addDay", day }) }]);
+  };
 
   return (
     <Sheet title="Plan" onClose={onClose} action={{ label: "Done", onClick: () => {} }}>
       <div className={s.intro}>
-        <h2>{card.title}</h2>
+        <PlanTitle title={card.title} canEdit={canEdit} onRename={(title) => op({ kind: "plan.rename", title })} />
         <p>
           {rangeLabel(card.days)} · {done} of {stops.length} done
           {cost > 0 && <> · ≈ {euros(cost)} per person</>}
@@ -473,6 +482,11 @@ function PlanSheet({ message, onClose }: { message: Message; onClose: () => void
             <b>{midnight(now) === day.date ? "Today" : dayLabel(day.date)}</b>
             {card.days.length > 1 && <span>Day {i + 1}</span>}
             <em>{day.stops.filter((x) => x.doneBy).length} of {day.stops.length}</em>
+            {canEdit && card.days.length > 1 && (
+              <button type="button" className={s.dayRemove} onClick={() => removeDay(day)} aria-label={`Remove ${dayLabel(day.date)}`}>
+                <IconTrash size={16} />
+              </button>
+            )}
           </header>
           {day.stops.length > 0 && (
             <ul className={s.group}>
@@ -513,6 +527,44 @@ function PlanSheet({ message, onClose }: { message: Message; onClose: () => void
         </button>
       )}
     </Sheet>
+  );
+}
+
+/** The plan's name, changed in place by whoever can change its stops. Escape puts back what it was. */
+function PlanTitle({ title, canEdit, onRename }: { title: string; canEdit: boolean; onRename: (title: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  if (!canEdit) return <h2>{title}</h2>;
+  if (draft === null) {
+    return (
+      <h2>
+        <button type="button" className={s.titleBtn} onClick={() => setDraft(title)} aria-label={`Rename “${title}”`}>
+          {title}
+          <IconEdit size={16} />
+        </button>
+      </h2>
+    );
+  }
+  const save = () => {
+    const next = draft.trim();
+    setDraft(null);
+    if (next && next !== title) onRename(next);
+  };
+  return (
+    <input
+      className={s.titleInput}
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => e.currentTarget.select()}
+      onBlur={save}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
+        if (e.key === "Escape") { e.preventDefault(); setDraft(null); }
+      }}
+      aria-label="Plan name"
+      enterKeyHint="done"
+      maxLength={80}
+    />
   );
 }
 
@@ -615,7 +667,13 @@ function StopEditor({ stop, day, onSave, onCancel, onRemove }: {
         <div className={s.fieldPair}>
           <label className={s.field}>
             <span>Time</span>
-            <input className={styles.plainInput} type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+            <TimePill
+              className={s.editorTime}
+              value={time ? fromHhmm(time) : null}
+              onChange={(m) => setTime(m === null ? "" : hhmm(m))}
+              label="Time"
+              clearable
+            />
           </label>
           <label className={s.field}>
             <span>€ per person</span>

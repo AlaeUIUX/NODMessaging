@@ -26,7 +26,13 @@ export type Card =
       requests: string[];
     }
   | { type: "reminder"; text: string; at: number; audience: "me" | "everyone"; firedAt: number | null }
-  | { type: "location"; place: string; address: string; live: boolean; until: number | null; x: number; y: number }
+  | {
+      type: "location"; place: string; address: string; live: boolean; until: number | null;
+      /** Where the pin sits on the drawn map (0–1). */
+      x: number; y: number;
+      /** The real point, for Directions. Older cards have only the address. */
+      lat?: number; lng?: number;
+    }
   | { type: "event"; title: string; startsAt: number; place: string; rsvps: Record<string, Rsvp> }
   | {
       type: "payment";
@@ -154,6 +160,9 @@ export type CardOp =
   | { kind: "plan.editStop"; stopId: string; patch: Partial<Omit<PlanStop, "id" | "doneBy">> }
   | { kind: "plan.removeStop"; stopId: string }
   | { kind: "plan.addDay"; day: PlanDay }
+  /** A day and everything on it. Undo is plan.addDay with the same day. A plan keeps at least one day. */
+  | { kind: "plan.removeDay"; dayId: string }
+  | { kind: "plan.rename"; title: string }
   | { kind: "plan.rsvp"; userId: string; value: Rsvp | null }
   | { kind: "bill.claim"; itemId: string; userId: string; on: boolean }
   | { kind: "bill.claimAll"; userIds: string[] }

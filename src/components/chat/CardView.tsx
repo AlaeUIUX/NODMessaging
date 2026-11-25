@@ -14,6 +14,7 @@ import { InvoiceCardView } from "./Invoice";
 import { IconBell, IconCheck, IconChecklist, IconLock, IconMoneyReceive, IconPlus, IconPoll } from "./Icons";
 import MiniMap from "./MiniMap";
 import { MindShareCard } from "./Share";
+import { SwipeLine } from "./SwipeLine";
 import { OpRefCard } from "./operation/OpCards";
 import { getPermission, relative, Sheet, Toggle, uid, useChatUi, useNow } from "./ui";
 import styles from "./chat.module.css";
@@ -191,6 +192,8 @@ function ChecklistCard({ message, card, interactive }: { message: Message; card:
   const { me, updateCard } = useChat();
   const ui = useChatUi();
   const [draft, setDraft] = useState("");
+  /** The one line swiped open, if any. */
+  const [swiped, setSwiped] = useState<string | null>(null);
   const owner = userById(message.authorId);
   const isOwner = message.authorId === me;
   const canEdit = card.everyoneCanEdit || isOwner || card.editors.includes(me);
@@ -250,6 +253,39 @@ function ChecklistCard({ message, card, interactive }: { message: Message; card:
     setDraft("");
   };
 
+  // Whoever can tick can take a line off, with a swipe left (SwipeLine). No confirm: Undo on the toast puts it back where it was.
+  const remove = (it: Of<"checklist">["items"][number]) => {
+    const at = card.items.findIndex((x) => x.id === it.id);
+    set((c) => ({ ...c, items: c.items.filter((x) => x.id !== it.id) }));
+    ui.toast(`Removed “${it.label}”`, [{
+      label: "Undo",
+      run: () => set((c) => (c.items.some((x) => x.id === it.id) ? c : { ...c, items: [...c.items.slice(0, at), it, ...c.items.slice(at)] })),
+    }]);
+  };
+
+  const line = (it: Of<"checklist">["items"][number]) => (
+    <button
+      className={`${styles.checkItem} ${it.doneBy ? styles.checkDone : ""}`}
+      onClick={() => toggle(it.id)}
+      // With a keyboard, Delete takes the line off (on a phone it's a swipe left).
+      onKeyDown={(e) => { if (interactive && canEdit && (e.key === "Delete" || e.key === "Backspace")) { e.preventDefault(); remove(it); } }}
+      disabled={!interactive}
+      aria-pressed={!!it.doneBy}
+      aria-keyshortcuts={interactive && canEdit ? "Delete" : undefined}
+    >
+      <span className={styles.checkBox}>{it.doneBy && <IconCheck size={12} />}</span>
+      <span className={styles.checkText}>
+        <span className={styles.checkLabel}>{it.label}</span>
+        {it.doneBy && (
+          <span className={styles.checkBy}>
+            <Avatar glyph={initials(userById(it.doneBy).fullName)} tone={userById(it.doneBy).tone} photo={userById(it.doneBy).photo} size={20} shape="circle" />
+            Done by {it.doneBy === me ? "you" : userById(it.doneBy).name}
+          </span>
+        )}
+      </span>
+    </button>
+  );
+
   return (
     <div className={styles.card}>
       <p className={styles.cardKicker}>
@@ -261,21 +297,22 @@ function ChecklistCard({ message, card, interactive }: { message: Message; card:
       </p>
       <h4 className={styles.cardTitle}>{card.title}</h4>
       <div className={styles.progress}><span style={{ width: `${card.items.length ? (done / card.items.length) * 100 : 0}%` }} /></div>
+      {card.items.length === 0 && (
+        <p className={styles.checkEmpty}>{interactive && canEdit ? "Nothing left on the list. Add what’s next below." : "Nothing on the list yet."}</p>
+      )}
       <ul className={styles.checkList}>
         {card.items.map((it) => (
-          <li key={it.id}>
-            <button className={`${styles.checkItem} ${it.doneBy ? styles.checkDone : ""}`} onClick={() => toggle(it.id)} disabled={!interactive} aria-pressed={!!it.doneBy}>
-              <span className={styles.checkBox}>{it.doneBy && <IconCheck size={12} />}</span>
-              <span className={styles.checkText}>
-                <span className={styles.checkLabel}>{it.label}</span>
-                {it.doneBy && (
-                  <span className={styles.checkBy}>
-                    <Avatar glyph={initials(userById(it.doneBy).fullName)} tone={userById(it.doneBy).tone} photo={userById(it.doneBy).photo} size={20} shape="circle" />
-                    Done by {it.doneBy === me ? "you" : userById(it.doneBy).name}
-                  </span>
-                )}
-              </span>
-            </button>
+          <li key={it.id} className={styles.checkRow}>
+            {interactive && canEdit ? (
+              <SwipeLine
+                label={it.label}
+                open={swiped === it.id}
+                onOpenChange={(o) => setSwiped((cur) => (o ? it.id : cur === it.id ? null : cur))}
+                onDelete={() => remove(it)}
+              >
+                {line(it)}
+              </SwipeLine>
+            ) : line(it)}
           </li>
         ))}
       </ul>
@@ -364,6 +401,8 @@ function LocationCard({ message, card, interactive }: { message: Message; card: 
   const { me, updateCard } = useChat();
   const now = useNow(15000);
   const live = card.live && card.until !== null && now < card.until;
+  const mine = message.authorId === me;
+  const directions = card.lat !== undefined && card.lng !== undefined ? `${card.lat},${card.lng}` : card.address;
   return (
     <div className={`${styles.card} ${styles.cardFlush}`}>
       <div className={styles.mapFrame}><MiniMap x={card.x} y={card.y} live={live} /></div>
@@ -372,9 +411,14 @@ function LocationCard({ message, card, interactive }: { message: Message; card: 
         <p className={styles.cardSub}>
           {card.live ? (live ? <><i className={styles.liveDot} />Live · {relative((card.until ?? now) - now)} left</> : "Live location ended") : card.address}
         </p>
+        {live && (
+          <p className={styles.locNote}>
+            {mine ? "Moves while NOD is open on your phone." : `Moves while ${userById(message.authorId).name} has NOD open.`}
+          </p>
+        )}
         <div className={styles.cardActions}>
-          <a className={styles.pillBtn} href={`https://maps.google.com/?q=${encodeURIComponent(card.address)}`} target="_blank" rel="noopener noreferrer">Directions</a>
-          {interactive && live && message.authorId === me && (
+          <a className={styles.pillBtn} href={`https://maps.google.com/?q=${encodeURIComponent(directions)}`} target="_blank" rel="noopener noreferrer">Directions</a>
+          {interactive && live && mine && (
             <button className={styles.pillBtn} onClick={() => updateCard(message, (c) => (c.type === "location" ? { ...c, until: Date.now() } : c))}>Stop sharing</button>
           )}
         </div>

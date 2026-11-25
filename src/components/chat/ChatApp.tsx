@@ -22,7 +22,7 @@ import { CompanionLink, PersonaSwitcher, personGroups, SecondWindowMenu } from "
 import { OperationSimulator } from "./operation/Simulator";
 import { AccessRequestWatcher, MIND_CARD_STYLES, setMindCardStyle, SharedLink, ShareSettingsLink, useMindCardStyle } from "./Share";
 import StageField from "./StageField";
-import { getPermission } from "./ui";
+import { getPermission, JUMP_EVENT } from "./ui";
 import styles from "./chat.module.css";
 
 const LEAVE_MS = 220;
@@ -175,7 +175,16 @@ function DevDrawer({ stage, onStage }: { stage: string; onStage: (v: string) => 
   );
 }
 
-interface Banner { id: number; chatId: string; title: string; body: string; /** Opens this share's settings instead of a chat. */ share?: ShareRef }
+interface Banner {
+  id: number;
+  chatId: string;
+  title: string;
+  body: string;
+  /** The card it's about (a reminder, a plan stop, a task): the chat opens on it and flashes it. */
+  messageId?: string;
+  /** Opens this share's settings instead of a chat. */
+  share?: ShareRef;
+}
 
 /**
  * Fires reminders when they come due, in whichever chat they live (and the
@@ -198,12 +207,12 @@ function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
       const seen = (announced.current ??= new Set());
       const prefs = getPrefs(me);
       // `started`: already under way when this tab opened, so it was due before we could say so.
-      const notify = (key: string, chat: Chat | null, title: string, body: string, started: boolean) => {
+      const notify = (key: string, chat: Chat | null, title: string, body: string, started: boolean, messageId?: string) => {
         if (seen.has(key)) return;
         seen.add(key);
         if (first && started) return;
         // Muted chats are left out by onBanner (showBanner), from the same rules the inbox uses.
-        if (getPermission("notifications") === "granted") onBanner({ id: Date.now(), chatId: chat?.id ?? "", title, body: prefs.previews ? body : chat ? "Tap to open the chat" : "Open Mind to see it" });
+        if (getPermission("notifications") === "granted") onBanner({ id: Date.now(), chatId: chat?.id ?? "", messageId, title, body: prefs.previews ? body : chat ? "Tap to open the chat" : "Open Mind to see it" });
       };
       // Reminders kept in Mind: once, when they come due, unless they were ticked off first.
       if (prefs.notifyReminders) {
@@ -222,7 +231,7 @@ function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
               // Ten minutes ahead, for stops you're responsible for or plans you're going to.
               if (stop.doneBy || stop.at === null || stop.at - now > 10 * 60_000 || stop.at < now - 60_000) continue;
               if (prefs.notifyPlans && (stop.owner === me || (going && !stop.owner))) {
-                notify(`plan:${stop.id}`, chat, `${c.title} · ${new Date(stop.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`, stop.place ? `${stop.title} at ${stop.place}` : stop.title, stop.at <= now);
+                notify(`plan:${stop.id}`, chat, `${c.title} · ${new Date(stop.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`, stop.place ? `${stop.title} at ${stop.place}` : stop.title, stop.at <= now, m.id);
               }
             }
           }
@@ -230,14 +239,14 @@ function ReminderWatcher({ onBanner }: { onBanner: (b: Banner) => void }) {
             const done = c.columns[c.columns.length - 1]?.id;
             for (const task of Object.values(c.tasks)) {
               if (!prefs.notifyTasks || task.deleted || task.assignee !== me || task.column === done || task.due === null || task.due > now) continue;
-              notify(`task:${task.id}:${task.due}`, chat, `Due now · ${c.name}`, task.title, true);
+              notify(`task:${task.id}:${task.due}`, chat, `Due now · ${c.name}`, task.title, true, m.id);
             }
           }
           if (!c || c.type !== "reminder" || c.firedAt !== null || c.at > now) continue;
           updateCard(m, (x) => (x.type === "reminder" ? { ...x, firedAt: Date.now() } : x));
           const forMe = c.audience === "everyone" || m.authorId === me;
           if (forMe && prefs.notifyReminders && getPermission("notifications") === "granted") {
-            onBanner({ id: Date.now(), chatId: chat.id, title: `Reminder · ${chat.kind === "group" ? chat.name : userById(m.authorId).name}`, body: prefs.previews ? c.text : "Tap to open the chat" });
+            onBanner({ id: Date.now(), chatId: chat.id, messageId: m.id, title: `Reminder · ${chat.kind === "group" ? chat.name : userById(m.authorId).name}`, body: prefs.previews ? c.text : "Tap to open the chat" });
           }
         }
       }
@@ -570,7 +579,10 @@ function Device() {
                 const chat = state.data.chats.find((c) => c.id === banner.chatId);
                 setBanner(null);
                 if (banner.share) { setRequestShare(banner.share); return; }
-                if (chat && chat.id !== openChat?.id) open(chat);
+                if (!chat) return;
+                // On the card it's about: opening the chat there, or, when that chat is already open, scrolling to it.
+                if (chat.id !== openChat?.id) open(chat, banner.messageId);
+                else if (banner.messageId) window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { chatId: chat.id, messageId: banner.messageId } }));
               }}
             >
               <span className={styles.bannerIcon}><Logo size={18} /></span>
